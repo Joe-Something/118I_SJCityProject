@@ -1,0 +1,101 @@
+# ROLE & OBJECTIVE
+You are an expert full-stack developer. Build a functional, responsive web application called "San Jose Permit Navigator" on Replit using Node.js/Express and React (Vite/Tailwind CSS). 
+
+The app helps first-time small-business owners understand which permits, documents, departments, and next steps apply to their project, while providing a City staff review/override workflow.
+
+---
+
+# DESIGN & UI SYSTEM
+- Style: Modern civic-design aesthetic using a color palette of Navy Blue (`#1E3A8A`), White (`#FFFFFF`), Light Gray (`#F3F4F6`), and Slate text.
+- Responsive design tailored for desktop and mobile devices.
+- High-contrast, scannable cards and sections. No login, external database, payments, or live city APIs are required; manage state and sample data locally.
+
+---
+
+# 1. APPLICANT INPUT SCREEN
+Create a form with clear, plain-language labels and helpful placeholder text containing:
+- Business Address (Required)
+- Business Category (Required; e.g., Boba Shop / Cafe, Full-Service Restaurant, Retail, Commercial Kitchen)
+- Planned Property Modifications (Required; checkboxes/multi-select e.g., Plumbing/Sink, Structural Wall Removal, Signage, HVAC/Hood)
+- Project Description (Required; textarea)
+- Preferred Language (Dropdown: English, Spanish)
+- Optional Document Upload (File input; simulated drag-and-drop)
+
+Action Button: "Create Permit Action Plan"
+Validation: On submit, check all required fields. If missing, display a clear, helpful error toast/message. If an unsupported file type is uploaded, trigger a specific validation alert.
+
+---
+
+# 2. LOCAL KNOWLEDGE BASE (PROTOTYPE SAMPLE DATA)
+Include a local, structured JSON dataset inside the client/server containing at least 5 core permit requirement entries across:
+1. Business Registration
+2. Zoning Clearance
+3. Building Permits
+4. Sign Permits
+5. Health or Safety Permits
+
+Each item must include: `id`, `requirement_name`, `description`, `applies_to`, `required_documents`, `suggested_next_steps`, `city_department`, `source_title`, `source_url`, and `simplified_description`.
+
+Explicit Labeling: Clearly mark all displayed data with a prototype banner: "Prototype Sample Data — Not official city advice."
+
+---
+
+# 3. ACTION PLAN GENERATION ENGINE
+When the form is submitted:
+1. Match the selected `business_category` and `planned_modifications` against the local knowledge base.
+2. If no matching requirements are found, gracefully present this error: "No matching requirement was found in the prototype knowledge base. Please contact the appropriate City department for confirmation." Never invent or hallucinate unsupported permit rules.
+3. Asynchronously generate an Action Plan containing:
+   - Application Summary
+   - Applicable Requirements
+   - Documents to Prepare
+   - Recommended Next Steps & Responsible Departments
+   - Source Titles & Source URLs
+   - Important Verification Notice / Disclaimer
+
+---
+
+# 4. POLISHED OUTPUT SCREEN
+Display the generated plan in distinct, easy-to-scan cards:
+- Application Summary Card
+- Possible Permits & Requirements Card
+- Documents to Prepare Card
+- Recommended Next Steps Card
+- Departments Involved Card
+- Sources Card
+- Verification & Disclaimer Card (City staff must verify prior to official use)
+
+Global Action Buttons:
+- "Start Over" (Resets form state)
+- "Print or Save Plan" (Triggers `window.print()`)
+- "Send to City Staff" (Simulates queue submission)
+
+---
+
+# 5. LANGUAGE SUPPORT & PLAIN-LANGUAGE TOGGLE
+- Multilingual Interface: Implement a local translation dictionary for UI headers, instructions, next steps, and disclaimers based on the selected language (English / Spanish).
+- "Simplify Language" Button: A interactive toggle that swaps standard technical descriptions with shorter, plain-English explanations without altering the underlying permit requirements or source links.
+
+---
+
+# 6. CITY STAFF REVIEW & OVERRIDE WORKFLOW
+Add a dedicated "City Staff Review Mode" toggle on the output screen:
+- Initial Draft Badge: Output defaults to "Draft — Requires City Staff Review".
+- Staff Controls:
+  - Approve Plan
+  - Edit Plan
+  - Reject Plan
+  - Add Staff Note
+- Override Mechanism ("Override AI Recommendation"):
+  - Allows reviewers to remove an incorrect requirement, add a missing requirement, edit recommended steps, or append an explanatory note.
+  - While editing, block the plan from being sent or displayed as final until saved.
+  - Upon saving changes, update the badge to "Reviewed by City Staff" with a visible alert stating: "Notice: The final plan was modified by City Staff." Retain original sources and disclaimers.
+
+---
+
+# 7. ERROR HANDLING & GUARDRAILS
+Implement explicit, user-friendly error messages for:
+- Missing required fields
+- Unsupported file uploads
+- Empty search/match results
+- Failed plan generation
+- Incomplete staff review inputs

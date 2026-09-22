@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "San Jose Permit Navigator"
+description = "A responsive civic web app that helps first-time small-business owners understand possible permits, documents, departments, and next steps, with a City Staff review and override workflow for prototype plans."
+version = "1.0.0"
+id = "artifacts/permit-navigator"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 25787
+
+[services.development]
+run = "pnpm --filter @workspace/permit-navigator run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/permit-navigator", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/permit-navigator/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "25787"
+BASE_PATH = "/"
