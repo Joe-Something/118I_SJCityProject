@@ -49,6 +49,7 @@ type Intake = {
   businessType: BusinessType | '';
   address: string;
   zip: string;
+  description: string;
   modifications: Modification[];
   files: File[];
 };
@@ -56,7 +57,7 @@ type Intake = {
 type Language = 'en' | 'es';
 type ReviewState = 'draft' | 'sent' | 'reviewed' | 'rejected';
 
-const emptyIntake: Intake = { businessType: '', address: '', zip: '', modifications: [], files: [] };
+const emptyIntake: Intake = { businessType: '', address: '', zip: '', description: '', modifications: [], files: [] };
 
 const copy = {
   en: {
@@ -74,7 +75,10 @@ const copy = {
     location: 'Where will it be located?',
     address: 'Street address',
     zip: 'ZIP code',
-    modifications: 'What changes are planned? (Optional)',
+    description: 'Project description',
+    descriptionPlaceholder: 'Briefly tell us what you plan to do at this location...',
+    preferredLanguage: 'Preferred language',
+    modifications: 'What changes are planned?',
     documents: 'Have documents already?',
     upload: 'Add plans, lease, or other files',
     generate: 'Build my action plan',
@@ -106,7 +110,10 @@ const copy = {
     location: '¿Dónde estará ubicado?',
     address: 'Dirección',
     zip: 'Código postal',
-    modifications: '¿Qué cambios planea? (Opcional)',
+    description: 'Descripción del proyecto',
+    descriptionPlaceholder: 'Describa brevemente lo que planea hacer en esta ubicación...',
+    preferredLanguage: 'Idioma preferido',
+    modifications: '¿Qué cambios planea?',
     documents: '¿Ya tiene documentos?',
     upload: 'Agregue planos, contrato u otros archivos',
     generate: 'Crear mi plan de acción',
@@ -157,7 +164,7 @@ function Steps({ plan }: { plan: boolean }) {
   </div></div>;
 }
 
-function IntakeForm({ intake, setIntake, onGenerate, language }: { intake: Intake; setIntake: (next: Intake) => void; onGenerate: () => void; language: Language }) {
+function IntakeForm({ intake, setIntake, onGenerate, language, setLanguage }: { intake: Intake; setIntake: (next: Intake) => void; onGenerate: () => void; language: Language; setLanguage: (lang: Language) => void }) {
   const t = copy[language];
   const [errors, setErrors] = useState<Record<string, string>>({});
   const fileRef = useRef<HTMLInputElement>(null);
@@ -165,9 +172,11 @@ function IntakeForm({ intake, setIntake, onGenerate, language }: { intake: Intak
   const toggleModification = (mod: Modification) => update('modifications', intake.modifications.includes(mod) ? intake.modifications.filter((item) => item !== mod) : [...intake.modifications, mod]);
   const validateAndGenerate = () => {
     const next: Record<string, string> = {};
-    if (!intake.businessType) next.business = 'Choose the closest business type.';
-    if (!intake.address.trim()) next.address = 'Enter the project street address.';
-    if (!/^\d{5}$/.test(intake.zip)) next.zip = 'Enter a 5-digit ZIP code.';
+    if (!intake.businessType) next.business = language === 'es' ? 'Elija el tipo de negocio más cercano.' : 'Choose the closest business type.';
+    if (!intake.address.trim()) next.address = language === 'es' ? 'Ingrese la dirección del proyecto.' : 'Enter the project street address.';
+    if (!/^\d{5}$/.test(intake.zip)) next.zip = language === 'es' ? 'Ingrese un código postal de 5 dígitos.' : 'Enter a 5-digit ZIP code.';
+    if (!intake.description.trim()) next.description = language === 'es' ? 'Proporcione una breve descripción del proyecto.' : 'Please provide a brief project description.';
+    if (intake.modifications.length === 0) next.modifications = language === 'es' ? 'Seleccione al menos un cambio planeado.' : 'Please select at least one planned change.';
     if (Object.keys(next).length) { setErrors(next); return; }
     setErrors({});
     onGenerate();
@@ -187,6 +196,13 @@ function IntakeForm({ intake, setIntake, onGenerate, language }: { intake: Intak
     <h2 id="intake-title">{t.startTitle}</h2>
     <p>{t.startBody}</p>
     <div className="field">
+      <label htmlFor="preferred-language">{t.preferredLanguage} <span className="required">*</span></label>
+      <select id="preferred-language" value={language} onChange={(event) => setLanguage(event.target.value as Language)} data-testid="select-preferred-language">
+        <option value="en">English</option>
+        <option value="es">Español</option>
+      </select>
+    </div>
+    <div className="field">
       <label htmlFor="business-type">{t.business} <span className="required">*</span></label>
       <select id="business-type" value={intake.businessType} onChange={(event) => update('businessType', event.target.value as BusinessType)} data-testid="select-business-type">
         <option value="">Select one</option>
@@ -201,13 +217,19 @@ function IntakeForm({ intake, setIntake, onGenerate, language }: { intake: Intak
         <div><input id="zip" inputMode="numeric" maxLength={5} placeholder={t.zip} value={intake.zip} onChange={(event) => update('zip', event.target.value.replace(/\D/g, ''))} data-testid="input-zip" aria-label={t.zip} />{errors.zip && <div className="field-error">{errors.zip}</div>}</div>
       </div>
     </div>
-    <span className="mod-label">{t.modifications}</span>
+    <div className="field">
+      <label htmlFor="description">{t.description} <span className="required">*</span></label>
+      <textarea id="description" placeholder={t.descriptionPlaceholder} value={intake.description} onChange={(event) => update('description', event.target.value)} data-testid="textarea-description" />
+      {errors.description && <div className="field-error" data-testid="error-description">{errors.description}</div>}
+    </div>
+    <span className="mod-label">{t.modifications} <span className="required">*</span></span>
     <div className="choice-grid">
       {Object.entries(modificationLabels).map(([value, label]) => <div className="choice" key={value}>
         <input type="checkbox" id={`mod-${value}`} checked={intake.modifications.includes(value as Modification)} onChange={() => toggleModification(value as Modification)} data-testid={`checkbox-modification-${value}`} />
         <label htmlFor={`mod-${value}`}>{label}</label>
       </div>)}
     </div>
+    {errors.modifications && <div className="field-error" style={{ marginTop: '8px' }} data-testid="error-modifications">{errors.modifications}</div>}
     <div className="field">
       <label>{t.documents}</label>
       <div className="upload-zone"><FileText size={17} /><span>{t.upload}</span><input ref={fileRef} type="file" accept=".pdf,.png,.jpg,.jpeg" multiple onChange={handleFiles} data-testid="input-documents" /></div>
@@ -219,7 +241,7 @@ function IntakeForm({ intake, setIntake, onGenerate, language }: { intake: Intak
   </section>;
 }
 
-function IntakeView({ intake, setIntake, onGenerate, language }: { intake: Intake; setIntake: (next: Intake) => void; onGenerate: () => void; language: Language }) {
+function IntakeView({ intake, setIntake, onGenerate, language, setLanguage }: { intake: Intake; setIntake: (next: Intake) => void; onGenerate: () => void; language: Language; setLanguage: (lang: Language) => void }) {
   const t = copy[language];
   return <><div className="hero-wrap"><main className="hero">
     <div>
@@ -232,7 +254,7 @@ function IntakeView({ intake, setIntake, onGenerate, language }: { intake: Intak
         <span className="trust-item"><ClipboardCheck size={15} /> {t.trust3}</span>
       </div>
     </div>
-    <IntakeForm intake={intake} setIntake={setIntake} onGenerate={onGenerate} language={language} />
+    <IntakeForm intake={intake} setIntake={setIntake} onGenerate={onGenerate} language={language} setLanguage={setLanguage} />
   </main></div><Steps plan={false} /><section className="footer"><div className="footer-inner"><span>Permit Navigator · San José</span><Disclaimer /></div></section></>;
 }
 
@@ -293,7 +315,7 @@ function PlanView({ intake, language, onStartOver }: { intake: Intake; language:
       <div className="section-title"><h2>{language === 'es' ? 'Mantenga clara la conversación' : 'Keep the conversation clear'}</h2></div>
       <div className="sidebar-card"><p>{t.contact}</p><div className="disclaimer"><Info size={13} /><span>{DISCLAIMER}</span></div></div>
     </div><aside className="plan-sidebar">
-      <div className="sidebar-card"><h3>{language === 'es' ? 'Sus detalles' : 'Your details'}</h3><div className="contact-row"><MapPin size={15} /><div><strong>{language === 'es' ? 'Ubicación' : 'Location'}</strong><span>{intake.address}, {intake.zip}</span></div></div><div className="contact-row"><Building2 size={15} /><div><strong>{language === 'es' ? 'Tipo de negocio' : 'Business type'}</strong><span>{businessLabels[intake.businessType as BusinessType]}</span></div></div><div className="contact-row"><ClipboardCheck size={15} /><div><strong>{language === 'es' ? 'Cambios planeados' : 'Planned changes'}</strong><span>{intake.modifications.length ? intake.modifications.map((item) => modificationLabels[item]).join(', ') : (language === 'es' ? 'Ninguno' : 'None selected')}</span></div></div>{intake.files.length > 0 && <div className="contact-row"><FileText size={15} /><div><strong>{language === 'es' ? 'Archivos adjuntos' : 'Files attached'}</strong><span>{intake.files.length} local file(s)</span></div></div>}</div>
+      <div className="sidebar-card"><h3>{language === 'es' ? 'Sus detalles' : 'Your details'}</h3><div className="contact-row"><FileText size={15} /><div><strong>{language === 'es' ? 'Proyecto' : 'Project'}</strong><span>{intake.description}</span></div></div><div className="contact-row"><MapPin size={15} /><div><strong>{language === 'es' ? 'Ubicación' : 'Location'}</strong><span>{intake.address}, {intake.zip}</span></div></div><div className="contact-row"><Building2 size={15} /><div><strong>{language === 'es' ? 'Tipo de negocio' : 'Business type'}</strong><span>{businessLabels[intake.businessType as BusinessType]}</span></div></div><div className="contact-row"><ClipboardCheck size={15} /><div><strong>{language === 'es' ? 'Cambios planeados' : 'Planned changes'}</strong><span>{intake.modifications.length ? intake.modifications.map((item) => modificationLabels[item]).join(', ') : (language === 'es' ? 'Ninguno' : 'None selected')}</span></div></div>{intake.files.length > 0 && <div className="contact-row"><FileText size={15} /><div><strong>{language === 'es' ? 'Archivos adjuntos' : 'Files attached'}</strong><span>{intake.files.length} local file(s)</span></div></div>}</div>
       <div className="sidebar-card"><h3>{language === 'es' ? 'Hágalo más fácil de leer' : 'Make it easier to read'}</h3><p>{language === 'es' ? 'Use descripciones más cortas mientras revisa el plan. Puede volver al texto completo.' : 'Use shorter descriptions while you scan the plan. You can switch back at any time.'}</p><button className={`button-tertiary ${simplified ? 'active' : ''}`} style={simplified ? { borderColor: 'hsl(var(--primary))', color: 'hsl(var(--primary))' } : {}} onClick={() => setSimplified(!simplified)} data-testid="button-simplify-language"><Lightbulb size={14} /> {simplified ? (language === 'es' ? 'Usar descripciones completas' : 'Use full descriptions') : (language === 'es' ? 'Simplificar lenguaje' : 'Simplify language')}</button></div>
       <div className="sidebar-card"><h3>{language === 'es' ? '¿Listo para otra revisión?' : 'Ready for a second look?'}</h3><p>{language === 'es' ? 'Envíe este borrador al personal para una simulación de revisión. No es un envío oficial.' : 'Send this draft to City Staff for a review simulation. It is not an official submission.'}</p><button className="button-primary" onClick={sendToStaff} disabled={reviewState === 'sent' || reviewState === 'reviewed'} data-testid="button-send-city-staff"><Send size={14} /> {reviewState === 'sent' || reviewState === 'reviewed' ? (language === 'es' ? 'Enviado al personal' : 'Sent to City Staff') : t.staff}</button><Disclaimer className="intake-disclaimer" /></div>
     </aside></div>
@@ -307,7 +329,7 @@ function Home() {
   const [loading, setLoading] = useState(false);
   const startOver = () => { setHasPlan(false); setLoading(false); setIntake(emptyIntake); };
   const generate = () => { setLoading(true); window.setTimeout(() => { setLoading(false); setHasPlan(true); }, 1050); };
-  return <div className="app-shell"><Topbar language={language} setLanguage={setLanguage} onStartOver={startOver} canStartOver={hasPlan} />{loading ? <LoadingPlan language={language} /> : hasPlan ? <PlanView intake={intake} language={language} onStartOver={startOver} /> : <IntakeView intake={intake} setIntake={setIntake} onGenerate={generate} language={language} />}</div>;
+  return <div className="app-shell"><Topbar language={language} setLanguage={setLanguage} onStartOver={startOver} canStartOver={hasPlan} />{loading ? <LoadingPlan language={language} /> : hasPlan ? <PlanView intake={intake} language={language} onStartOver={startOver} /> : <IntakeView intake={intake} setIntake={setIntake} onGenerate={generate} language={language} setLanguage={setLanguage} />}</div>;
 }
 
 function Router() {

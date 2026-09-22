@@ -1,36 +1,37 @@
-# [Project name]
+# San Jose Permit Navigator
 
-_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
+A bilingual prototype that helps first-time small-business owners assemble a permit action plan and route it through a simulated City staff review.
 
 ## Run & Operate
 
-- `pnpm --filter @workspace/api-server run dev` — run the API server (port 5000)
+- `pnpm --filter @workspace/permit-navigator run dev` — run the web app through its managed workflow
 - `pnpm run typecheck` — full typecheck across all packages
 - `pnpm run build` — typecheck + build all packages
-- `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
-- `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
-- Required env: `DATABASE_URL` — Postgres connection string
 
 ## Stack
 
 - pnpm workspaces, Node.js 24, TypeScript 5.9
-- API: Express 5
-- DB: PostgreSQL + Drizzle ORM
-- Validation: Zod (`zod/v4`), `drizzle-zod`
-- API codegen: Orval (from OpenAPI spec)
-- Build: esbuild (CJS bundle)
+- Web: React, Vite, Tailwind CSS
+- UI state and permit sample data are local to the web artifact
 
 ## Where things live
 
-_Populate as you build — short repo map plus pointers to the source-of-truth file for DB schema, API contracts, theme files, etc._
+- `artifacts/permit-navigator/src/App.tsx` — applicant and staff-review workflows
+- `artifacts/permit-navigator/src/requirements.ts` — prototype permit knowledge base
+- `artifacts/permit-navigator/src/index.css` — visual system and responsive/print styles
 
 ## Architecture decisions
 
-_Populate as you build — non-obvious choices a reader couldn't infer from the code (3-5 bullets)._
+- This prototype intentionally uses local data and local state; it does not claim to provide official permit determinations.
+- Unsupported combinations return a no-match message rather than generating unverified rules.
+- Staff editing blocks final submission until the reviewed change is saved.
 
 ## Product
 
-_Describe the high-level user-facing capabilities of this app once they exist._
+- Collects business location, category, planned modifications, project description, language, and optional documents.
+- Generates a structured permit action plan from a local five-category knowledge base.
+- Supports English/Spanish UI, plain-language descriptions, printing, and simulated staff submission.
+- Provides City staff approval, rejection, notes, and recommendation overrides.
 
 ## User preferences
 
