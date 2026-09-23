@@ -26,6 +26,7 @@ import {
   ShieldCheck,
   Sparkles,
   X,
+  Languages,
 } from 'lucide-react';
 import {
   Route,
@@ -35,152 +36,196 @@ import {
 } from 'wouter';
 import {
   DISCLAIMER,
-  businessLabels,
-  modificationLabels,
-  requirements,
+  requirementsConfig,
+  type RequirementId,
   type BusinessType,
   type Modification,
-  type Requirement,
 } from './requirements';
+import { copy, type Language } from './copy';
+import { toast } from '@/hooks/use-toast';
+import { ToastAction } from '@/components/ui/toast';
 
 const queryClient = new QueryClient();
 
 type Intake = {
   businessType: BusinessType | '';
+  businessOther: string;
   address: string;
   zip: string;
   description: string;
   modifications: Modification[];
+  modificationOther: string;
   files: File[];
 };
 
-type Language = 'en' | 'es';
-type ReviewState = 'draft' | 'sent' | 'reviewed' | 'rejected';
+type ReviewState = 'draft' | 'sent' | 'reviewed';
 
-const emptyIntake: Intake = { businessType: '', address: '', zip: '', description: '', modifications: [], files: [] };
-
-const copy = {
-  en: {
-    newGuide: 'New business permit guide',
-    eyebrow: 'San José · Small business navigator',
-    title: <>A clearer first step for your <em>new business.</em></>,
-    intro: 'Tell us a little about your project. We’ll organize possible city touchpoints into a practical plan you can review with City Staff.',
-    trust1: 'Built for first-time owners',
-    trust2: 'Plain-language steps',
-    trust3: 'City Staff review built in',
-    startKicker: 'Start here',
-    startTitle: 'Tell us about your project',
-    startBody: 'A few details help us find the right starting points. This takes about two minutes.',
-    business: 'What are you opening?',
-    location: 'Where will it be located?',
-    address: 'Street address',
-    zip: 'ZIP code',
-    description: 'Project description',
-    descriptionPlaceholder: 'Briefly tell us what you plan to do at this location...',
-    preferredLanguage: 'Preferred language',
-    modifications: 'What changes are planned?',
-    documents: 'Have documents already?',
-    upload: 'Add plans, lease, or other files',
-    generate: 'Build my action plan',
-    noFiles: 'No file chosen',
-    planTitle: 'Your action plan',
-    planIntro: 'A starting point organized from the details you shared.',
-    review: 'Requires review',
-    print: 'Print / save plan',
-    staff: 'Send to City Staff',
-    startOver: 'Start over',
-    matched: 'possible starting points',
-    nextSteps: 'Suggested next steps',
-    docs: 'Have ready',
-    source: 'Source',
-    contact: 'Questions? Start with the department listed on each item.',
-  },
-  es: {
-    newGuide: 'Guía para nuevos negocios',
-    eyebrow: 'San José · Guía para pequeños negocios',
-    title: <>Un primer paso más claro para su <em>nuevo negocio.</em></>,
-    intro: 'Cuéntenos un poco sobre su proyecto. Organizaremos posibles trámites en un plan práctico para revisar con el personal de la Ciudad.',
-    trust1: 'Para dueños primerizos',
-    trust2: 'Pasos en lenguaje sencillo',
-    trust3: 'Revisión del personal incluida',
-    startKicker: 'Comience aquí',
-    startTitle: 'Cuéntenos sobre su proyecto',
-    startBody: 'Unos detalles nos ayudan a encontrar los puntos de partida correctos. Toma aproximadamente dos minutos.',
-    business: '¿Qué va a abrir?',
-    location: '¿Dónde estará ubicado?',
-    address: 'Dirección',
-    zip: 'Código postal',
-    description: 'Descripción del proyecto',
-    descriptionPlaceholder: 'Describa brevemente lo que planea hacer en esta ubicación...',
-    preferredLanguage: 'Idioma preferido',
-    modifications: '¿Qué cambios planea?',
-    documents: '¿Ya tiene documentos?',
-    upload: 'Agregue planos, contrato u otros archivos',
-    generate: 'Crear mi plan de acción',
-    noFiles: 'No se eligió archivo',
-    planTitle: 'Su plan de acción',
-    planIntro: 'Un punto de partida organizado con los detalles que compartió.',
-    review: 'Requiere revisión',
-    print: 'Imprimir / guardar plan',
-    staff: 'Enviar al personal',
-    startOver: 'Comenzar de nuevo',
-    matched: 'posibles puntos de partida',
-    nextSteps: 'Siguientes pasos sugeridos',
-    docs: 'Tenga listo',
-    source: 'Fuente',
-    contact: '¿Preguntas? Comience con el departamento indicado en cada tema.',
-  },
+const emptyIntake: Intake = {
+  businessType: '',
+  businessOther: '',
+  address: '',
+  zip: '',
+  description: '',
+  modifications: [],
+  modificationOther: '',
+  files: []
 };
 
 function Disclaimer({ className = '' }: { className?: string }) {
   return <div className={`disclaimer ${className}`} data-testid="text-prototype-disclaimer"><Info size={13} /> <span>{DISCLAIMER}</span></div>;
 }
 
-function Topbar({ language, setLanguage, onStartOver, canStartOver }: { language: Language; setLanguage: (lang: Language) => void; onStartOver: () => void; canStartOver: boolean }) {
+function getMatchedRequirements(intake: Intake): RequirementId[] {
+  const customText = `${intake.businessOther} ${intake.modificationOther} ${intake.description}`.toLowerCase();
+  const hasPredefinedBusiness = intake.businessType !== '' && intake.businessType !== 'other';
+  const foodBusinesses: BusinessType[] = ['boba', 'cafe', 'restaurant', 'kitchen'];
+  const buildingChanges: Modification[] = ['plumbing', 'walls', 'hvac', 'electrical', 'exterior'];
+  
+  const matches = (Object.keys(requirementsConfig) as RequirementId[]).filter(reqId => {
+    // Deterministic matching from selected structured inputs.
+    let exactMatch =
+      ((reqId === 'business-registration' || reqId === 'zoning-clearance') && hasPredefinedBusiness) ||
+      (reqId === 'health-safety' && foodBusinesses.includes(intake.businessType as BusinessType)) ||
+      (reqId === 'building-permits' && buildingChanges.some(change => intake.modifications.includes(change))) ||
+      (reqId === 'sign-permits' && (intake.modifications.includes('signage') || intake.modifications.includes('exterior')));
+    
+    // Keyword fallback matching with word boundaries
+    let keywordMatch = false;
+    if (reqId === 'health-safety') {
+      keywordMatch = /\b(food|cook|kitchen|eat|bake|meat|drink|beverage|cafe|restaurant|boba)\b/i.test(customText);
+    } else if (reqId === 'building-permits') {
+      keywordMatch = /\b(build|construct|wall|walls|plumb|plumbing|pipe|water|electric|electrical|wire|hvac|air|heat|cool|vent)\b/i.test(customText);
+    } else if (reqId === 'sign-permits') {
+      keywordMatch = /\b(sign|signs|signage|banner|display|exterior|outside|awning)\b/i.test(customText);
+    } else if (reqId === 'business-registration' || reqId === 'zoning-clearance') {
+      // Broadly applicable if there's any sign of a business
+      keywordMatch = /\b(open|store|shop|sell|service|office|business|company|location)\b/i.test(customText);
+    }
+
+    return exactMatch || keywordMatch;
+  });
+
+  // If there are matches but no general ones, add them if applicable
+  const hasSpecifics = matches.some(m => !['business-registration', 'zoning-clearance'].includes(m));
+  if (hasSpecifics) {
+    if (!matches.includes('business-registration')) matches.push('business-registration');
+    if (!matches.includes('zoning-clearance')) matches.push('zoning-clearance');
+  }
+
+  // Preserve original order based on config definition
+  return (Object.keys(requirementsConfig) as RequirementId[]).filter(id => matches.includes(id));
+}
+
+function Topbar({
+  language,
+  setLanguage,
+  customLanguage,
+  setCustomLanguage,
+  simplified,
+  setSimplified,
+  activeTab,
+  setActiveTab,
+}: {
+  language: Language;
+  setLanguage: (lang: Language) => void;
+  customLanguage: string;
+  setCustomLanguage: (val: string) => void;
+  simplified: boolean;
+  setSimplified: (val: boolean) => void;
+  activeTab: 'applicant' | 'staff';
+  setActiveTab: (tab: 'applicant' | 'staff') => void;
+}) {
+  const t = copy[language === 'other' ? 'en' : language];
+  const wordCount = customLanguage.trim() ? customLanguage.trim().split(/\s+/).length : 0;
+  
   return (
     <header className="topbar">
       <div className="brand" data-testid="brand-permit-navigator">
         <div className="brand-mark"><Landmark size={19} /></div>
         <div><div className="brand-name">Permit Navigator</div><div className="brand-sub">City of San José · Prototype</div></div>
       </div>
+      
+      <div className="topbar-tabs">
+        <button className={`tab-button ${activeTab === 'applicant' ? 'active' : ''}`} onClick={() => setActiveTab('applicant')} data-testid="tab-applicant">{t.applicantView}</button>
+        <button className={`tab-button ${activeTab === 'staff' ? 'active' : ''}`} onClick={() => setActiveTab('staff')} data-testid="tab-staff">{t.staffPortal}</button>
+      </div>
+
       <div className="top-actions">
-        {canStartOver && <button className="text-button" onClick={onStartOver} data-testid="button-start-over-top"><ArrowLeft size={14} /> {copy[language].startOver}</button>}
-        <div className="language-toggle" aria-label="Choose language">
-          <button className={language === 'en' ? 'active' : ''} onClick={() => setLanguage('en')} data-testid="button-language-en">EN</button>
-          <button className={language === 'es' ? 'active' : ''} onClick={() => setLanguage('es')} data-testid="button-language-es">ES</button>
+        <button className={`button-tertiary simplify-toggle ${simplified ? 'active' : ''}`} onClick={() => setSimplified(!simplified)} data-testid="button-simplify-language">
+          <Lightbulb size={14} /> {simplified ? t.fullDescriptions : t.simplifyLanguage}
+        </button>
+
+        <div className="language-controls">
+          <Languages size={15} className="text-muted-foreground" />
+          <select value={language} onChange={(e) => setLanguage(e.target.value as Language)} data-testid="select-language-global" aria-label="Select Language">
+            <option value="en">English</option>
+            <option value="es">Español</option>
+            <option value="vi">Tiếng Việt</option>
+            <option value="zh">中文</option>
+            <option value="tl">Tagalog</option>
+            <option value="other">Something else</option>
+          </select>
+          {language === 'other' && (
+            <input
+              type="text"
+              value={customLanguage}
+              onChange={(e) => setCustomLanguage(e.target.value)}
+              placeholder={t.customLanguagePlaceholder}
+              aria-label={t.customLanguageLabel}
+              className={wordCount > 50 ? 'error' : ''}
+              data-testid="input-custom-language"
+            />
+          )}
         </div>
       </div>
     </header>
   );
 }
 
-function Steps({ plan }: { plan: boolean }) {
+function Steps({ plan, language }: { plan: boolean; language: Language }) {
+  const t = copy[language === 'other' ? 'en' : language];
   return <div className="steps-strip"><div className="steps-inner">
-    <div className={`step ${!plan ? 'current' : ''}`}><span className="step-number">{plan ? <Check size={13} /> : '1'}</span> Tell us about your project</div>
+    <div className={`step ${!plan ? 'current' : ''}`}><span className="step-number">{plan ? <Check size={13} /> : '1'}</span> {t.step1}</div>
     <div className="step-line" />
-    <div className={`step ${plan ? 'current' : ''}`}><span className="step-number">2</span> Review your action plan</div>
+    <div className={`step ${plan ? 'current' : ''}`}><span className="step-number">2</span> {t.step2}</div>
     <div className="step-line" />
-    <div className="step"><span className="step-number">3</span> Talk with City Staff</div>
+    <div className="step"><span className="step-number">3</span> {t.step3}</div>
   </div></div>;
 }
 
-function IntakeForm({ intake, setIntake, onGenerate, language, setLanguage }: { intake: Intake; setIntake: (next: Intake) => void; onGenerate: () => void; language: Language; setLanguage: (lang: Language) => void }) {
-  const t = copy[language];
+function IntakeForm({ intake, setIntake, onGenerate, language, customLanguage }: { intake: Intake; setIntake: (next: Intake) => void; onGenerate: () => void; language: Language; customLanguage: string }) {
+  const t = copy[language === 'other' ? 'en' : language];
   const [errors, setErrors] = useState<Record<string, string>>({});
   const fileRef = useRef<HTMLInputElement>(null);
+  
   const update = (key: keyof Intake, value: Intake[keyof Intake]) => setIntake({ ...intake, [key]: value });
   const toggleModification = (mod: Modification) => update('modifications', intake.modifications.includes(mod) ? intake.modifications.filter((item) => item !== mod) : [...intake.modifications, mod]);
+  
   const validateAndGenerate = () => {
     const next: Record<string, string> = {};
-    if (!intake.businessType) next.business = language === 'es' ? 'Elija el tipo de negocio más cercano.' : 'Choose the closest business type.';
-    if (!intake.address.trim()) next.address = language === 'es' ? 'Ingrese la dirección del proyecto.' : 'Enter the project street address.';
-    if (!/^\d{5}$/.test(intake.zip)) next.zip = language === 'es' ? 'Ingrese un código postal de 5 dígitos.' : 'Enter a 5-digit ZIP code.';
-    if (!intake.description.trim()) next.description = language === 'es' ? 'Proporcione una breve descripción del proyecto.' : 'Please provide a brief project description.';
-    if (intake.modifications.length === 0) next.modifications = language === 'es' ? 'Seleccione al menos un cambio planeado.' : 'Please select at least one planned change.';
+    if (!intake.businessType) next.business = t.errorBusiness;
+    if (intake.businessType === 'other' && !intake.businessOther.trim()) next.businessOther = t.errorCustomBusiness;
+    if (!intake.address.trim()) next.address = t.errorAddress;
+    if (!/^\d{5}$/.test(intake.zip)) next.zip = t.errorZip;
+    if (!intake.description.trim()) next.description = t.errorDescription;
+    if (intake.modifications.length === 0) next.modifications = t.errorModifications;
+    if (intake.modifications.includes('other') && !intake.modificationOther.trim()) next.modificationOther = t.errorCustomMod;
+    
+    if (language === 'other') {
+      const trimmed = customLanguage.trim();
+      if (!trimmed) {
+        next.language = t.errorCustomLangRequired;
+      } else {
+        const words = trimmed.split(/\s+/).length;
+        if (words > 50) next.language = t.errorLanguage;
+      }
+    }
+
     if (Object.keys(next).length) { setErrors(next); return; }
     setErrors({});
     onGenerate();
   };
+  
   const handleFiles = (event: React.ChangeEvent<HTMLInputElement>) => {
     const selected = Array.from(event.target.files ?? []);
     const allowed = ['application/pdf', 'image/png', 'image/jpeg'];
@@ -191,25 +236,28 @@ function IntakeForm({ intake, setIntake, onGenerate, language, setLanguage }: { 
     setErrors((current) => ({ ...current, files: '' }));
     update('files', [...intake.files, ...selected]);
   };
+  
   return <section className="intake-card" aria-labelledby="intake-title">
     <div className="card-kicker">{t.startKicker}</div>
     <h2 id="intake-title">{t.startTitle}</h2>
     <p>{t.startBody}</p>
-    <div className="field">
-      <label htmlFor="preferred-language">{t.preferredLanguage} <span className="required">*</span></label>
-      <select id="preferred-language" value={language} onChange={(event) => setLanguage(event.target.value as Language)} data-testid="select-preferred-language">
-        <option value="en">English</option>
-        <option value="es">Español</option>
-      </select>
-    </div>
+    
     <div className="field">
       <label htmlFor="business-type">{t.business} <span className="required">*</span></label>
       <select id="business-type" value={intake.businessType} onChange={(event) => update('businessType', event.target.value as BusinessType)} data-testid="select-business-type">
-        <option value="">Select one</option>
-        {Object.entries(businessLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+        <option value="">{t.selectOne}</option>
+        {Object.entries(t.businessLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
       </select>
       {errors.business && <div className="field-error" data-testid="error-business">{errors.business}</div>}
+      
+      {intake.businessType === 'other' && (
+        <div style={{ marginTop: '8px' }}>
+          <textarea placeholder={t.businessOtherDesc} value={intake.businessOther} onChange={e => update('businessOther', e.target.value)} data-testid="textarea-business-other" style={{ minHeight: '60px' }} />
+          {errors.businessOther && <div className="field-error">{errors.businessOther}</div>}
+        </div>
+      )}
     </div>
+    
     <div className="field">
       <label>{t.location} <span className="required">*</span></label>
       <div className="input-row">
@@ -217,32 +265,45 @@ function IntakeForm({ intake, setIntake, onGenerate, language, setLanguage }: { 
         <div><input id="zip" inputMode="numeric" maxLength={5} placeholder={t.zip} value={intake.zip} onChange={(event) => update('zip', event.target.value.replace(/\D/g, ''))} data-testid="input-zip" aria-label={t.zip} />{errors.zip && <div className="field-error">{errors.zip}</div>}</div>
       </div>
     </div>
+    
     <div className="field">
       <label htmlFor="description">{t.description} <span className="required">*</span></label>
       <textarea id="description" placeholder={t.descriptionPlaceholder} value={intake.description} onChange={(event) => update('description', event.target.value)} data-testid="textarea-description" />
       {errors.description && <div className="field-error" data-testid="error-description">{errors.description}</div>}
     </div>
+    
     <span className="mod-label">{t.modifications} <span className="required">*</span></span>
     <div className="choice-grid">
-      {Object.entries(modificationLabels).map(([value, label]) => <div className="choice" key={value}>
+      {Object.entries(t.modificationLabels).map(([value, label]) => <div className="choice" key={value}>
         <input type="checkbox" id={`mod-${value}`} checked={intake.modifications.includes(value as Modification)} onChange={() => toggleModification(value as Modification)} data-testid={`checkbox-modification-${value}`} />
         <label htmlFor={`mod-${value}`}>{label}</label>
       </div>)}
     </div>
     {errors.modifications && <div className="field-error" style={{ marginTop: '8px' }} data-testid="error-modifications">{errors.modifications}</div>}
+    
+    {intake.modifications.includes('other') && (
+      <div className="field" style={{ marginTop: '12px' }}>
+        <textarea placeholder={t.modOtherDesc} value={intake.modificationOther} onChange={e => update('modificationOther', e.target.value)} data-testid="textarea-modification-other" style={{ minHeight: '60px' }} />
+        {errors.modificationOther && <div className="field-error">{errors.modificationOther}</div>}
+      </div>
+    )}
+    
     <div className="field">
       <label>{t.documents}</label>
       <div className="upload-zone"><FileText size={17} /><span>{t.upload}</span><input ref={fileRef} type="file" accept=".pdf,.png,.jpg,.jpeg" multiple onChange={handleFiles} data-testid="input-documents" /></div>
       {intake.files.length > 0 && <div className="file-list" data-testid="text-uploaded-files">{intake.files.map((file) => file.name).join(', ')}</div>}
       {errors.files && <div className="field-error">{errors.files}</div>}
     </div>
+    
+    {errors.language && <div className="field-error" style={{ marginTop: '16px' }}>{errors.language}</div>}
+    
     <button className="button-primary" onClick={validateAndGenerate} data-testid="button-generate-plan">{t.generate} <ArrowRight size={16} /></button>
     <Disclaimer className="intake-disclaimer" />
   </section>;
 }
 
-function IntakeView({ intake, setIntake, onGenerate, language, setLanguage }: { intake: Intake; setIntake: (next: Intake) => void; onGenerate: () => void; language: Language; setLanguage: (lang: Language) => void }) {
-  const t = copy[language];
+function IntakeView({ intake, setIntake, onGenerate, language, customLanguage }: { intake: Intake; setIntake: (next: Intake) => void; onGenerate: () => void; language: Language; customLanguage: string }) {
+  const t = copy[language === 'other' ? 'en' : language];
   return <><div className="hero-wrap"><main className="hero">
     <div>
       <div className="eyebrow">{t.eyebrow}</div>
@@ -254,88 +315,426 @@ function IntakeView({ intake, setIntake, onGenerate, language, setLanguage }: { 
         <span className="trust-item"><ClipboardCheck size={15} /> {t.trust3}</span>
       </div>
     </div>
-    <IntakeForm intake={intake} setIntake={setIntake} onGenerate={onGenerate} language={language} setLanguage={setLanguage} />
-  </main></div><Steps plan={false} /><section className="footer"><div className="footer-inner"><span>Permit Navigator · San José</span><Disclaimer /></div></section></>;
+    <IntakeForm intake={intake} setIntake={setIntake} onGenerate={onGenerate} language={language} customLanguage={customLanguage} />
+  </main></div><Steps plan={false} language={language} /><section className="footer"><div className="footer-inner"><span>Permit Navigator · San José</span><Disclaimer /></div></section></>;
 }
 
 function LoadingPlan({ language }: { language: Language }) {
-  return <div className="plan-shell loading-plan"><div className="loading-inner"><div className="loading-mark"><Sparkles size={25} /></div><h2>{language === 'es' ? 'Organizando su plan' : 'Organizing your plan'}</h2><p>{language === 'es' ? 'Estamos revisando los detalles del proyecto…' : 'We’re reviewing the project details and finding useful starting points…'}</p><div className="loading-track" /></div></div>;
+  const t = copy[language === 'other' ? 'en' : language];
+  return <div className="plan-shell loading-plan"><div className="loading-inner"><div className="loading-mark"><Sparkles size={25} /></div><h2>{t.loadingTitle}</h2><p>{t.loadingDesc}</p><div className="loading-track" /></div></div>;
 }
 
-function RequirementCard({ requirement, language, note, onEdit }: { requirement: Requirement; language: Language; note?: string; onEdit?: () => void }) {
-  const simplified = language === 'es' ? `Versión sencilla: ${requirement.simplified_description}` : requirement.simplified_description;
-  return <article className="requirement-card" data-testid={`card-requirement-${requirement.id}`}>
-    <div className="requirement-top"><div className="req-icon"><Building2 size={18} /></div><div><h3>{requirement.requirement_name}</h3><p>{simplified}</p></div><span className="req-department">{requirement.city_department}</span></div>
-    <div className="req-body"><div><h4>{language === 'es' ? 'Documentos' : 'Documents'}</h4><ul>{requirement.required_documents.map((item) => <li key={item}>{item}</li>)}</ul></div><div><h4>{copy[language].nextSteps}</h4><ul>{requirement.suggested_next_steps.map((item) => <li key={item}>{item}</li>)}</ul><a className="source-link" href={requirement.source_url} target="_blank" rel="noreferrer" data-testid={`link-source-${requirement.id}`}>{copy[language].source}: {requirement.source_title} <ExternalLink size={12} /></a></div></div>
-    {note && <div className="req-note"><strong>City Staff note:</strong> {note}</div>}
-    {onEdit && <div style={{ padding: '0 20px 16px' }}><button className="button-tertiary" onClick={onEdit} data-testid={`button-edit-requirement-${requirement.id}`}><Pencil size={13} /> Edit recommendation</button></div>}
+function RequirementCard({ reqId, language, simplified, note, onEdit }: { reqId: RequirementId; language: Language; simplified: boolean; note?: string; onEdit?: () => void }) {
+  const t = copy[language === 'other' ? 'en' : language];
+  const reqCopy = t.requirements[reqId];
+  const config = requirementsConfig[reqId];
+  
+  const displayedDesc = simplified ? reqCopy.simpDesc : reqCopy.desc;
+  const displayedDocs = simplified ? reqCopy.simpDocs : reqCopy.docs;
+  const displayedSteps = simplified ? reqCopy.simpSteps : reqCopy.steps;
+  
+  return <article className="requirement-card" data-testid={`card-requirement-${reqId}`}>
+    <div className="requirement-top">
+      <div className="req-icon"><Building2 size={18} /></div>
+      <div><h3>{reqCopy.name}</h3><p>{displayedDesc}</p></div>
+      <span className="req-department">{reqCopy.dept}</span>
+    </div>
+    <div className="req-body">
+      <div><h4>{t.documentsLabel}</h4><ul>{displayedDocs.map((item) => <li key={item}>{item}</li>)}</ul></div>
+      <div><h4>{t.nextSteps}</h4><ul>{displayedSteps.map((item) => <li key={item}>{item}</li>)}</ul><a className="source-link" href={config.source_url} target="_blank" rel="noreferrer" data-testid={`link-source-${reqId}`}>{t.source}: {reqCopy.sourceTitle} <ExternalLink size={12} /></a></div>
+    </div>
+    {note && <div className="req-note"><strong>{t.cityStaffNote}</strong> {note}</div>}
+    {onEdit && <div style={{ padding: '0 20px 16px' }}><button className="button-tertiary" onClick={onEdit} data-testid={`button-edit-requirement-${reqId}`}><Pencil size={13} /> {t.editRecommendation}</button></div>}
     <Disclaimer className="req-note" />
   </article>;
 }
 
-function StaffReview({ requirementsToShow, notes, onApprove, onReject, onAddNote, onOverride, override, language }: {
-  requirementsToShow: Requirement[]; notes: Record<string, string>; onApprove: (id: string) => void; onReject: (id: string) => void; onAddNote: (id: string, note: string) => void; onOverride: (id: string, description: string) => void; override: { id: string; description: string } | null; language: Language;
+function StaffPortal({ 
+  intake, 
+  reviewState, 
+  setReviewState, 
+  rejected, 
+  setRejected,
+  notes, 
+  setNotes,
+  overrides,
+  setOverrides
+}: { 
+  intake: Intake;
+  reviewState: ReviewState;
+  setReviewState: (state: ReviewState) => void;
+  rejected: RequirementId[];
+  setRejected: (val: RequirementId[]) => void;
+  notes: Record<string, string>;
+  setNotes: (val: (c: Record<string, string>) => Record<string, string>) => void;
+  overrides: Record<string, string>;
+  setOverrides: (val: (c: Record<string, string>) => Record<string, string>) => void;
 }) {
-  const [noteFor, setNoteFor] = useState<string | null>(null);
+  const matched = useMemo(() => getMatchedRequirements(intake), [intake]);
+  const [noteFor, setNoteFor] = useState<RequirementId | null>(null);
   const [noteText, setNoteText] = useState('');
-  const [overrideText, setOverrideText] = useState(override?.description ?? '');
-  const t = copy[language];
-  return <div className="staff-panel" data-testid="panel-staff-review">
-    <div className="staff-panel-header"><div><h2>City Staff Review Mode</h2><p>Confirm, adjust, or explain each suggested starting point before the plan is sent back.</p></div><div className="staff-tools"><span className="status-badge"><Clock3 size={13} /> Review in progress</span></div></div>
-    {requirementsToShow.map((requirement) => <div className="staff-edit" key={requirement.id}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center' }}><strong style={{ fontSize: 13 }}>{requirement.requirement_name}</strong><div style={{ display: 'flex', gap: 6 }}><button className="button-secondary" onClick={() => onApprove(requirement.id)} data-testid={`button-approve-${requirement.id}`}><Check size={13} /> Approve</button><button className="button-danger" onClick={() => onReject(requirement.id)} data-testid={`button-reject-${requirement.id}`}><X size={13} /> Reject</button><button className="button-tertiary" onClick={() => { setNoteFor(noteFor === requirement.id ? null : requirement.id); setNoteText(notes[requirement.id] ?? ''); }} data-testid={`button-note-${requirement.id}`}><Plus size={13} /> Note</button></div></div>
-      {noteFor === requirement.id && <div className="staff-edit-actions" style={{ justifyContent: 'stretch' }}><input style={{ flex: 1 }} value={noteText} placeholder="Add a note for the applicant" onChange={(event) => setNoteText(event.target.value)} data-testid={`input-note-${requirement.id}`} /><button className="button-primary" style={{ width: 'auto', marginTop: 0 }} onClick={() => { onAddNote(requirement.id, noteText); setNoteFor(null); }} data-testid={`button-save-note-${requirement.id}`}>Save note</button></div>}
-    </div>)}
-    {requirementsToShow.length > 0 && <div className="staff-edit" style={{ marginTop: 17 }}><strong style={{ fontSize: 13 }}>Override AI recommendation</strong><p style={{ margin: '5px 0 10px', fontSize: 12, color: 'hsl(var(--muted-foreground))' }}>Use this when the generated language needs a city-reviewed correction. Final send stays blocked until you save.</p><div className="input-row"><div><label>Requirement</label><select value={override?.id ?? ''} onChange={(event) => { const selected = requirementsToShow.find((item) => item.id === event.target.value); if (selected) { setOverrideText(selected.description); onOverride(selected.id, selected.description); } }} data-testid="select-override-requirement"><option value="">Choose a recommendation</option>{requirementsToShow.map((item) => <option value={item.id} key={item.id}>{item.requirement_name}</option>)}</select></div><div><label>Reviewed description</label><textarea value={override?.id ? overrideText : ''} disabled={!override?.id} onChange={(event) => setOverrideText(event.target.value)} data-testid="textarea-override" /></div></div><div className="staff-edit-actions"><button className="button-primary" style={{ width: 'auto', marginTop: 0 }} disabled={!override?.id || !overrideText.trim()} onClick={() => override && onOverride(override.id, overrideText)} data-testid="button-save-override">Save reviewed change</button></div></div>}
-    <Disclaimer className="intake-disclaimer" />
-  </div>;
+  const [overrideFor, setOverrideFor] = useState<RequirementId | null>(null);
+  const [overrideText, setOverrideText] = useState('');
+
+  if (reviewState === 'draft') {
+    return (
+      <main className="plan-shell">
+        <div className="no-match" style={{ textAlign: 'center', padding: '60px 20px' }}>
+          <ClipboardCheck size={42} color="hsl(var(--muted-foreground))" style={{ margin: '0 auto 16px' }} />
+          <h2>Queue Empty</h2>
+          <p>No plan has been submitted for review yet.</p>
+        </div>
+      </main>
+    );
+  }
+
+  const isLocked = reviewState === 'reviewed';
+  const hasUnsavedOverride = overrideFor !== null; // Blocks Complete Review if any override form is open (dirty or blank)
+
+  return (
+    <main className="plan-shell">
+      <div className="plan-header">
+        <div>
+          <div className="eyebrow">City Staff Portal</div>
+          <h1>Plan Review</h1>
+          <p>Reviewing submitted action plan for {intake.address}</p>
+        </div>
+        <div className="plan-actions">
+          {isLocked ? (
+            <button className="button-secondary" onClick={() => setReviewState('sent')} data-testid="button-reopen-review">
+              <Pencil size={16} /> Reopen Review
+            </button>
+          ) : (
+            <button 
+              className="button-primary" 
+              onClick={() => setReviewState('reviewed')} 
+              disabled={hasUnsavedOverride} 
+              data-testid="button-complete-review"
+            >
+              <CheckCircle2 size={16} /> Complete Review
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="plan-grid">
+        <div>
+          <div className="staff-panel" data-testid="panel-staff-review">
+            <div className="staff-panel-header">
+              <div>
+                <h2>City Staff Review Mode</h2>
+                <p>Confirm, adjust, or explain each suggested starting point before the plan is marked as reviewed.</p>
+              </div>
+              <div className="staff-tools">
+                <span className={`status-badge ${isLocked ? 'reviewed' : ''}`}><Clock3 size={13} /> {isLocked ? 'Review Completed' : 'Review in progress'}</span>
+              </div>
+            </div>
+
+            {matched.map((reqId) => {
+              const isRejected = rejected.includes(reqId);
+              // Fallback to English for Staff Portal
+              const reqCopyEn = copy['en'].requirements[reqId];
+              const defaultDesc = reqCopyEn.desc;
+              
+              return (
+                <div className="staff-edit" key={reqId} style={{ opacity: isRejected ? 0.6 : 1 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center' }}>
+                    <strong style={{ fontSize: 13, textDecoration: isRejected ? 'line-through' : 'none' }}>{reqCopyEn.name}</strong>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      {isRejected ? (
+                        <button className="button-secondary" disabled={isLocked} onClick={() => setRejected(rejected.filter(id => id !== reqId))} data-testid={`button-reapprove-${reqId}`}><Check size={13} /> Re-approve</button>
+                      ) : (
+                        <>
+                          <button className="button-secondary" disabled={isLocked} onClick={() => setNotes(c => ({ ...c, [reqId]: c[reqId] ?? 'Approved by City Staff.' }))} data-testid={`button-approve-${reqId}`}><Check size={13} /> Approve</button>
+                          <button className="button-danger" disabled={isLocked} onClick={() => setRejected([...rejected, reqId])} data-testid={`button-reject-${reqId}`}><X size={13} /> Reject</button>
+                        </>
+                      )}
+                      <button className="button-tertiary" disabled={isLocked} onClick={() => { setNoteFor(noteFor === reqId ? null : reqId); setNoteText(notes[reqId] ?? ''); }} data-testid={`button-note-${reqId}`}><Plus size={13} /> Note</button>
+                      <button className="button-tertiary" disabled={isLocked} onClick={() => { setOverrideFor(overrideFor === reqId ? null : reqId); setOverrideText(overrides[reqId] ?? defaultDesc); }} data-testid={`button-override-${reqId}`}><Pencil size={13} /> Edit</button>
+                    </div>
+                  </div>
+                  
+                  {noteFor === reqId && (
+                    <div className="staff-edit-actions" style={{ justifyContent: 'stretch' }}>
+                      <input style={{ flex: 1 }} value={noteText} placeholder="Add a note for the applicant" onChange={(event) => setNoteText(event.target.value)} data-testid={`input-note-${reqId}`} />
+                      <button className="button-primary" style={{ width: 'auto', marginTop: 0 }} onClick={() => { setNotes(c => ({ ...c, [reqId]: noteText })); setNoteFor(null); }} data-testid={`button-save-note-${reqId}`}>Save note</button>
+                    </div>
+                  )}
+
+                  {overrideFor === reqId && (
+                    <div style={{ marginTop: '12px' }}>
+                      <label style={{ fontSize: '12px', fontWeight: 'bold' }}>Override Recommendation Text</label>
+                      <textarea value={overrideText} onChange={e => setOverrideText(e.target.value)} style={{ width: '100%', minHeight: '60px', padding: '8px', marginTop: '4px' }} />
+                      <div className="staff-edit-actions">
+                        <button className="button-primary" disabled={!overrideText.trim()} style={{ width: 'auto', marginTop: 0 }} onClick={() => { setOverrides(c => ({ ...c, [reqId]: overrideText })); setOverrideFor(null); }} data-testid={`button-save-override-${reqId}`}>Save Override</button>
+                      </div>
+                    </div>
+                  )}
+                  
+                  {!overrideFor && overrides[reqId] && (
+                    <div className="modified-notice" style={{ marginTop: '10px' }}><CheckCircle2 size={13} style={{ verticalAlign: 'middle', marginRight: 4 }} /> Overridden: {overrides[reqId]}</div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        <aside className="plan-sidebar">
+           <div className="sidebar-card">
+            <h3>Intake Details</h3>
+            <div className="contact-row"><FileText size={15} /><div><strong>Project</strong><span>{intake.description}</span></div></div>
+            <div className="contact-row"><MapPin size={15} /><div><strong>Location</strong><span>{intake.address}, {intake.zip}</span></div></div>
+            <div className="contact-row"><Building2 size={15} /><div><strong>Business type</strong><span>{intake.businessType === 'other' ? intake.businessOther : (intake.businessType ? copy.en.businessLabels[intake.businessType as BusinessType] : '')}</span></div></div>
+            <div className="contact-row"><ClipboardCheck size={15} /><div><strong>Planned changes</strong><span>{intake.modifications.length ? intake.modifications.map((item) => item === 'other' ? intake.modificationOther : copy.en.modificationLabels[item as Modification]).join(', ') : 'None selected'}</span></div></div>
+            {intake.files.length > 0 && <div className="contact-row"><FileText size={15} /><div><strong>Files attached</strong><span>{intake.files.length} local file(s)</span></div></div>}
+          </div>
+        </aside>
+      </div>
+    </main>
+  );
 }
 
-function PlanView({ intake, language, onStartOver }: { intake: Intake; language: Language; onStartOver: () => void }) {
-  const t = copy[language];
-  const [reviewState, setReviewState] = useState<ReviewState>('draft');
-  const [staffMode, setStaffMode] = useState(false);
-  const [simplified, setSimplified] = useState(false);
-  const [notes, setNotes] = useState<Record<string, string>>({});
-  const [rejected, setRejected] = useState<string[]>([]);
-  const [override, setOverride] = useState<{ id: string; description: string } | null>(null);
-  const [savedOverride, setSavedOverride] = useState(false);
-  const matched = useMemo(() => requirements.filter((item) => intake.businessType !== 'other' && item.applies_to.includes(intake.businessType as BusinessType) && (!item.modifications || item.modifications.some((mod) => intake.modifications.includes(mod)) || !intake.modifications.length)), [intake]);
-  const visible = matched.filter((item) => !rejected.includes(item.id));
-  const sendToStaff = () => { setReviewState('sent'); setStaffMode(true); };
-  const saveOverride = (id: string, description: string) => { setOverride({ id, description }); setSavedOverride(true); setReviewState('reviewed'); };
-  return <><Steps plan /><main className="plan-shell">
-    <div className="plan-header"><div><div className="eyebrow">San José · {language === 'es' ? 'Plan de acción' : 'Action plan'}</div><h1>{t.planTitle}</h1><p>{t.planIntro}</p><Disclaimer className="intake-disclaimer" /></div><div className="plan-actions"><span className={`status-badge ${reviewState === 'reviewed' ? 'reviewed' : reviewState === 'sent' ? 'sent' : ''}`} data-testid="status-plan">{reviewState === 'reviewed' ? 'Reviewed by City Staff' : reviewState === 'sent' ? 'Sent to City Staff' : 'Draft — Requires City Staff Review'}</span><button className="button-tertiary" onClick={() => window.print()} data-testid="button-print-plan"><Printer size={14} /> {t.print}</button><button className="button-secondary" onClick={onStartOver} data-testid="button-start-over"><ArrowLeft size={14} /> {t.startOver}</button></div></div>
-    {savedOverride && <div className="modified-notice" data-testid="notice-modified-by-staff"><CheckCircle2 size={15} style={{ verticalAlign: 'middle', marginRight: 6 }} /> Modified by City Staff · Reviewed language has been applied. Sources and prototype disclaimer remain attached.</div>}
-    {staffMode && <StaffReview requirementsToShow={visible} notes={notes} onApprove={(id) => setNotes((current) => ({ ...current, [id]: current[id] ?? 'Approved by City Staff.' }))} onReject={(id) => setRejected((current) => [...current, id])} onAddNote={(id, note) => setNotes((current) => ({ ...current, [id]: note }))} onOverride={(id, description) => { if (description !== requirements.find((item) => item.id === id)?.description) saveOverride(id, description); else setOverride({ id, description }); }} override={override} language={language} />}
-    <div className="plan-grid"><div>
-      <div className="summary-bar"><div className="summary-cell"><span className="summary-label">{language === 'es' ? 'Negocio' : 'Business'}</span><span className="summary-value" data-testid="text-plan-business">{businessLabels[intake.businessType as BusinessType]}</span></div><div className="summary-cell"><span className="summary-label">{language === 'es' ? 'Ubicación' : 'Project location'}</span><span className="summary-value" data-testid="text-plan-address"><MapPin size={14} style={{ verticalAlign: 'middle', marginRight: 3 }} /> {intake.address}, {intake.zip}</span></div><div className="summary-cell"><span className="summary-label">{language === 'es' ? 'Coincidencias' : 'Matched'}</span><span className="summary-value">{visible.length} {t.matched}</span></div></div>
-      <div className="section-title"><h2>{language === 'es' ? 'Posibles requisitos' : 'Possible requirements'}</h2><span>{visible.length} {t.matched}</span></div>
-      {visible.length === 0 ? <div className="no-match" data-testid="empty-no-match"><AlertCircle size={21} color="hsl(var(--accent))" /><h2>{language === 'es' ? 'Todavía no encontramos una coincidencia local.' : 'We don’t have a local match yet.'}</h2><p>{language === 'es' ? 'No podemos sugerir responsablemente un camino de permisos con estos datos. Comience con el equipo general de asistencia para negocios de la Ciudad y comparta su dirección, uso propuesto y planos. El personal puede ayudarle a identificar el siguiente paso.' : 'We can’t responsibly suggest a permit path from these details. Start with the City’s general business assistance team and share your address, proposed use, and any plans. City Staff can help identify the right next step.'}</p><Disclaimer /></div> : visible.map((item) => <RequirementCard key={item.id} requirement={override?.id === item.id ? { ...item, description: override.description, simplified_description: override.description } : item} language={simplified ? 'en' : language} note={notes[item.id]} onEdit={staffMode ? () => setOverride({ id: item.id, description: item.description }) : undefined} />)}
-      <div className="section-title"><h2>{language === 'es' ? 'Mantenga clara la conversación' : 'Keep the conversation clear'}</h2></div>
-      <div className="sidebar-card"><p>{t.contact}</p><div className="disclaimer"><Info size={13} /><span>{DISCLAIMER}</span></div></div>
-    </div><aside className="plan-sidebar">
-      <div className="sidebar-card"><h3>{language === 'es' ? 'Sus detalles' : 'Your details'}</h3><div className="contact-row"><FileText size={15} /><div><strong>{language === 'es' ? 'Proyecto' : 'Project'}</strong><span>{intake.description}</span></div></div><div className="contact-row"><MapPin size={15} /><div><strong>{language === 'es' ? 'Ubicación' : 'Location'}</strong><span>{intake.address}, {intake.zip}</span></div></div><div className="contact-row"><Building2 size={15} /><div><strong>{language === 'es' ? 'Tipo de negocio' : 'Business type'}</strong><span>{businessLabels[intake.businessType as BusinessType]}</span></div></div><div className="contact-row"><ClipboardCheck size={15} /><div><strong>{language === 'es' ? 'Cambios planeados' : 'Planned changes'}</strong><span>{intake.modifications.length ? intake.modifications.map((item) => modificationLabels[item]).join(', ') : (language === 'es' ? 'Ninguno' : 'None selected')}</span></div></div>{intake.files.length > 0 && <div className="contact-row"><FileText size={15} /><div><strong>{language === 'es' ? 'Archivos adjuntos' : 'Files attached'}</strong><span>{intake.files.length} local file(s)</span></div></div>}</div>
-      <div className="sidebar-card"><h3>{language === 'es' ? 'Hágalo más fácil de leer' : 'Make it easier to read'}</h3><p>{language === 'es' ? 'Use descripciones más cortas mientras revisa el plan. Puede volver al texto completo.' : 'Use shorter descriptions while you scan the plan. You can switch back at any time.'}</p><button className={`button-tertiary ${simplified ? 'active' : ''}`} style={simplified ? { borderColor: 'hsl(var(--primary))', color: 'hsl(var(--primary))' } : {}} onClick={() => setSimplified(!simplified)} data-testid="button-simplify-language"><Lightbulb size={14} /> {simplified ? (language === 'es' ? 'Usar descripciones completas' : 'Use full descriptions') : (language === 'es' ? 'Simplificar lenguaje' : 'Simplify language')}</button></div>
-      <div className="sidebar-card"><h3>{language === 'es' ? '¿Listo para otra revisión?' : 'Ready for a second look?'}</h3><p>{language === 'es' ? 'Envíe este borrador al personal para una simulación de revisión. No es un envío oficial.' : 'Send this draft to City Staff for a review simulation. It is not an official submission.'}</p><button className="button-primary" onClick={sendToStaff} disabled={reviewState === 'sent' || reviewState === 'reviewed'} data-testid="button-send-city-staff"><Send size={14} /> {reviewState === 'sent' || reviewState === 'reviewed' ? (language === 'es' ? 'Enviado al personal' : 'Sent to City Staff') : t.staff}</button><Disclaimer className="intake-disclaimer" /></div>
-    </aside></div>
+function PlanView({ 
+  intake, 
+  language, 
+  simplified,
+  onStartOver,
+  reviewState,
+  setReviewState,
+  rejected,
+  notes,
+  overrides,
+  setActiveTab
+}: { 
+  intake: Intake; 
+  language: Language; 
+  simplified: boolean;
+  onStartOver: () => void;
+  reviewState: ReviewState;
+  setReviewState: (s: ReviewState) => void;
+  rejected: RequirementId[];
+  notes: Record<string, string>;
+  overrides: Record<string, string>;
+  setActiveTab: (t: 'applicant'|'staff') => void;
+}) {
+  const t = copy[language === 'other' ? 'en' : language];
+  const matched = useMemo(() => getMatchedRequirements(intake), [intake]);
+  const visible = matched.filter((reqId) => !rejected.includes(reqId));
+  
+  const sendToStaff = () => { 
+    setReviewState('sent'); 
+    toast({
+      title: "Success",
+      description: "Plan successfully submitted to City Staff queue.",
+      duration: 10000,
+      action: <ToastAction altText="View in City Staff Portal" onClick={() => setActiveTab('staff')}>View in City Staff Portal</ToastAction>
+    });
+  };
+
+  const statusText = reviewState === 'reviewed' ? t.reviewedStatus : reviewState === 'sent' ? t.sentStatus : t.draftStatus;
+  const hasOverrides = Object.keys(overrides).length > 0;
+
+  return <><Steps plan language={language} /><main className="plan-shell">
+    <div className="plan-header">
+      <div>
+        <div className="eyebrow">San José · {t.planTitle}</div>
+        <h1>{t.planTitle}</h1>
+        <p>{t.planIntro}</p>
+        <Disclaimer className="intake-disclaimer" />
+      </div>
+      <div className="plan-actions">
+        <span className={`status-badge ${reviewState === 'reviewed' ? 'reviewed' : reviewState === 'sent' ? 'sent' : ''}`} data-testid="status-plan">{statusText}</span>
+        <button className="button-tertiary" onClick={() => window.print()} data-testid="button-print-plan"><Printer size={14} /> {t.print}</button>
+        <button className="button-secondary" onClick={onStartOver} data-testid="button-start-over"><ArrowLeft size={14} /> {t.startOver}</button>
+      </div>
+    </div>
+    
+    {hasOverrides && reviewState === 'reviewed' && (
+      <div className="modified-notice" data-testid="notice-modified-by-staff">
+        <CheckCircle2 size={15} style={{ verticalAlign: 'middle', marginRight: 6 }} /> 
+        {t.modifiedNotice}
+      </div>
+    )}
+    
+    <div className="plan-grid">
+      <div>
+        <div className="summary-bar">
+          <div className="summary-cell">
+            <span className="summary-label">{t.businessTypeLabel}</span>
+            <span className="summary-value" data-testid="text-plan-business">{intake.businessType === 'other' ? intake.businessOther : (intake.businessType ? t.businessLabels[intake.businessType as BusinessType] : '')}</span>
+          </div>
+          <div className="summary-cell">
+            <span className="summary-label">{t.locationLabel}</span>
+            <span className="summary-value" data-testid="text-plan-address"><MapPin size={14} style={{ verticalAlign: 'middle', marginRight: 3 }} /> {intake.address}, {intake.zip}</span>
+          </div>
+          <div className="summary-cell">
+            <span className="summary-label">{t.matched}</span>
+            <span className="summary-value">{visible.length} {t.matched}</span>
+          </div>
+        </div>
+        
+        <div className="section-title">
+          <h2>{t.possibleRequirements}</h2>
+          <span>{visible.length} {t.matched}</span>
+        </div>
+        
+        {visible.length === 0 ? (
+          <div className="no-match" data-testid="empty-no-match">
+            <AlertCircle size={21} color="hsl(var(--accent))" />
+            <h2>{t.noMatchTitle}</h2>
+            <p>{t.noMatchDesc}</p>
+            <Disclaimer />
+          </div>
+        ) : (
+          visible.map((reqId) => {
+            const overrideText = overrides[reqId];
+            const isOverridden = reviewState === 'reviewed' && !!overrideText;
+            
+            // If it's overridden and marked reviewed, we simulate the 'overridden' structure directly
+            // Otherwise, normal localized card
+            if (isOverridden) {
+              const reqCopy = t.requirements[reqId];
+              const config = requirementsConfig[reqId];
+              return (
+                 <article className="requirement-card" key={reqId} data-testid={`card-requirement-${reqId}`}>
+                  <div className="requirement-top"><div className="req-icon"><Building2 size={18} /></div><div><h3>{reqCopy.name}</h3><p>{overrideText}</p></div><span className="req-department">{reqCopy.dept}</span></div>
+                  <div className="req-body"><div><h4>{t.documentsLabel}</h4><ul>{reqCopy.docs.map((item) => <li key={item}>{item}</li>)}</ul></div><div><h4>{t.nextSteps}</h4><ul>{reqCopy.steps.map((item) => <li key={item}>{item}</li>)}</ul><a className="source-link" href={config.source_url} target="_blank" rel="noreferrer" data-testid={`link-source-${reqId}`}>{t.source}: {reqCopy.sourceTitle} <ExternalLink size={12} /></a></div></div>
+                  {notes[reqId] && <div className="req-note"><strong>{t.cityStaffNote}</strong> {notes[reqId]}</div>}
+                  <Disclaimer className="req-note" />
+                </article>
+              );
+            }
+
+            return (
+              <RequirementCard 
+                key={reqId} 
+                reqId={reqId} 
+                language={language} 
+                simplified={simplified}
+                note={reviewState === 'reviewed' ? notes[reqId] : undefined} 
+              />
+            )
+          })
+        )}
+        
+        <div className="section-title"><h2>{t.keepConversationClear}</h2></div>
+        <div className="sidebar-card"><p>{t.contact}</p><div className="disclaimer"><Info size={13} /><span>{DISCLAIMER}</span></div></div>
+      </div>
+      
+      <aside className="plan-sidebar">
+        <div className="sidebar-card">
+          <h3>{t.yourDetails}</h3>
+          <div className="contact-row"><FileText size={15} /><div><strong>{t.projectLabel}</strong><span>{intake.description}</span></div></div>
+          <div className="contact-row"><MapPin size={15} /><div><strong>{t.locationLabel}</strong><span>{intake.address}, {intake.zip}</span></div></div>
+          <div className="contact-row"><Building2 size={15} /><div><strong>{t.businessTypeLabel}</strong><span>{intake.businessType === 'other' ? intake.businessOther : (intake.businessType ? t.businessLabels[intake.businessType as BusinessType] : '')}</span></div></div>
+          <div className="contact-row"><ClipboardCheck size={15} /><div><strong>{t.plannedChangesLabel}</strong><span>{intake.modifications.length ? intake.modifications.map((item) => item === 'other' ? intake.modificationOther : t.modificationLabels[item]).join(', ') : t.noneSelected}</span></div></div>
+          {intake.files.length > 0 && <div className="contact-row"><FileText size={15} /><div><strong>{t.filesAttached}</strong><span>{t.fileCount(intake.files.length)}</span></div></div>}
+        </div>
+        
+        <div className="sidebar-card">
+          <h3>{t.readyForSecondLook}</h3>
+          <p>{t.sendToStaffDesc}</p>
+          <button className="button-primary" onClick={sendToStaff} disabled={reviewState === 'sent' || reviewState === 'reviewed'} data-testid="button-send-city-staff">
+            <Send size={14} /> {reviewState === 'sent' || reviewState === 'reviewed' ? t.sentStatus : t.staff}
+          </button>
+          <Disclaimer className="intake-disclaimer" />
+        </div>
+      </aside>
+    </div>
   </main><section className="footer"><div className="footer-inner"><span>Permit Navigator · San José</span><Disclaimer /></div></section></>;
 }
 
 function Home() {
+  const [activeTab, setActiveTab] = useState<'applicant' | 'staff'>('applicant');
   const [intake, setIntake] = useState<Intake>(emptyIntake);
   const [language, setLanguage] = useState<Language>('en');
+  const [customLanguage, setCustomLanguage] = useState('');
+  const [simplified, setSimplified] = useState(false);
   const [hasPlan, setHasPlan] = useState(false);
   const [loading, setLoading] = useState(false);
-  const startOver = () => { setHasPlan(false); setLoading(false); setIntake(emptyIntake); };
-  const generate = () => { setLoading(true); window.setTimeout(() => { setLoading(false); setHasPlan(true); }, 1050); };
-  return <div className="app-shell"><Topbar language={language} setLanguage={setLanguage} onStartOver={startOver} canStartOver={hasPlan} />{loading ? <LoadingPlan language={language} /> : hasPlan ? <PlanView intake={intake} language={language} onStartOver={startOver} /> : <IntakeView intake={intake} setIntake={setIntake} onGenerate={generate} language={language} setLanguage={setLanguage} />}</div>;
+  
+  // Shared state for the plan
+  const [reviewState, setReviewState] = useState<ReviewState>('draft');
+  const [notes, setNotes] = useState<Record<string, string>>({});
+  const [rejected, setRejected] = useState<RequirementId[]>([]);
+  const [overrides, setOverrides] = useState<Record<string, string>>({});
+
+  const startOver = () => { 
+    setHasPlan(false); 
+    setLoading(false); 
+    setIntake(emptyIntake); 
+    setReviewState('draft');
+    setNotes({});
+    setRejected([]);
+    setOverrides({});
+  };
+  
+  const generate = () => { 
+    setLoading(true); 
+    window.setTimeout(() => { 
+      setLoading(false); 
+      setHasPlan(true); 
+    }, 1050); 
+  };
+  
+  return (
+    <div className="app-shell">
+      <Topbar 
+        language={language} 
+        setLanguage={setLanguage} 
+        customLanguage={customLanguage}
+        setCustomLanguage={setCustomLanguage}
+        simplified={simplified}
+        setSimplified={setSimplified}
+        activeTab={activeTab}
+        setActiveTab={setActiveTab}
+      />
+      
+      {activeTab === 'staff' ? (
+        <StaffPortal 
+          intake={intake}
+          reviewState={reviewState}
+          setReviewState={setReviewState}
+          rejected={rejected}
+          setRejected={setRejected}
+          notes={notes}
+          setNotes={setNotes}
+          overrides={overrides}
+          setOverrides={setOverrides}
+        />
+      ) : (
+        loading ? (
+          <LoadingPlan language={language} />
+        ) : hasPlan ? (
+          <PlanView 
+            intake={intake} 
+            language={language} 
+            simplified={simplified}
+            onStartOver={startOver}
+            reviewState={reviewState}
+            setReviewState={setReviewState}
+            rejected={rejected}
+            notes={notes}
+            overrides={overrides}
+            setActiveTab={setActiveTab}
+          />
+        ) : (
+          <IntakeView 
+            intake={intake} 
+            setIntake={setIntake} 
+            onGenerate={generate} 
+            language={language} 
+            customLanguage={customLanguage}
+          />
+        )
+      )}
+    </div>
+  );
 }
 
 function Router() {
   return (
-    // Keep a shared shell (sidebar, navbar) outside the boundary so it
-    // survives a page crash.
     <RoutedErrorBoundary>
       <Switch>
         <Route path="/" component={Home} />

@@ -1,0 +1,29 @@
+# OBJECTIVE
+Update the "San Jose Permit Navigator" application to resolve language toggle bugs, expand user inputs, improve matching logic, fix staff review controls, and separate the City Staff portal view.
+
+---
+
+# 1. HEADER & LANGUAGE CONTROLS
+- Header Layout: Move the Language Selector and "Simplify Language" toggle side-by-side into the top navigation bar.
+- Expanded Options: Add additional languages to the dropdown (e.g., English, Spanish, Vietnamese, Chinese, Tagalog) plus a "Something else / Not listed" option.
+- Custom Language Input: When "Something else / Not listed" is selected, display a text field allowing custom entry (limit: 50 words).
+- Comprehensive Localization: Ensure language changes dynamically translate all form labels, dropdown options (e.g., "What changes are planned"), placeholder text, and output card headers.
+- Fix Simplify Language Button: Ensure clicking "Simplify Language" actively converts all technical jargon into concise, plain-language text across the action plan cards.
+
+---
+
+# 2. ENHANCED APPLICANT INPUTS & KNOWLEDGE BASE LINKS
+- Flexible Inputs: Expand predefined options for "Business Type" and "Planned Changes", and provide a text area for custom descriptions when "Something else / Not listed" is chosen.
+- Smart Fallback Matching: Update local matching logic so custom text entries search the knowledge base for keyword matches rather than automatically returning "no match found."
+- Official City Links: Attach exact subpage links from the San José Development Services Permit Center (https://www.sanjoseca.gov/business/development-services-permit-center) to each requirement source card[cite: 1].
+
+---
+
+# 3. SEPARATE CITY STAFF VIEW & SUBMISSION FLOW
+- Separate View Mode: Move City Staff Review into a completely separate tab/view ("Applicant View" vs. "City Staff Portal") rather than rendering it on the same page.
+- Submission Feedback: When an applicant clicks "Send to City Staff":
+  1. Display a prominent confirmation modal/toast ("Plan successfully submitted to City Staff queue").
+  2. Provide a direct button: "View in City Staff Portal".
+- Fix Staff Action Controls:
+  1. Fix the "Approve Plan" button state update so the plan officially updates to "Reviewed by City Staff".
+  2. Allow staff to re-approve an option after it has been rejected to prevent permanent accidental rejections.
