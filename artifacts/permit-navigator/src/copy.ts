@@ -74,7 +74,7 @@ export const copy = {
     locationLabel: 'Location',
     businessTypeLabel: 'Business type',
     plannedChangesLabel: 'Planned changes',
-    draftStatus: 'Draft — Requires City Staff Review',
+    draftStatus: 'Draft — Requires City Staff Review.',
     sentStatus: 'Sent to City Staff',
     reviewedStatus: 'Reviewed by City Staff',
     errorBusiness: 'Choose the closest business type.',

@@ -4,6 +4,9 @@ import { ErrorBoundary } from '@/components/error-boundary';
 import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import NotFound from '@/pages/not-found';
+import { Stepper } from './components/Stepper';
+import { Chatbot } from './components/Chatbot';
+import { ReviewCatalog, type ReviewRecord } from './components/ReviewCatalog';
 import {
   AlertCircle,
   ArrowLeft,
@@ -182,17 +185,6 @@ function Topbar({
   );
 }
 
-function Steps({ plan, language }: { plan: boolean; language: Language }) {
-  const t = copy[language === 'other' ? 'en' : language];
-  return <div className="steps-strip"><div className="steps-inner">
-    <div className={`step ${!plan ? 'current' : ''}`}><span className="step-number">{plan ? <Check size={13} /> : '1'}</span> {t.step1}</div>
-    <div className="step-line" />
-    <div className={`step ${plan ? 'current' : ''}`}><span className="step-number">2</span> {t.step2}</div>
-    <div className="step-line" />
-    <div className="step"><span className="step-number">3</span> {t.step3}</div>
-  </div></div>;
-}
-
 function IntakeForm({ intake, setIntake, onGenerate, language, customLanguage }: { intake: Intake; setIntake: (next: Intake) => void; onGenerate: () => void; language: Language; customLanguage: string }) {
   const t = copy[language === 'other' ? 'en' : language];
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -302,21 +294,28 @@ function IntakeForm({ intake, setIntake, onGenerate, language, customLanguage }:
   </section>;
 }
 
-function IntakeView({ intake, setIntake, onGenerate, language, customLanguage }: { intake: Intake; setIntake: (next: Intake) => void; onGenerate: () => void; language: Language; customLanguage: string }) {
+function IntakeView({ intake, setIntake, onGenerate, language, customLanguage, onLoadSample }: { intake: Intake; setIntake: (next: Intake) => void; onGenerate: () => void; language: Language; customLanguage: string; onLoadSample: () => void }) {
   const t = copy[language === 'other' ? 'en' : language];
   return <><div className="hero-wrap"><main className="hero">
     <div>
       <div className="eyebrow">{t.eyebrow}</div>
       <h1>{t.title}</h1>
       <p className="hero-intro">{t.intro}</p>
-      <div className="hero-trust">
+      <div className="hero-trust" style={{ marginBottom: 24 }}>
         <span className="trust-item"><ShieldCheck size={15} /> {t.trust1}</span>
         <span className="trust-item"><Lightbulb size={15} /> {t.trust2}</span>
         <span className="trust-item"><ClipboardCheck size={15} /> {t.trust3}</span>
       </div>
+      <button 
+        className="button-secondary" 
+        onClick={onLoadSample}
+        data-testid="button-load-sample"
+      >
+        Load Sample Application
+      </button>
     </div>
     <IntakeForm intake={intake} setIntake={setIntake} onGenerate={onGenerate} language={language} customLanguage={customLanguage} />
-  </main></div><Steps plan={false} language={language} /><section className="footer"><div className="footer-inner"><span>Permit Navigator · San José</span><Disclaimer /></div></section></>;
+  </main></div><section className="footer"><div className="footer-inner"><span>Permit Navigator · San José</span><Disclaimer /></div></section></>;
 }
 
 function LoadingPlan({ language }: { language: Language }) {
@@ -358,7 +357,9 @@ function StaffPortal({
   notes, 
   setNotes,
   overrides,
-  setOverrides
+  setOverrides,
+  records,
+  onCompleteReview
 }: { 
   intake: Intake;
   reviewState: ReviewState;
@@ -369,66 +370,110 @@ function StaffPortal({
   setNotes: (val: (c: Record<string, string>) => Record<string, string>) => void;
   overrides: Record<string, string>;
   setOverrides: (val: (c: Record<string, string>) => Record<string, string>) => void;
+  records: ReviewRecord[];
+  onCompleteReview: (record: ReviewRecord) => void;
 }) {
   const matched = useMemo(() => getMatchedRequirements(intake), [intake]);
+  const [staffTab, setStaffTab] = useState<'queue' | 'catalog'>('queue');
   const [noteFor, setNoteFor] = useState<RequirementId | null>(null);
   const [noteText, setNoteText] = useState('');
   const [overrideFor, setOverrideFor] = useState<RequirementId | null>(null);
   const [overrideText, setOverrideText] = useState('');
 
-  if (reviewState === 'draft') {
-    return (
-      <main className="plan-shell">
+  const isLocked = reviewState === 'reviewed';
+  const hasUnsavedOverride = overrideFor !== null; // Blocks Complete Review if any override form is open (dirty or blank)
+
+  const handleComplete = () => {
+    setReviewState('reviewed');
+    
+    // Determine overall status
+    let status: ReviewRecord['status'] = 'Approved';
+    if (rejected.length > 0) status = 'Rejected';
+    else if (Object.keys(overrides).length > 0) status = 'Modified via Staff Override';
+
+    onCompleteReview({
+      id: intake.address || Date.now().toString(),
+      timestamp: Date.now(),
+      address: intake.address,
+      businessType: intake.businessType as BusinessType | 'other',
+      businessOther: intake.businessOther,
+      status,
+      notes,
+      overrides,
+      rejected,
+      matched
+    });
+  };
+
+  return (
+    <main className="plan-shell">
+      <div className="verification-notice" data-testid="notice-staff-verification">
+        <AlertCircle size={18} />
+        <span>Notice: City staff review is required. Business owners must verify all information directly with the appropriate City department before starting work or signing lease agreements.</span>
+      </div>
+      <div className="staff-tabs" style={{ marginBottom: 24, display: 'flex', gap: 12, borderBottom: '1px solid hsl(var(--border))', paddingBottom: 12 }}>
+        <button 
+          className={`tab-button ${staffTab === 'queue' ? 'active' : ''}`} 
+          onClick={() => setStaffTab('queue')}
+          data-testid="tab-staff-queue"
+        >
+          Active Review Queue
+        </button>
+        <button 
+          className={`tab-button ${staffTab === 'catalog' ? 'active' : ''}`} 
+          onClick={() => setStaffTab('catalog')}
+          data-testid="tab-staff-catalog"
+        >
+          Review Catalog & History
+        </button>
+      </div>
+
+      {staffTab === 'catalog' ? (
+        <ReviewCatalog records={records} />
+      ) : reviewState === 'draft' ? (
         <div className="no-match" style={{ textAlign: 'center', padding: '60px 20px' }}>
           <ClipboardCheck size={42} color="hsl(var(--muted-foreground))" style={{ margin: '0 auto 16px' }} />
           <h2>Queue Empty</h2>
           <p>No plan has been submitted for review yet.</p>
         </div>
-      </main>
-    );
-  }
-
-  const isLocked = reviewState === 'reviewed';
-  const hasUnsavedOverride = overrideFor !== null; // Blocks Complete Review if any override form is open (dirty or blank)
-
-  return (
-    <main className="plan-shell">
-      <div className="plan-header">
-        <div>
-          <div className="eyebrow">City Staff Portal</div>
-          <h1>Plan Review</h1>
-          <p>Reviewing submitted action plan for {intake.address}</p>
-        </div>
-        <div className="plan-actions">
-          {isLocked ? (
-            <button className="button-secondary" onClick={() => setReviewState('sent')} data-testid="button-reopen-review">
-              <Pencil size={16} /> Reopen Review
-            </button>
-          ) : (
-            <button 
-              className="button-primary" 
-              onClick={() => setReviewState('reviewed')} 
-              disabled={hasUnsavedOverride} 
-              data-testid="button-complete-review"
-            >
-              <CheckCircle2 size={16} /> Complete Review
-            </button>
-          )}
-        </div>
-      </div>
-
-      <div className="plan-grid">
-        <div>
-          <div className="staff-panel" data-testid="panel-staff-review">
-            <div className="staff-panel-header">
-              <div>
-                <h2>City Staff Review Mode</h2>
-                <p>Confirm, adjust, or explain each suggested starting point before the plan is marked as reviewed.</p>
-              </div>
-              <div className="staff-tools">
-                <span className={`status-badge ${isLocked ? 'reviewed' : ''}`}><Clock3 size={13} /> {isLocked ? 'Review Completed' : 'Review in progress'}</span>
-              </div>
+      ) : (
+        <>
+          <div className="plan-header">
+            <div>
+              <div className="eyebrow">City Staff Portal</div>
+              <h1>Plan Review</h1>
+              <p>Reviewing submitted action plan for {intake.address}</p>
             </div>
+            <div className="plan-actions">
+              {isLocked ? (
+                <button className="button-secondary" onClick={() => setReviewState('sent')} data-testid="button-reopen-review">
+                  <Pencil size={16} /> Reopen Review
+                </button>
+              ) : (
+                <button 
+                  className="button-primary" 
+                  onClick={handleComplete} 
+                  disabled={hasUnsavedOverride} 
+                  data-testid="button-complete-review"
+                >
+                  <CheckCircle2 size={16} /> Complete Review
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div className="plan-grid">
+            <div>
+              <div className="staff-panel" data-testid="panel-staff-review">
+                <div className="staff-panel-header">
+                  <div>
+                    <h2>City Staff Review Mode</h2>
+                    <p>Confirm, adjust, or explain each suggested starting point before the plan is marked as reviewed.</p>
+                  </div>
+                  <div className="staff-tools">
+                    <span className={`status-badge ${isLocked ? 'reviewed' : ''}`}><Clock3 size={13} /> {isLocked ? 'Review Completed' : 'Review in progress'}</span>
+                  </div>
+                </div>
 
             {matched.map((reqId) => {
               const isRejected = rejected.includes(reqId);
@@ -491,6 +536,8 @@ function StaffPortal({
           </div>
         </aside>
       </div>
+      </>
+      )}
     </main>
   );
 }
@@ -535,8 +582,12 @@ function PlanView({
   const statusText = reviewState === 'reviewed' ? t.reviewedStatus : reviewState === 'sent' ? t.sentStatus : t.draftStatus;
   const hasOverrides = Object.keys(overrides).length > 0;
 
-  return <><Steps plan language={language} /><main className="plan-shell">
-    <div className="plan-header">
+  return <><main className="plan-shell">
+    <div className="verification-notice" data-testid="text-verification-notice">
+      Notice: City staff review is required. Business owners must verify all information directly with the appropriate City department before starting work or signing lease agreements.
+    </div>
+    
+    <div className="plan-header" style={{ marginTop: '20px' }}>
       <div>
         <div className="eyebrow">San José · {t.planTitle}</div>
         <h1>{t.planTitle}</h1>
@@ -659,6 +710,7 @@ function Home() {
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [rejected, setRejected] = useState<RequirementId[]>([]);
   const [overrides, setOverrides] = useState<Record<string, string>>({});
+  const [records, setRecords] = useState<ReviewRecord[]>([]);
 
   const startOver = () => { 
     setHasPlan(false); 
@@ -678,8 +730,37 @@ function Home() {
     }, 1050); 
   };
   
+  const handleCompleteReview = (record: ReviewRecord) => {
+    setRecords(prev => {
+      const existing = prev.findIndex(r => r.id === record.id);
+      if (existing !== -1) {
+        const next = [...prev];
+        next[existing] = record;
+        return next;
+      }
+      return [record, ...prev];
+    });
+  };
+
+  const loadSample = () => {
+    setLanguage('en');
+    setIntake({
+      businessType: 'restaurant',
+      businessOther: '',
+      address: '150 South First Street, San Jose, CA',
+      zip: '95113',
+      description: 'Opening a first restaurant and remodeling the leased space.',
+      modifications: ['walls', 'signage'],
+      modificationOther: '',
+      files: []
+    });
+  };
+  
   return (
     <div className="app-shell">
+      <div className="global-safety-banner" data-testid="global-safety-banner">
+        Prototype Sample Data — Not official city advice.
+      </div>
       <Topbar 
         language={language} 
         setLanguage={setLanguage} 
@@ -690,6 +771,7 @@ function Home() {
         activeTab={activeTab}
         setActiveTab={setActiveTab}
       />
+      <Stepper activeTab={activeTab} hasPlan={hasPlan} reviewState={reviewState} />
       
       {activeTab === 'staff' ? (
         <StaffPortal 
@@ -702,6 +784,8 @@ function Home() {
           setNotes={setNotes}
           overrides={overrides}
           setOverrides={setOverrides}
+          records={records}
+          onCompleteReview={handleCompleteReview}
         />
       ) : (
         loading ? (
@@ -726,9 +810,11 @@ function Home() {
             onGenerate={generate} 
             language={language} 
             customLanguage={customLanguage}
+            onLoadSample={loadSample}
           />
         )
       )}
+      <Chatbot />
     </div>
   );
 }

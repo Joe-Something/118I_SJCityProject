@@ -1,0 +1,58 @@
+# ROLE & OBJECTIVE
+You are an expert full-stack developer. Upgrade and refine the visual design, testing workflows, interactive assistant, staff archival system, and prototype safety guardrails for the "San Jose Permit Navigator" web application on Replit.
+
+---
+
+# 1. VISUAL DESIGN & ACCESSIBILITY POLISH
+- Design System: Enhance the modern civic-design aesthetic using Navy Blue (`#1E3A8A`), White (`#FFFFFF`), Light Gray (`#F3F4F6`), and high-contrast Slate text (`#0F172A`). Ensure all text-to-background combinations meet WCAG AA contrast standards.
+- Layout & Typography: Use clear, large section headings, consistent padding/margins, and scannable card components. Incorporate clean SVG icons (Lucide/Heroicons) for departments, statuses, and action buttons.
+- Responsive Layout: Ensure flawless mobile, tablet, and desktop layouts.
+- Step Progress Indicator: Add a prominent top progress stepper bar indicating current status across three stages:
+  1. Input
+  2. Review (Staff Portal)
+  3. Action Plan
+
+---
+
+# 2. "KEEP THE CONVERSATION CLEAR" ASSISTANT (AI CHATBOT)
+- Add a dedicated "Keep the Conversation Clear" side drawer / floating widget containing a simple, interactive AI Chatbot.
+- Grounded Knowledge Access: The chatbot must strictly answer user queries by querying the local sample JSON database (permit rules, required documents, fee schedules, and department contact info).
+- Plain-Language Conversational Framing: Configure the bot to explain technical jargon in simple, accessible language for first-time business owners (e.g., explaining why a grease trap or zoning clearance is needed).
+- Guardrail: If a user asks a question outside the scope of the local database, the chatbot must politely respond: "I can only answer questions based on our prototype database. Please consult with City Staff for official guidance."
+
+---
+
+# 3. CITY STAFF PORTAL & REVIEW CATALOG TAB
+In the "City Staff Portal" section, implement a robust review management and archival system:
+- Archival Catalog Tab: Create an additional tab/view titled "Review Catalog & History" alongside the active queue.
+- Organized Storage: Automatically store and log all completed staff reviews (Approved, Edited, Rejected, or Overridden) in this catalog.
+- Labeling & Metadata: Each catalog entry must clearly display:
+  - Timestamp of review
+  - Original Applicant Address & Business Type[cite: 1]
+  - Decision Status (e.g., "Approved", "Rejected", "Modified via Staff Override")[cite: 1]
+  - Staff Reviewer Notes & Modifications[cite: 1]
+- Search & Filter: Allow staff to filter catalog records by Decision Status or search by Business Address/Category for quick reference and ease of access.
+
+---
+
+# 4. SAMPLE TESTING DATA WORKFLOW
+- Add a prominent "Load Sample Application" button near the top of the Applicant Input screen.
+- When clicked, automatically populate the form fields with the following test scenario:
+  - Business Address: "150 South First Street, San Jose, CA"
+  - Business Category: "Small restaurant"
+  - Planned Property Modifications: "Interior remodeling and a new exterior sign"
+  - Project Description: "Opening a first restaurant and remodeling the leased space"
+  - Preferred Language: "English"
+- Ensure clicking the sample button triggers standard form validation so the evaluator can test the full generation, translation, chatbot interaction, and staff review workflow with a single click.
+
+---
+
+# 5. PROTOTYPE SAFETY, DISCLAIMERS & GUARDRAILS
+Enforce the following explicit prototype guardrails across the UI and generation logic:
+1. Strict Local Scope: Restrict all requirement matching and chatbot responses to the local sample JSON dataset. Do NOT connect to live City databases or invent external permit rules[cite: 1].
+2. Draft & Verification Labels: 
+   - Display a global header banner: "Prototype Sample Data — Not official city advice."
+   - Default output state must be explicitly labeled: "Draft — Requires City Staff Review."[cite: 1]
+3. Human-in-the-Loop Override: Ensure City Staff can approve, edit, reject, or override any recommendation before final delivery[cite: 1].
+4. Source Transparency: Every generated requirement card must display its corresponding official source title and URL link (pointing to the official San José Development Services Permit Center: https://www.sanjoseca.gov/business/development-services-permit-center)[cite: 1].
+5. Mandatory Disclaimer: Render an explicit verification notice on all output views stating: "Notice: City staff review is required. Business owners must verify all information directly with the appropriate City department before starting work or signing lease agreements."
