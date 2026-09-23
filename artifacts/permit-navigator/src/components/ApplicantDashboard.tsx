@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { ActivePlan } from '../types';
 import { Clock3, FileText, ChevronRight, Plus } from 'lucide-react';
 import { copy } from '../copy';
+import { deriveDepartments } from '../utils/helpers';
 
 export function ApplicantDashboard({
   plans,
@@ -25,8 +26,10 @@ export function ApplicantDashboard({
 
   const renderPlanCard = (plan: ActivePlan, showEst: boolean = false) => {
     const t = copy[plan.language === 'other' ? 'en' : plan.language];
+    const departments = plan.departments || deriveDepartments(plan.intake, plan.matched);
+    
     return (
-      <div key={plan.id} className="catalog-card" style={{ marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }} data-testid={`dashboard-plan-card-${plan.id}`}>
+      <div key={plan.id} className="catalog-card" style={{ marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }} data-testid={`dashboard-plan-card-${plan.id}`}>
         <div>
            <div style={{ fontWeight: 600, fontSize: 16 }}>{plan.intake.address || 'Untitled Project'}</div>
            <div style={{ fontSize: 13, color: 'hsl(var(--muted-foreground))', marginTop: 4 }}>
@@ -35,13 +38,22 @@ export function ApplicantDashboard({
                 {plan.status}
              </div>
            </div>
+           
+           <div style={{ marginTop: 8, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+             {departments.map(d => (
+               <span key={d} className="catalog-badge" style={{ background: 'hsl(var(--secondary))', color: 'hsl(var(--secondary-foreground))', border: '1px solid hsl(var(--border))' }} data-testid={`badge-dept-${d}`}>
+                 {d}
+               </span>
+             ))}
+           </div>
+           
            {showEst && (
              <div style={{ marginTop: 8, fontSize: 12, color: 'hsl(var(--primary))', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}>
                <Clock3 size={14} /> Est. 2–3 business days for staff verification
              </div>
            )}
         </div>
-        <div>
+        <div style={{ alignSelf: 'center' }}>
           <button className="button-secondary" onClick={() => onResume(plan)} data-testid={`button-resume-plan-${plan.id}`}>
             {plan.status === 'Draft' ? 'Resume Draft' : 'Open Plan'} <ChevronRight size={14} />
           </button>

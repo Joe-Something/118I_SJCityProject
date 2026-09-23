@@ -1,10 +1,11 @@
 import { useState, useMemo } from 'react';
-import { ActivePlan } from '../types';
+import { ActivePlan, Department } from '../types';
 import { ReviewCatalog } from './ReviewCatalog';
 import { STAFF_REVIEWERS } from '../utils/generators';
 import { AlertCircle, ClipboardCheck, Building2, CheckCircle2, Check, X, Plus, Pencil, FileText, MapPin, Calendar } from 'lucide-react';
 import { copy } from '../copy';
 import { RequirementId, BusinessType, Modification } from '../requirements';
+import { deriveDepartments } from '../utils/helpers';
 
 function StaffPlanReview({ 
   plan, 
@@ -130,6 +131,8 @@ function StaffPlanReview({
   );
 }
 
+export type StaffRole = 'Master City Queue' | Department;
+
 export function StaffPortal({ 
   activeQueue, 
   catalog, 
@@ -145,12 +148,37 @@ export function StaffPortal({
 }) {
   const [staffTab, setStaffTab] = useState<'queue' | 'catalog'>('queue');
   const [expandedPlans, setExpandedPlans] = useState<string[]>([]);
+  
+  const [staffRole, setStaffRole] = useState<StaffRole>('Master City Queue');
   const [reviewerFilter, setReviewerFilter] = useState<string>('All');
 
+  const availableReviewers = useMemo(() => {
+    if (staffRole === 'Master City Queue') return ['All', ...Object.values(STAFF_REVIEWERS).flat()];
+    return ['All', ...STAFF_REVIEWERS[staffRole]];
+  }, [staffRole]);
+
   const filteredQueue = useMemo(() => {
-    if (reviewerFilter === 'All') return activeQueue;
-    return activeQueue.filter(p => p.reviewer === reviewerFilter);
-  }, [activeQueue, reviewerFilter]);
+    let filtered = activeQueue;
+    
+    // Filter by department role
+    if (staffRole !== 'Master City Queue') {
+      filtered = filtered.filter(p => {
+        const deps = p.departments || deriveDepartments(p.intake, p.matched);
+        return deps.includes(staffRole as Department);
+      });
+    }
+
+    // Filter by reviewer
+    if (reviewerFilter !== 'All') {
+      filtered = filtered.filter(p => {
+        if (p.reviewer === reviewerFilter) return true;
+        if (p.departmentAssignees && Object.values(p.departmentAssignees).includes(reviewerFilter)) return true;
+        return false;
+      });
+    }
+
+    return filtered;
+  }, [activeQueue, staffRole, reviewerFilter]);
 
   const handleReopen = (id: string) => {
     onReopenReview(id);
@@ -169,6 +197,26 @@ export function StaffPortal({
         <span>Notice: City staff review is required. Business owners must verify all information directly with the appropriate City department before starting work or signing lease agreements.</span>
       </div>
       
+      <div className="staff-banner">
+        <div>
+          <strong data-testid="staff-role-label">Role: {staffRole === 'Master City Queue' ? 'Master Overview' : `City Staff: ${staffRole}`}</strong>
+          <span>Reviewing {filteredQueue.length} active plans</span>
+        </div>
+        <select 
+          value={staffRole} 
+          onChange={e => { setStaffRole(e.target.value as StaffRole); setReviewerFilter('All'); }}
+          className="filter-select"
+          data-testid="select-staff-role"
+          style={{ background: 'hsl(var(--card))', color: 'hsl(var(--foreground))' }}
+        >
+          <option value="Master City Queue">Master City Queue</option>
+          <option value="Building">Building</option>
+          <option value="Fire">Fire</option>
+          <option value="Environmental Services">Environmental Services</option>
+          <option value="Planning">Planning</option>
+        </select>
+      </div>
+
       <div className="staff-tabs" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: 12, marginBottom: 24, borderBottom: '1px solid hsl(var(--border))' }}>
         <div style={{ display: 'flex', gap: '12px' }}>
           <button 
@@ -176,7 +224,7 @@ export function StaffPortal({
             onClick={() => setStaffTab('queue')}
             data-testid="tab-staff-queue"
           >
-            Active Review Queue ({activeQueue.length})
+            Active Review Queue ({filteredQueue.length})
           </button>
           <button 
             className={`tab-button ${staffTab === 'catalog' ? 'active' : ''}`} 
@@ -193,8 +241,7 @@ export function StaffPortal({
             style={{ padding: '6px 12px', fontSize: 13, borderRadius: 8, border: '1px solid hsl(var(--input))', background: 'hsl(var(--background))' }}
             data-testid="select-reviewer-filter"
           >
-            <option value="All">All Reviewers</option>
-            {STAFF_REVIEWERS.map(r => <option key={r} value={r}>{r}</option>)}
+            {availableReviewers.map(r => <option key={r} value={r}>{r === 'All' ? 'All Reviewers' : r}</option>)}
           </select>
         )}
       </div>
@@ -209,47 +256,58 @@ export function StaffPortal({
         </div>
       ) : (
         <div className="active-queue-list" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-          {filteredQueue.map(plan => (
-            <div key={plan.id} className="active-plan-card" style={{ background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: '12px', overflow: 'hidden' }} data-testid={`active-plan-${plan.id}`}>
-              <div 
-                className="active-plan-header" 
-                onClick={() => toggleExpand(plan.id)} 
-                style={{ cursor: 'pointer', display: 'flex', justifyContent: 'space-between', padding: '16px', background: expandedPlans.includes(plan.id) ? 'hsl(var(--muted) / 0.3)' : 'transparent' }}
-              >
-                <div>
-                  <div style={{ fontWeight: 600, fontSize: '16px', marginBottom: '4px' }}>{plan.intake.address}</div>
-                  <div style={{ fontSize: '13px', color: 'hsl(var(--muted-foreground))', display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-                    <Building2 size={13} /> {copy[plan.language === 'other' ? 'en' : plan.language].businessLabels[plan.intake.businessType as BusinessType] || plan.intake.businessOther}
-                    <span>&middot;</span>
-                    {plan.intake.modifications.map(m => m === 'other' ? plan.intake.modificationOther : copy.en.modificationLabels[m as Modification]).join(', ')}
-                    <span>&middot;</span>
-                    <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><Calendar size={13} /> Submitted {new Date(plan.submittedAt!).toLocaleDateString()}</span>
+          {filteredQueue.map(plan => {
+            const deps = plan.departments || deriveDepartments(plan.intake, plan.matched);
+            return (
+              <div key={plan.id} className="active-plan-card" style={{ background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: '12px', overflow: 'hidden' }} data-testid={`active-plan-${plan.id}`}>
+                <div 
+                  className="active-plan-header" 
+                  onClick={() => toggleExpand(plan.id)} 
+                  style={{ cursor: 'pointer', display: 'flex', justifyContent: 'space-between', padding: '16px', background: expandedPlans.includes(plan.id) ? 'hsl(var(--muted) / 0.3)' : 'transparent' }}
+                >
+                  <div>
+                    <div style={{ fontWeight: 600, fontSize: '16px', marginBottom: '4px' }}>{plan.intake.address}</div>
+                    <div style={{ fontSize: '13px', color: 'hsl(var(--muted-foreground))', display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                      <Building2 size={13} /> {copy[plan.language === 'other' ? 'en' : plan.language].businessLabels[plan.intake.businessType as BusinessType] || plan.intake.businessOther}
+                      <span>&middot;</span>
+                      {plan.intake.modifications.map(m => m === 'other' ? plan.intake.modificationOther : copy.en.modificationLabels[m as Modification]).join(', ')}
+                      <span>&middot;</span>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><Calendar size={13} /> Submitted {new Date(plan.submittedAt!).toLocaleDateString()}</span>
+                    </div>
+                    
+                    <div style={{ marginTop: 8, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                      {deps.map(d => {
+                        const assignee = plan.departmentAssignees?.[d];
+                        return (
+                          <span key={d} className="catalog-badge" style={{ background: 'hsl(var(--secondary))', color: 'hsl(var(--secondary-foreground))', border: '1px solid hsl(var(--border))' }} data-testid={`badge-dept-${d}`}>
+                            {d} {assignee ? `(${assignee.split(' ')[0]})` : ''}
+                          </span>
+                        );
+                      })}
+                    </div>
                   </div>
-                  <div style={{ fontSize: '13px', color: 'hsl(var(--muted-foreground))', marginTop: '6px' }}>
-                    Reviewer: <strong style={{ color: 'hsl(var(--foreground))' }}>{plan.reviewer || 'Unassigned'}</strong>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <div className={`status-badge ${plan.status === 'In Review (Re-opened)' ? 'reviewed' : 'sent'}`}>
+                      {plan.status}
+                    </div>
+                    <button className="button-tertiary" style={{ padding: '6px 12px' }}>
+                      {expandedPlans.includes(plan.id) ? 'Collapse' : 'Review Plan'}
+                    </button>
                   </div>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <div className={`status-badge ${plan.status === 'In Review (Re-opened)' ? 'reviewed' : 'sent'}`}>
-                    {plan.status}
+                
+                {expandedPlans.includes(plan.id) && (
+                  <div className="active-plan-content" style={{ borderTop: '1px solid hsl(var(--border))', padding: '20px' }}>
+                    <StaffPlanReview 
+                      plan={plan} 
+                      onUpdate={(updates) => onUpdateActivePlan(plan.id, updates)} 
+                      onComplete={(status) => onCompleteReview(plan.id, status)} 
+                    />
                   </div>
-                  <button className="button-tertiary" style={{ padding: '6px 12px' }}>
-                    {expandedPlans.includes(plan.id) ? 'Collapse' : 'Review Plan'}
-                  </button>
-                </div>
+                )}
               </div>
-              
-              {expandedPlans.includes(plan.id) && (
-                <div className="active-plan-content" style={{ borderTop: '1px solid hsl(var(--border))', padding: '20px' }}>
-                  <StaffPlanReview 
-                    plan={plan} 
-                    onUpdate={(updates) => onUpdateActivePlan(plan.id, updates)} 
-                    onComplete={(status) => onCompleteReview(plan.id, status)} 
-                  />
-                </div>
-              )}
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </main>

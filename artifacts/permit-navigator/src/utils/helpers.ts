@@ -1,4 +1,5 @@
 import { Intake, RequirementId, BusinessType, Modification, requirementsConfig } from '../requirements';
+import { Department } from '../types';
 
 export function getMatchedRequirements(intake: Intake): RequirementId[] {
   const customText = `${intake.businessOther} ${intake.modificationOther} ${intake.description}`.toLowerCase();
@@ -34,6 +35,33 @@ export function getMatchedRequirements(intake: Intake): RequirementId[] {
   }
 
   return (Object.keys(requirementsConfig) as RequirementId[]).filter(id => matches.includes(id));
+}
+
+export function deriveDepartments(intake: Intake, matched: RequirementId[]): Department[] {
+  const deps = new Set<Department>(['Planning']); // Every submitted plan must have at least Planning
+  
+  if (matched.includes('building-permits')) {
+    deps.add('Building');
+  }
+  
+  if (
+    matched.includes('health-safety') || 
+    intake.modifications.includes('electrical') || 
+    intake.modifications.includes('exterior')
+  ) {
+    deps.add('Fire');
+  }
+  
+  const foodBusinesses: BusinessType[] = ['boba', 'cafe', 'restaurant', 'kitchen'];
+  const desc = (intake.description || '').toLowerCase();
+  const hasFood = intake.businessType && foodBusinesses.includes(intake.businessType as BusinessType);
+  const hasEnvKeywords = /\b(plumbing|hvac|water|waste|grease|sewer)\b/i.test(desc) || intake.modifications.includes('plumbing') || intake.modifications.includes('hvac');
+  
+  if (hasFood || hasEnvKeywords) {
+    deps.add('Environmental Services');
+  }
+  
+  return Array.from(deps);
 }
 
 export function generateId() {

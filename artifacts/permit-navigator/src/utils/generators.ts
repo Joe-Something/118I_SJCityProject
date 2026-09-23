@@ -1,7 +1,15 @@
 import { Intake, Modification, BusinessType } from '../requirements';
+import { Department } from '../types';
 import { copy } from '../copy';
 
-export const STAFF_REVIEWERS = ['Alice Chen (Planning)', 'Marcus Johnson (Building)', 'Sarah Smith (Fire/Safety)'];
+export const STAFF_REVIEWERS: Record<Department, string[]> = {
+  'Planning': ['Alice Chen (Planning)', 'Robert Diaz (Planning)'],
+  'Building': ['Marcus Johnson (Building)'],
+  'Fire': ['Sarah Smith (Fire/Safety)'],
+  'Environmental Services': ['David Lee (Env Services)'],
+};
+
+export const ALL_STAFF_REVIEWERS = Object.values(STAFF_REVIEWERS).flat();
 
 const SAN_JOSE_ADDRESSES = [
   '123 E Santa Clara St', '456 S 1st St', '789 W San Carlos St', 
@@ -42,7 +50,7 @@ export function generateRandomActionPlan(queueLength: number) {
     files: []
   };
 
-  const reviewer = STAFF_REVIEWERS[queueLength % STAFF_REVIEWERS.length];
+  const reviewer = ALL_STAFF_REVIEWERS[queueLength % ALL_STAFF_REVIEWERS.length];
 
   return { intake, reviewer };
 }

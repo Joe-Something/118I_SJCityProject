@@ -19,7 +19,7 @@ export function IntakeForm({ intake, setIntake, onGenerate, language, setLanguag
     if (!intake.businessType) next.business = t.errorBusiness;
     if (intake.businessType === 'other' && !intake.businessOther.trim()) next.businessOther = t.errorCustomBusiness;
     if (!intake.address.trim()) next.address = t.errorAddress;
-    if (!/^\\d{5}$/.test(intake.zip)) next.zip = t.errorZip;
+    if (!/^\d{5}$/.test(intake.zip)) next.zip = t.errorZip;
     if (!intake.description.trim()) next.description = t.errorDescription;
     if (intake.modifications.length === 0) next.modifications = t.errorModifications;
     if (intake.modifications.includes('other') && !intake.modificationOther.trim()) next.modificationOther = t.errorCustomMod;

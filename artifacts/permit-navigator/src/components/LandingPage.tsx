@@ -1,19 +1,25 @@
 import { Landmark, ShieldCheck, Lightbulb, ClipboardCheck } from 'lucide-react';
-import { useLocation } from 'wouter';
+import { useLocation, Link } from 'wouter';
 import { Disclaimer } from './Disclaimer';
 
-export function LandingPage() {
+export function LandingPage({ signedIn }: { signedIn?: boolean }) {
   const [, setLocation] = useLocation();
   return (
     <div className="app-shell" style={{ display: 'flex', flexDirection: 'column', minHeight: '100dvh' }}>
       <header className="topbar">
-        <div className="brand" data-testid="brand-permit-navigator">
+        <Link href="/welcome" className="brand" data-testid="brand-permit-navigator" aria-label="Permit Navigator Home">
           <div className="brand-mark"><Landmark size={19} /></div>
           <div><div className="brand-name">Permit Navigator</div><div className="brand-sub">City of San José · Prototype</div></div>
-        </div>
+        </Link>
         <div className="top-actions">
-           <button className="button-tertiary" onClick={() => setLocation('/sign-in')} style={{ padding: '6px 12px' }} data-testid="button-home-signin">Sign In</button>
-           <button className="button-primary" onClick={() => setLocation('/sign-up')} style={{ marginTop: 0, width: 'auto', padding: '6px 12px' }} data-testid="button-home-signup">Create Account</button>
+           {signedIn ? (
+              <button className="button-primary" onClick={() => setLocation('/portal?view=action-plan')} data-testid="button-home-return" style={{ marginTop: 0, width: 'auto', padding: '6px 12px' }}>Return to Action Plan</button>
+           ) : (
+             <>
+               <button className="button-tertiary" onClick={() => setLocation('/sign-in')} style={{ padding: '6px 12px' }} data-testid="button-home-signin">Sign In</button>
+               <button className="button-primary" onClick={() => setLocation('/sign-up')} style={{ marginTop: 0, width: 'auto', padding: '6px 12px' }} data-testid="button-home-signup">Create Account</button>
+             </>
+           )}
         </div>
       </header>
       <div className="hero-wrap" style={{ flex: 1, display: 'flex', alignItems: 'center' }}>
@@ -27,10 +33,18 @@ export function LandingPage() {
               <span className="trust-item"><Lightbulb size={15} /> Plain-language steps</span>
               <span className="trust-item"><ClipboardCheck size={15} /> City Staff review built in</span>
             </div>
-            <div style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
-              <button className="button-primary" onClick={() => setLocation('/sign-up')} data-testid="button-home-signup-hero" style={{ marginTop: 0, width: 'auto', padding: '12px 24px', fontSize: 15 }}>Create Account</button>
-              <button className="button-secondary" onClick={() => setLocation('/sign-in')} data-testid="button-home-signin-hero" style={{ padding: '12px 24px', fontSize: 15 }}>Sign In</button>
-            </div>
+            
+            {signedIn ? (
+              <div style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
+                <button className="button-primary" onClick={() => setLocation('/portal?view=action-plan')} data-testid="button-home-return-hero" style={{ marginTop: 0, width: 'auto', padding: '12px 24px', fontSize: 15 }}>Return to Action Plan</button>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
+                <button className="button-primary" onClick={() => setLocation('/sign-up')} data-testid="button-home-signup-hero" style={{ marginTop: 0, width: 'auto', padding: '12px 24px', fontSize: 15 }}>Create Account</button>
+                <button className="button-secondary" onClick={() => setLocation('/sign-in')} data-testid="button-home-signin-hero" style={{ padding: '12px 24px', fontSize: 15 }}>Sign In</button>
+              </div>
+            )}
+            
           </div>
         </main>
       </div>

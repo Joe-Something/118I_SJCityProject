@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Search, History, MapPin, Building2, CheckCircle2, Clock3, Pencil } from 'lucide-react';
 import { ActivePlan } from '../types';
+import { deriveDepartments } from '../utils/helpers';
 
 export function ReviewCatalog({ records, onReopen }: { records: ActivePlan[], onReopen: (id: string) => void }) {
   const [search, setSearch] = useState('');
@@ -67,6 +68,13 @@ export function ReviewCatalog({ records, onReopen }: { records: ActivePlan[], on
                   <div className="catalog-card-title">{record.intake.address}</div>
                   <div className="catalog-card-sub">
                     <MapPin size={12} /> {record.intake.address} &middot; <Building2 size={12} /> {record.intake.businessType === 'other' ? record.intake.businessOther : record.intake.businessType}
+                  </div>
+                  <div style={{ marginTop: 8, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                    {(record.departments || deriveDepartments(record.intake, record.matched)).map(d => (
+                      <span key={d} className="catalog-badge" style={{ background: 'hsl(var(--secondary))', color: 'hsl(var(--secondary-foreground))', border: '1px solid hsl(var(--border))' }}>
+                        {d}
+                      </span>
+                    ))}
                   </div>
                 </div>
                 <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>

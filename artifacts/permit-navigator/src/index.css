@@ -171,13 +171,36 @@ button:disabled { cursor: not-allowed; opacity: .58; }
 .disclaimer svg { flex: 0 0 auto; margin-top: 1px; color: hsl(var(--accent)); }
 .intake-disclaimer { margin-top: 14px; }
 
-.steps-strip { background: hsl(var(--primary)); color: hsl(var(--primary-foreground)); padding: 19px 5vw; }
-.steps-inner { max-width: 1180px; margin: 0 auto; display: flex; justify-content: space-between; gap: 14px; }
-.step { display: flex; align-items: center; gap: 10px; color: hsl(var(--primary-foreground) / .72); font-size: 12px; }
-.step.current { color: hsl(var(--primary-foreground)); font-weight: 700; }
-.step-number { border: 1px solid hsl(var(--primary-foreground) / .38); width: 25px; height: 25px; border-radius: 50%; display: grid; place-items: center; font-size: 11px; }
-.step.current .step-number { background: hsl(var(--primary-foreground)); color: hsl(var(--primary)); border-color: transparent; }
-.step-line { height: 1px; flex: 1; max-width: 120px; background: hsl(var(--primary-foreground) / .25); }
+.applicant-top-nav-container {
+  padding: 16px 5vw 0;
+  background: hsl(var(--background));
+  border-bottom: 1px solid hsl(var(--border));
+}
+.applicant-top-nav {
+  display: flex;
+  gap: 8px;
+  max-width: 1180px;
+  margin: 0 auto;
+}
+.top-nav-tab {
+  background: hsl(var(--card));
+  border: 1px solid hsl(var(--border));
+  border-bottom: none;
+  padding: 14px 24px;
+  font-size: 14px;
+  font-weight: 600;
+  color: hsl(var(--foreground));
+  border-radius: 8px 8px 0 0;
+  transition: all 0.2s;
+}
+.top-nav-tab:hover {
+  background: hsl(var(--muted));
+}
+.top-nav-tab.active {
+  background: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
+  border-color: hsl(var(--primary));
+}
 
 .plan-shell { max-width: 1180px; margin: 0 auto; padding: 42px 5vw 70px; }
 .plan-header { display: flex; justify-content: space-between; gap: 24px; align-items: flex-start; margin-bottom: 31px; }
@@ -269,6 +292,9 @@ button:disabled { cursor: not-allowed; opacity: .58; }
   .topbar-tabs { width: 100%; display: flex; }
   .tab-button { flex: 1; text-align: center; }
   .top-actions { justify-content: center; flex: 1 1 100%; flex-wrap: wrap; }
+  .applicant-top-nav-container { padding: 12px 18px 0; }
+  .applicant-top-nav { flex-wrap: wrap; gap: 4px; }
+  .top-nav-tab { flex: 1 1 auto; padding: 10px 14px; font-size: 12px; text-align: center; }
   .hero { padding: 36px 18px 40px; }
   .hero h1 { font-size: 45px; }
   .hero-intro { font-size: 15px; }
@@ -293,13 +319,26 @@ button:disabled { cursor: not-allowed; opacity: .58; }
   .plan-sidebar { display: block; }
   .sidebar-card { margin-bottom: 12px; }
   .staff-banner { align-items: flex-start; flex-direction: column; }
+  .staff-banner .filter-select { width: 100%; max-width: 100%; }
   .staff-panel-header { display: block; }
   .staff-tools { margin-top: 12px; }
   .staff-edit .input-row { grid-template-columns: 1fr; }
   .staff-tabs {
-    display: grid;
+    display: grid !important;
     grid-template-columns: minmax(0, 1fr);
     gap: 8px;
+    align-items: stretch !important;
+  }
+  .staff-tabs > div:first-child {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr);
+    width: 100%;
+    gap: 8px !important;
+  }
+  .staff-tabs .filter-select,
+  .staff-tabs select {
+    width: 100%;
+    max-width: 100%;
   }
   .staff-tabs .tab-button {
     width: 100%;
@@ -307,6 +346,7 @@ button:disabled { cursor: not-allowed; opacity: .58; }
     white-space: normal;
   }
   .active-plan-header {
+    flex-direction: column !important;
     align-items: flex-start;
     gap: 10px;
   }
@@ -314,14 +354,44 @@ button:disabled { cursor: not-allowed; opacity: .58; }
     min-width: 0;
   }
   .active-plan-header > div:last-child {
-    flex-direction: column;
-    align-items: flex-end !important;
+    width: 100%;
+    max-width: none;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center !important;
+    justify-content: space-between;
     gap: 8px !important;
-    max-width: 140px;
   }
   .active-plan-header .status-badge {
     white-space: normal;
     text-align: center;
+  }
+  .active-plan-card,
+  .active-plan-content,
+  .staff-panel,
+  .staff-edit {
+    min-width: 0;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+  }
+  .active-plan-content { padding: 12px !important; }
+  .staff-panel { padding: 14px; }
+  .staff-edit > div:first-child {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+  }
+  .staff-edit > div:first-child > div:last-child {
+    width: 100%;
+    display: flex;
+    flex-wrap: wrap;
+  }
+  .staff-edit-actions {
+    flex-wrap: wrap;
+    justify-content: flex-start;
+  }
+  .staff-edit-actions input {
+    min-width: 0;
+    flex: 1 1 160px !important;
   }
   .footer-inner { display: block; }
   .footer-inner .disclaimer { margin-top: 10px; }

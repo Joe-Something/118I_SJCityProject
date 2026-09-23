@@ -2,13 +2,13 @@ import { useEffect, useState } from 'react';
 import { ClerkProvider, Show, useUser, useClerk } from '@clerk/react';
 import { publishableKeyFromHost } from '@clerk/react/internal';
 import { shadcn } from '@clerk/themes';
-import { Switch, Route, useLocation, Router as WouterRouter, Redirect } from 'wouter';
+import { Switch, Route, useLocation, Router as WouterRouter, Redirect, Link } from 'wouter';
 import { Landmark, Sparkles, AlertCircle, ArrowLeft, Printer, Send, CheckCircle2, Languages, Lightbulb, MapPin, Building2, ClipboardCheck, FileText, X } from 'lucide-react';
 import { Toaster } from '@/components/ui/toaster';
 import { useToast } from '@/hooks/use-toast';
 
-import { ActivePlan, PlanStatus } from './types';
-import { emptyIntake, getMatchedRequirements, generateId } from './utils/helpers';
+import { ActivePlan, PlanStatus, Department } from './types';
+import { emptyIntake, getMatchedRequirements, generateId, deriveDepartments } from './utils/helpers';
 import { generateRandomActionPlan, STAFF_REVIEWERS } from './utils/generators';
 import { Intake, BusinessType, Modification } from './requirements';
 import { Language, copy } from './copy';
@@ -20,7 +20,6 @@ import { ApplicantDashboard } from './components/ApplicantDashboard';
 import { IntakeView } from './components/IntakeView';
 import { StaffPortal } from './components/StaffPortal';
 import { RequirementCard } from './components/RequirementCard';
-import { Stepper } from './components/Stepper';
 import { Chatbot } from './components/Chatbot';
 
 const clerkPubKey = publishableKeyFromHost(
@@ -123,7 +122,11 @@ function PortalRoute() {
     }
   });
   
-  const [applicantView, setApplicantView] = useState<'dashboard' | 'intake' | 'plan'>('dashboard');
+  const [applicantView, setApplicantView] = useState<'intake' | 'draft-review' | 'dashboard' | 'plan-detail'>(() =>
+    new URLSearchParams(window.location.search).get('view') === 'action-plan'
+      ? 'dashboard'
+      : 'intake',
+  );
   const [currentPlanId, setCurrentPlanId] = useState<string | null>(null);
 
   const [intake, setIntake] = useState<Intake>(emptyIntake);
@@ -143,9 +146,27 @@ function PortalRoute() {
     setApplicantView('intake');
   };
 
+  const openDraftReview = () => {
+    const selectedDraft = currentPlanId
+      ? plans.find(plan => plan.id === currentPlanId && plan.status === 'Draft')
+      : undefined;
+    const latestDraft = [...plans]
+      .filter(plan => plan.status === 'Draft')
+      .sort((a, b) => b.updatedAt - a.updatedAt)[0];
+
+    if (!selectedDraft && latestDraft) {
+      setCurrentPlanId(latestDraft.id);
+    }
+    setApplicantView('draft-review');
+  };
+
   const handleResumePlan = (plan: ActivePlan) => {
     setCurrentPlanId(plan.id);
-    setApplicantView('plan');
+    if (plan.status === 'Draft') {
+      setApplicantView('draft-review');
+    } else {
+      setApplicantView('plan-detail');
+    }
   };
 
   const handleLoadSample = () => {
@@ -167,10 +188,20 @@ function PortalRoute() {
     if (!user) return;
     const { intake: randomIntake, reviewer } = generateRandomActionPlan(plans.length);
     const matched = getMatchedRequirements(randomIntake);
+    
+    const deps = deriveDepartments(randomIntake, matched);
+    const assignees: Partial<Record<Department, string>> = {};
+    deps.forEach(d => {
+      const departmentReviewers = STAFF_REVIEWERS[d];
+      assignees[d] = departmentReviewers[plans.length % departmentReviewers.length];
+    });
+    
     const newPlan: ActivePlan = {
       id: generateId(),
       userId: user.id,
-      reviewer,
+      reviewer, // legacy
+      departments: deps,
+      departmentAssignees: assignees,
       intake: randomIntake,
       language: 'en',
       customLanguage: '',
@@ -214,23 +245,34 @@ function PortalRoute() {
       setPlans(prev => [...prev, newPlan]);
       setCurrentPlanId(newPlan.id);
       setLoading(false);
-      setApplicantView('plan');
+      setApplicantView('draft-review');
     }, 1500);
   };
 
   const handleSubmitToStaff = () => {
     if (!currentPlanId) return;
-    const submittedCount = plans.filter(plan => plan.submittedAt).length;
-    const reviewer = STAFF_REVIEWERS[submittedCount % STAFF_REVIEWERS.length];
+    
+    const draftPlan = plans.find(p => p.id === currentPlanId);
+    if (!draftPlan) return;
+    
+    const deps = deriveDepartments(draftPlan.intake, draftPlan.matched);
+    const assignees: Partial<Record<Department, string>> = {};
+    deps.forEach(d => {
+      const departmentReviewers = STAFF_REVIEWERS[d];
+      const submittedCount = plans.filter(plan => plan.submittedAt).length;
+      assignees[d] = departmentReviewers[submittedCount % departmentReviewers.length];
+    });
+    
     setPlans(prev => prev.map(p => 
       p.id === currentPlanId 
-        ? { ...p, reviewer, status: 'Draft — Requires Review', submittedAt: Date.now(), updatedAt: Date.now() }
+        ? { ...p, status: 'Draft — Requires Review', submittedAt: Date.now(), updatedAt: Date.now(), departments: deps, departmentAssignees: assignees }
         : p
     ));
     toast({
-      title: 'Plan Submitted',
+      title: 'Submitted to City Staff Queue',
       description: 'Your plan has been sent to the City Staff review queue.',
     });
+    setApplicantView('dashboard');
   };
 
   const handleStaffUpdate = (planId: string, updates: Partial<ActivePlan>) => {
@@ -257,17 +299,20 @@ function PortalRoute() {
     ));
   };
 
+  const currentDraft = currentPlanId ? plans.find(p => p.id === currentPlanId && p.status === 'Draft') : null;
   const activePlan = currentPlanId ? plans.find(p => p.id === currentPlanId) : null;
+  const planToShow = applicantView === 'draft-review' ? currentDraft : (applicantView === 'plan-detail' ? activePlan : null);
+
   const activeQueue = plans.filter(p => ['Draft — Requires Review', 'In Review (Re-opened)'].includes(p.status));
   const catalog = plans.filter(p => ['Approved', 'Rejected', 'Modified via Staff Override'].includes(p.status));
 
   return (
     <div className="app-shell" style={{ display: 'flex', flexDirection: 'column', minHeight: '100dvh' }}>
       <header className="topbar">
-        <div className="brand" data-testid="brand-permit-navigator">
+        <Link href="/welcome" className="brand" data-testid="brand-permit-navigator" aria-label="Permit Navigator Home">
           <div className="brand-mark"><Landmark size={19} /></div>
           <div><div className="brand-name">Permit Navigator</div><div className="brand-sub">City of San José · Prototype</div></div>
-        </div>
+        </Link>
 
         <div className="top-actions">
           {prototypeRole === 'Applicant' && (
@@ -288,14 +333,14 @@ function PortalRoute() {
                   onChange={(e) => setCustomLanguage(e.target.value)}
                   placeholder={t.customLanguagePlaceholder}
                   aria-label={t.customLanguageLabel}
-                  className={customLanguage.trim().split(/\\s+/).length > 50 ? 'error' : ''}
+                  className={customLanguage.trim().split(/\s+/).length > 50 ? 'error' : ''}
                   data-testid="input-custom-language"
                 />
               )}
             </div>
           )}
           
-          {prototypeRole === 'Applicant' && applicantView === 'plan' && (
+          {prototypeRole === 'Applicant' && ['draft-review', 'plan-detail'].includes(applicantView) && (
             <button className={`button-tertiary simplify-toggle ${simplified ? 'active' : ''}`} onClick={() => setSimplified(!simplified)} data-testid="button-simplify-language">
               <Lightbulb size={14} /> {simplified ? t.fullDescriptions : t.simplifyLanguage}
             </button>
@@ -307,15 +352,41 @@ function PortalRoute() {
             {user?.fullName || user?.primaryEmailAddress?.emailAddress || 'Signed-in user'}
           </div>
           
-          <button className="button-secondary" style={{ padding: '6px 12px' }} onClick={() => signOut({ redirectUrl: basePath || "/" })} data-testid="button-logout">
+          <button className="button-secondary" style={{ padding: '6px 12px' }} onClick={() => signOut({ redirectUrl: basePath || "/welcome" })} data-testid="button-logout">
             Log out
           </button>
         </div>
       </header>
 
-      {prototypeRole === 'Applicant' && applicantView === 'intake' && <Stepper activeTab="applicant" hasPlan={false} reviewState="draft" />}
-      {prototypeRole === 'Applicant' && applicantView === 'plan' && activePlan && (
-        <Stepper activeTab="applicant" hasPlan={true} reviewState={activePlan.status === 'Draft' ? 'draft' : (['Approved', 'Rejected', 'Modified via Staff Override'].includes(activePlan.status) ? 'reviewed' : 'sent')} />
+      {prototypeRole === 'Applicant' && (
+        <div className="applicant-top-nav-container">
+          <div className="applicant-top-nav" data-testid="applicant-top-nav">
+            <button 
+              className={`top-nav-tab ${applicantView === 'intake' ? 'active' : ''}`}
+              onClick={() => setApplicantView('intake')}
+              aria-current={applicantView === 'intake' ? 'page' : undefined}
+              data-testid="tab-nav-intake"
+            >
+              Input
+            </button>
+            <button 
+              className={`top-nav-tab ${applicantView === 'draft-review' ? 'active' : ''}`}
+              onClick={openDraftReview}
+              aria-current={applicantView === 'draft-review' ? 'page' : undefined}
+              data-testid="tab-nav-submit"
+            >
+              Submit for Review
+            </button>
+            <button 
+              className={`top-nav-tab ${['dashboard', 'plan-detail'].includes(applicantView) ? 'active' : ''}`}
+              onClick={() => setApplicantView('dashboard')}
+              aria-current={['dashboard', 'plan-detail'].includes(applicantView) ? 'page' : undefined}
+              data-testid="tab-nav-action-plan"
+            >
+              Action Plan
+            </button>
+          </div>
+        </div>
       )}
 
       {prototypeRole === 'City Staff' ? (
@@ -343,7 +414,18 @@ function PortalRoute() {
             onLoadSample={handleLoadSample}
             onGenerateRandom={handleGenerateRandom}
           />
-        ) : activePlan ? (
+        ) : applicantView === 'draft-review' && !currentDraft ? (
+          <div className="plan-shell" data-testid="empty-state-draft">
+            <div className="no-match" style={{ textAlign: 'center', padding: '60px 20px' }}>
+              <FileText size={42} color="hsl(var(--muted-foreground))" style={{ margin: '0 auto 16px' }} />
+              <h2>No Draft to Review</h2>
+              <p>Fill out the input form to generate your initial plan.</p>
+              <button className="button-primary" style={{ width: 'auto', marginTop: 16 }} onClick={() => setApplicantView('intake')} data-testid="button-back-to-input">
+                Back to Input
+              </button>
+            </div>
+          </div>
+        ) : planToShow ? (
           <div className="plan-shell">
             <div className="verification-notice" data-testid="text-verification-notice">
               <AlertCircle size={18} />
@@ -355,18 +437,18 @@ function PortalRoute() {
                 <p>{t.planIntro}</p>
               </div>
               <div className="plan-actions">
-                <span className={`status-badge ${activePlan.status === 'Draft' ? '' : 'sent'}`} data-testid="status-plan">
-                  {activePlan.status === 'Draft' ? 'Draft — Requires City Staff Review.' : activePlan.status}
+                <span className={`status-badge ${planToShow.status === 'Draft' ? '' : 'sent'}`} data-testid="status-plan">
+                  {planToShow.status === 'Draft' ? 'Draft — Requires City Staff Review.' : planToShow.status}
                 </span>
                 <button className="button-tertiary" onClick={() => setApplicantView('dashboard')} data-testid="button-back-dashboard">
-                  <ArrowLeft size={16} /> Back to Dashboard
+                  <ArrowLeft size={16} /> Back to Action Plan
                 </button>
                 <button className="button-secondary" onClick={() => window.print()} data-testid="button-print-plan">
                   <Printer size={16} /> {t.print}
                 </button>
-                {activePlan.status === 'Draft' ? (
+                {planToShow.status === 'Draft' ? (
                   <button className="button-primary" onClick={handleSubmitToStaff} data-testid="button-submit-review">
-                    <Send size={16} /> Submit for Review
+                    <Send size={16} /> Send to City Staff
                   </button>
                 ) : (
                   <button className="button-primary" disabled data-testid="button-submitted">
@@ -376,19 +458,19 @@ function PortalRoute() {
               </div>
             </div>
 
-            {['Approved', 'Rejected', 'Modified via Staff Override'].includes(activePlan.status) ? (
+            {['Approved', 'Rejected', 'Modified via Staff Override'].includes(planToShow.status) ? (
                <div className="verification-notice" style={{ background: 'hsl(var(--primary) / 0.1)', borderColor: 'hsl(var(--primary) / 0.2)', color: 'hsl(var(--primary))' }} data-testid="notice-review-complete">
                  <CheckCircle2 size={18} />
                  <span>Review Complete: City staff have completed their simulation review for this plan.</span>
                </div>
-            ) : activePlan.status !== 'Draft' ? (
+            ) : planToShow.status !== 'Draft' ? (
               <div className="verification-notice" data-testid="notice-under-review">
                 <AlertCircle size={18} />
                 <span>Under Review: Your plan has been sent to City Staff. Expected turnaround is 2-3 business days.</span>
               </div>
             ) : null}
 
-            {activePlan.matched.length === 0 ? (
+            {planToShow.matched.length === 0 ? (
                <div className="no-match" data-testid="no-match-state">
                  <AlertCircle size={42} color="hsl(var(--accent))" style={{ margin: '0 auto 16px' }} />
                  <h2>{t.noMatchTitle}</h2>
@@ -398,26 +480,26 @@ function PortalRoute() {
               <div className="plan-grid">
                 <div>
                   <div className="summary-bar">
-                    <div className="summary-cell"><span className="summary-label">{t.projectLabel}</span><div className="summary-value">{activePlan.intake.description}</div></div>
-                    <div className="summary-cell"><span className="summary-label">{t.businessTypeLabel}</span><div className="summary-value">{activePlan.intake.businessType === 'other' ? activePlan.intake.businessOther : t.businessLabels[activePlan.intake.businessType as BusinessType]}</div></div>
-                    <div className="summary-cell"><span className="summary-label">{t.plannedChangesLabel}</span><div className="summary-value">{activePlan.intake.modifications.map(m => m === 'other' ? activePlan.intake.modificationOther : t.modificationLabels[m as Modification]).join(', ')}</div></div>
+                    <div className="summary-cell"><span className="summary-label">{t.projectLabel}</span><div className="summary-value">{planToShow.intake.description}</div></div>
+                    <div className="summary-cell"><span className="summary-label">{t.businessTypeLabel}</span><div className="summary-value">{planToShow.intake.businessType === 'other' ? planToShow.intake.businessOther : t.businessLabels[planToShow.intake.businessType as BusinessType]}</div></div>
+                    <div className="summary-cell"><span className="summary-label">{t.plannedChangesLabel}</span><div className="summary-value">{planToShow.intake.modifications.map(m => m === 'other' ? planToShow.intake.modificationOther : t.modificationLabels[m as Modification]).join(', ')}</div></div>
                   </div>
 
                   <div className="section-title">
                     <h2>{t.possibleRequirements}</h2>
-                    <span>{activePlan.matched.length} {t.matched}</span>
+                    <span>{planToShow.matched.length} {t.matched}</span>
                   </div>
 
-                  {activePlan.matched.map(reqId => (
-                    <div key={reqId} style={{ opacity: activePlan.rejected.includes(reqId) ? 0.4 : 1 }} data-testid={`wrap-requirement-${reqId}`}>
-                       {activePlan.rejected.includes(reqId) && <div className="modified-notice" style={{ marginBottom: 0, borderBottomLeftRadius: 0, borderBottomRightRadius: 0, borderBottom: 'none' }}><X size={13} style={{ verticalAlign: 'middle', marginRight: 4 }} /> Rejected by Staff</div>}
-                       {activePlan.overrides[reqId] && <div className="modified-notice" style={{ marginBottom: 0, borderBottomLeftRadius: 0, borderBottomRightRadius: 0, borderBottom: 'none' }}><CheckCircle2 size={13} style={{ verticalAlign: 'middle', marginRight: 4 }} /> {t.modifiedNotice}</div>}
+                  {planToShow.matched.map(reqId => (
+                    <div key={reqId} style={{ opacity: planToShow.rejected.includes(reqId) ? 0.4 : 1 }} data-testid={`wrap-requirement-${reqId}`}>
+                       {planToShow.rejected.includes(reqId) && <div className="modified-notice" style={{ marginBottom: 0, borderBottomLeftRadius: 0, borderBottomRightRadius: 0, borderBottom: 'none' }}><X size={13} style={{ verticalAlign: 'middle', marginRight: 4 }} /> Rejected by Staff</div>}
+                       {planToShow.overrides[reqId] && <div className="modified-notice" style={{ marginBottom: 0, borderBottomLeftRadius: 0, borderBottomRightRadius: 0, borderBottom: 'none' }}><CheckCircle2 size={13} style={{ verticalAlign: 'middle', marginRight: 4 }} /> {t.modifiedNotice}</div>}
                        
                        <RequirementCard 
                          reqId={reqId} 
                          language={language} 
                          simplified={simplified} 
-                         note={activePlan.notes[reqId]} 
+                         note={planToShow.notes[reqId]} 
                        />
                     </div>
                   ))}
@@ -426,8 +508,8 @@ function PortalRoute() {
                 <aside className="plan-sidebar">
                   <div className="sidebar-card">
                     <h3>{t.yourDetails}</h3>
-                    <div className="contact-row"><MapPin size={15} /><div><strong>{t.locationLabel}</strong><span>{activePlan.intake.address}, {activePlan.intake.zip}</span></div></div>
-                    {activePlan.intake.files.length > 0 && <div className="contact-row"><FileText size={15} /><div><strong>{t.filesAttached}</strong><span>{t.fileCount(activePlan.intake.files.length)}</span></div></div>}
+                    <div className="contact-row"><MapPin size={15} /><div><strong>{t.locationLabel}</strong><span>{planToShow.intake.address}, {planToShow.intake.zip}</span></div></div>
+                    {planToShow.intake.files.length > 0 && <div className="contact-row"><FileText size={15} /><div><strong>{t.filesAttached}</strong><span>{t.fileCount(planToShow.intake.files.length)}</span></div></div>}
                   </div>
                   
                   <div className="sidebar-card">
@@ -451,16 +533,19 @@ function PortalRoute() {
 }
 
 function HomeRedirect() {
-  return (
-    <>
-      <Show when="signed-in">
-        <Redirect to="/portal" />
-      </Show>
-      <Show when="signed-out">
-        <LandingPage />
-      </Show>
-    </>
-  );
+  const { user } = useUser();
+  const [, setLocation] = useLocation();
+  
+  useEffect(() => {
+    // If mounted on root "/", redirect to portal if signed in, or /welcome if not
+    if (user) {
+      setLocation('/portal');
+    } else {
+      setLocation('/welcome');
+    }
+  }, [user, setLocation]);
+
+  return null;
 }
 
 function App() {
@@ -482,6 +567,14 @@ function App() {
         </div>
         <Switch>
           <Route path="/" component={HomeRedirect} />
+          <Route path="/welcome">
+            <Show when="signed-in">
+              <LandingPage signedIn={true} />
+            </Show>
+            <Show when="signed-out">
+              <LandingPage signedIn={false} />
+            </Show>
+          </Route>
           <Route path="/sign-in/*?" component={SignInPage} />
           <Route path="/sign-up/*?" component={SignUpPage} />
           <Route path="/portal">
@@ -489,7 +582,7 @@ function App() {
               <PortalRoute />
             </Show>
             <Show when="signed-out">
-              <Redirect to="/" />
+              <Redirect to="/welcome" />
             </Show>
           </Route>
           <Route>

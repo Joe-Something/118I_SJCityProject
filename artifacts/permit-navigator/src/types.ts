@@ -3,10 +3,14 @@ import { Language } from './copy';
 
 export type PlanStatus = 'Draft' | 'Draft — Requires Review' | 'In Review (Re-opened)' | 'Approved' | 'Rejected' | 'Modified via Staff Override';
 
+export type Department = 'Building' | 'Fire' | 'Environmental Services' | 'Planning';
+
 export type ActivePlan = {
   id: string;
   userId: string;
-  reviewer?: string;
+  reviewer?: string; // Legacy
+  departments?: Department[];
+  departmentAssignees?: Partial<Record<Department, string>>;
   intake: Intake;
   language: Language;
   customLanguage: string;
