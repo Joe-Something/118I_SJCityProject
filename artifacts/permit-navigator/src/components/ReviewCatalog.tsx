@@ -1,13 +1,16 @@
 import { useState } from 'react';
-import { Search, Filter, History, MapPin, Building2, CheckCircle2, Clock3 } from 'lucide-react';
-import { type BusinessType, type RequirementId } from '../requirements';
+import { Search, History, MapPin, Building2, CheckCircle2, Clock3, Pencil } from 'lucide-react';
+import { type RequirementId, type Intake, type BusinessType } from '../requirements';
+import { type Language } from '../copy';
 
 export type ReviewRecord = {
-  id: string; // The Intake address or a generated ID
-  timestamp: number;
-  address: string;
-  businessType: BusinessType | 'other';
-  businessOther: string;
+  id: string;
+  intake: Intake;
+  language: Language;
+  customLanguage: string;
+  simplified: boolean;
+  submittedAt: number;
+  completedAt: number;
   status: 'Approved' | 'Rejected' | 'Modified via Staff Override';
   notes: Record<string, string>;
   overrides: Record<string, string>;
@@ -15,7 +18,7 @@ export type ReviewRecord = {
   matched: RequirementId[];
 };
 
-export function ReviewCatalog({ records }: { records: ReviewRecord[] }) {
+export function ReviewCatalog({ records, onReopen }: { records: ReviewRecord[], onReopen: (id: string) => void }) {
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<'All' | 'Approved' | 'Rejected' | 'Modified via Staff Override'>('All');
 
@@ -24,9 +27,9 @@ export function ReviewCatalog({ records }: { records: ReviewRecord[] }) {
     
     if (search.trim()) {
       const q = search.toLowerCase();
-      const addrMatch = record.address.toLowerCase().includes(q);
-      const bizTypeMatch = record.businessType.toLowerCase().includes(q);
-      const bizOtherMatch = record.businessOther.toLowerCase().includes(q);
+      const addrMatch = record.intake.address.toLowerCase().includes(q);
+      const bizTypeMatch = record.intake.businessType.toLowerCase().includes(q);
+      const bizOtherMatch = record.intake.businessOther.toLowerCase().includes(q);
       if (!addrMatch && !bizTypeMatch && !bizOtherMatch) return false;
     }
     
@@ -77,19 +80,22 @@ export function ReviewCatalog({ records }: { records: ReviewRecord[] }) {
             <div key={record.id} className="catalog-card" data-testid={`catalog-record-${record.id}`}>
               <div className="catalog-card-header">
                 <div>
-                  <div className="catalog-card-title">{record.address}</div>
+                  <div className="catalog-card-title">{record.intake.address}</div>
                   <div className="catalog-card-sub">
-                    <MapPin size={12} /> {record.address} &middot; <Building2 size={12} /> {record.businessType === 'other' ? record.businessOther : record.businessType}
+                    <MapPin size={12} /> {record.intake.address} &middot; <Building2 size={12} /> {record.intake.businessType === 'other' ? record.intake.businessOther : record.intake.businessType}
                   </div>
                 </div>
-                <div className={`catalog-badge status-${record.status.replace(/\s+/g, '-').toLowerCase()}`}>
-                  {record.status === 'Approved' ? <CheckCircle2 size={12} /> : <Clock3 size={12} />}
-                  {record.status}
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  <div className={`catalog-badge status-${record.status.replace(/\s+/g, '-').toLowerCase()}`}>
+                    {record.status === 'Approved' ? <CheckCircle2 size={12} /> : <Clock3 size={12} />}
+                    {record.status}
+                  </div>
+                  <button className="button-secondary" onClick={() => onReopen(record.id)} data-testid={`button-reopen-${record.id}`} style={{ padding: '6px 12px', fontSize: '12px' }}><Pencil size={13}/> Re-open for Review</button>
                 </div>
               </div>
               <div className="catalog-card-body">
                 <div className="catalog-detail">
-                  <strong>Reviewed on:</strong> {new Date(record.timestamp).toLocaleString()}
+                  <strong>Reviewed on:</strong> {new Date(record.completedAt).toLocaleString()}
                 </div>
                 <div className="catalog-detail">
                   <strong>Decisions:</strong> {record.matched.length} items reviewed.

@@ -1,0 +1,71 @@
+# ROLE & OBJECTIVE
+You are an expert full-stack developer. Upgrade and refine the language handling, city staff queue management, staff review catalog workflows, interactive assistant, and prototype guardrails for the "San Jose Permit Navigator" web application on Replit.
+
+---
+
+# 1. ADVANCED LANGUAGE SELECTION & SPELL-CHECK CONFIRMATION
+- Language Dropdown & Custom Entry:
+  - Include standard options (English, Spanish, Vietnamese, Chinese, Tagalog) and a "Something else / Not listed" option.
+  - When "Something else / Not listed" is selected, present a text input field for the user to type their preferred language.
+- Spell-Check & Confirmation Flow:
+  - Upon submitting a custom language input, validate the input against common language names/spellings.
+  - If a typo or misspelling is detected (e.g., "Sapanish" -> "Spanish", "Frensh" -> "French"), display an inline confirmation prompt:
+    "Did you mean [Corrected Language]? [Confirm] / [Keep Original]"
+  - Once confirmed, save the verified language preference and translate all generated UI elements, headings, card titles, instructions, and action plan summaries into that target language using the local translation engine.
+
+---
+
+# 2. ACTIVE REVIEW QUEUE & MULTI-PLAN MEMORY MANAGEMENT
+In the "City Staff Portal" > "Active Review Queue" tab:
+- Multi-Plan Queue (State Memory):
+  - Support multiple active submitted action plans concurrently in a persistent local memory state array.
+- Minimized Card / Bubble UI:
+  - Display each submitted plan in the queue as a minimized, scannable "Plan Bubble/Card" showing key unique summary data:
+    - Business Name / Address
+    - Business Category & Modifications
+    - Submission Timestamp
+    - Current Review Status ("Draft — Requires Review")
+- Collapsible Accordion / Drawer:
+  - Allow staff to click any plan bubble to expand it at their discretion, revealing the full plan details, requirement cards, and staff review editing controls.
+  - Staff can keep one or multiple plan bubbles expanded or collapsed independently.
+
+---
+
+# 3. REVIEW CATALOG & HISTORY (RE-OPEN & EDIT WORKFLOW)
+In the "City Staff Portal" > "Review Catalog & History" tab:
+- Organized Storage: Log all finalized staff decisions (Approved, Edited, Rejected, Overridden) with reviewer notes and timestamps.
+- Reopen & Edit Action:
+  - Add a "Re-open for Review" button next to each archived record in the catalog.
+  - When clicked, shift the selected action plan from the "Review Catalog & History" back into the "Active Review Queue" tab, update its badge to "In Review (Re-opened)", and automatically navigate/forward the user directly to the Active Review Queue tab with that plan expanded for editing.
+
+---
+
+# 4. "KEEP THE CONVERSATION CLEAR" ASSISTANT (AI CHATBOT)
+- Add a dedicated "Keep the Conversation Clear" side drawer / floating widget containing a simple, interactive AI Chatbot.
+- Grounded Knowledge Access: The chatbot must strictly answer user queries by querying the local sample JSON database (permit rules, required documents, fee schedules, and department contact info).
+- Plain-Language Conversational Framing: Configure the bot to explain technical jargon in simple, accessible language for first-time business owners (e.g., explaining why a grease trap or zoning clearance is needed).
+- Guardrail: If a user asks a question outside the scope of the local database, the chatbot must politely respond: "I can only answer questions based on our prototype database. Please consult with City Staff for official guidance."[cite: 1]
+
+---
+
+# 5. SAMPLE TESTING DATA WORKFLOW
+- Add a prominent "Load Sample Application" button near the top of the Applicant Input screen.
+- When clicked, automatically populate the form fields with the following test scenario:
+  - Business Address: "150 South First Street, San Jose, CA"
+  - Business Category: "Small restaurant"
+  - Planned Property Modifications: "Interior remodeling and a new exterior sign"
+  - Project Description: "Opening a first restaurant and remodeling the leased space"
+  - Preferred Language: "English"
+- Ensure clicking the sample button triggers standard form validation so the evaluator can test the full generation, translation, chatbot interaction, multi-queue management, and staff re-opening workflow with a single click.
+
+---
+
+# 6. PROTOTYPE SAFETY, DISCLAIMERS & GUARDRAILS
+Enforce the following explicit prototype guardrails across the UI and generation logic:
+1. Strict Local Scope: Restrict all requirement matching and chatbot responses to the local sample JSON dataset. Do NOT connect to live City databases or invent external permit rules[cite: 1].
+2. Draft & Verification Labels: 
+   - Display a global header banner: "Prototype Sample Data — Not official city advice."
+   - Default output state must be explicitly labeled: "Draft — Requires City Staff Review."[cite: 1]
+3. Human-in-the-Loop Override: Ensure City Staff can approve, edit, reject, or override any recommendation before final delivery[cite: 1].
+4. Source Transparency: Every generated requirement card must display its corresponding official source title and URL link (pointing to the official San José Development Services Permit Center: https://www.sanjoseca.gov/business/development-services-permit-center)[cite: 1].
+5. Mandatory Disclaimer: Render an explicit verification notice on all output views stating: "Notice: City staff review is required. Business owners must verify all information directly with the appropriate City department before starting work or signing lease agreements."

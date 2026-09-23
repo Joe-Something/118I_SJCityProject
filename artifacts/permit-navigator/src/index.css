@@ -236,6 +236,13 @@ button:disabled { cursor: not-allowed; opacity: .58; }
 @keyframes slide { 0% { transform: translateX(-100%); } 100% { transform: translateX(240%); } }
 .footer { border-top: 1px solid hsl(var(--border)); padding: 25px 5vw; color: hsl(var(--muted-foreground)); font-size: 11px; }
 .footer-inner { max-width: 1180px; margin: 0 auto; display: flex; justify-content: space-between; gap: 16px; }
+.staff-tabs {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 24px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid hsl(var(--border));
+}
 
 @media (max-width: 850px) {
   .hero { grid-template-columns: 1fr; gap: 37px; padding-top: 43px; }
@@ -278,6 +285,33 @@ button:disabled { cursor: not-allowed; opacity: .58; }
   .staff-panel-header { display: block; }
   .staff-tools { margin-top: 12px; }
   .staff-edit .input-row { grid-template-columns: 1fr; }
+  .staff-tabs {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+  }
+  .staff-tabs .tab-button {
+    width: 100%;
+    min-width: 0;
+    white-space: normal;
+  }
+  .active-plan-header {
+    align-items: flex-start;
+    gap: 10px;
+  }
+  .active-plan-header > div:first-child {
+    min-width: 0;
+  }
+  .active-plan-header > div:last-child {
+    flex-direction: column;
+    align-items: flex-end !important;
+    gap: 8px !important;
+    max-width: 140px;
+  }
+  .active-plan-header .status-badge {
+    white-space: normal;
+    text-align: center;
+  }
   .footer-inner { display: block; }
   .footer-inner .disclaimer { margin-top: 10px; }
 }

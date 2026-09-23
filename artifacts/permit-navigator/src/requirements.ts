@@ -5,6 +5,17 @@ export const DISCLAIMER = 'Prototype Sample Data — Not official city advice.';
 
 export type RequirementId = 'business-registration' | 'zoning-clearance' | 'building-permits' | 'sign-permits' | 'health-safety';
 
+export type Intake = {
+  businessType: BusinessType | '';
+  businessOther: string;
+  address: string;
+  zip: string;
+  description: string;
+  modifications: Modification[];
+  modificationOther: string;
+  files: File[];
+};
+
 export type RequirementConfig = {
   id: RequirementId;
   applies_to: BusinessType[];

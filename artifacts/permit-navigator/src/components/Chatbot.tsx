@@ -31,7 +31,6 @@ export function Chatbot() {
     if (!text.trim()) return;
 
     const userMsg: Message = { role: 'user', content: text };
-    setMessages(prev => [...prev, userMsg]);
     setInput('');
 
     // Deterministic matching
@@ -45,9 +44,7 @@ export function Chatbot() {
       }
     }
 
-    setTimeout(() => {
-      setMessages(prev => [...prev, { role: 'assistant', content: foundAnswer }]);
-    }, 400);
+    setMessages(prev => [...prev, userMsg, { role: 'assistant', content: foundAnswer }]);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -88,7 +85,7 @@ export function Chatbot() {
         </button>
       </div>
 
-      <div className="chatbot-messages">
+      <div className="chatbot-messages" aria-live="polite">
         {messages.map((msg, i) => (
           <div key={i} className={`chatbot-message ${msg.role}`} data-testid={`message-${msg.role}-${i}`}>
             <div className="chatbot-bubble">{msg.content}</div>
