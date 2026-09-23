@@ -1,24 +1,8 @@
 import { useState } from 'react';
 import { Search, History, MapPin, Building2, CheckCircle2, Clock3, Pencil } from 'lucide-react';
-import { type RequirementId, type Intake, type BusinessType } from '../requirements';
-import { type Language } from '../copy';
+import { ActivePlan } from '../types';
 
-export type ReviewRecord = {
-  id: string;
-  intake: Intake;
-  language: Language;
-  customLanguage: string;
-  simplified: boolean;
-  submittedAt: number;
-  completedAt: number;
-  status: 'Approved' | 'Rejected' | 'Modified via Staff Override';
-  notes: Record<string, string>;
-  overrides: Record<string, string>;
-  rejected: RequirementId[];
-  matched: RequirementId[];
-};
-
-export function ReviewCatalog({ records, onReopen }: { records: ReviewRecord[], onReopen: (id: string) => void }) {
+export function ReviewCatalog({ records, onReopen }: { records: ActivePlan[], onReopen: (id: string) => void }) {
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<'All' | 'Approved' | 'Rejected' | 'Modified via Staff Override'>('All');
 
@@ -86,7 +70,7 @@ export function ReviewCatalog({ records, onReopen }: { records: ReviewRecord[], 
                   </div>
                 </div>
                 <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                  <div className={`catalog-badge status-${record.status.replace(/\s+/g, '-').toLowerCase()}`}>
+                  <div className={`catalog-badge status-${record.status.replace(/\\s+/g, '-').toLowerCase()}`}>
                     {record.status === 'Approved' ? <CheckCircle2 size={12} /> : <Clock3 size={12} />}
                     {record.status}
                   </div>
@@ -95,7 +79,7 @@ export function ReviewCatalog({ records, onReopen }: { records: ReviewRecord[], 
               </div>
               <div className="catalog-card-body">
                 <div className="catalog-detail">
-                  <strong>Reviewed on:</strong> {new Date(record.completedAt).toLocaleString()}
+                  <strong>Reviewed on:</strong> {record.completedAt ? new Date(record.completedAt).toLocaleString() : 'N/A'}
                 </div>
                 <div className="catalog-detail">
                   <strong>Decisions:</strong> {record.matched.length} items reviewed.
@@ -107,7 +91,7 @@ export function ReviewCatalog({ records, onReopen }: { records: ReviewRecord[], 
                   <ul className="catalog-detail-list">
                     {record.matched.map(requirement => (
                       <li key={requirement}>
-                        {requirement}: {record.rejected.includes(requirement) ? 'Rejected' : record.overrides[requirement] ? 'Modified via Staff Override' : 'Approved'}
+                        {requirement}: {record.rejected.includes(requirement as any) ? 'Rejected' : record.overrides[requirement] ? 'Modified via Staff Override' : 'Approved'}
                       </li>
                     ))}
                   </ul>

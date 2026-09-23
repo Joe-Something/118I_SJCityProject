@@ -1,0 +1,257 @@
+import { useState, useMemo } from 'react';
+import { ActivePlan } from '../types';
+import { ReviewCatalog } from './ReviewCatalog';
+import { STAFF_REVIEWERS } from '../utils/generators';
+import { AlertCircle, ClipboardCheck, Building2, CheckCircle2, Check, X, Plus, Pencil, FileText, MapPin, Calendar } from 'lucide-react';
+import { copy } from '../copy';
+import { RequirementId, BusinessType, Modification } from '../requirements';
+
+function StaffPlanReview({ 
+  plan, 
+  onUpdate, 
+  onComplete 
+}: { 
+  plan: ActivePlan; 
+  onUpdate: (updates: Partial<ActivePlan>) => void;
+  onComplete: (status: ActivePlan['status']) => void;
+}) {
+  const [noteFor, setNoteFor] = useState<RequirementId | null>(null);
+  const [noteText, setNoteText] = useState('');
+  const [overrideFor, setOverrideFor] = useState<RequirementId | null>(null);
+  const [overrideText, setOverrideText] = useState('');
+
+  const hasUnsavedOverride = overrideFor !== null;
+
+  const handleComplete = () => {
+    let status: ActivePlan['status'] = 'Approved';
+    if (plan.rejected.length > 0) status = 'Rejected';
+    else if (Object.keys(plan.overrides).length > 0) status = 'Modified via Staff Override';
+    onComplete(status);
+  };
+
+  const updateNotes = (reqId: string, val: string) => {
+    onUpdate({ notes: { ...plan.notes, [reqId]: val } });
+  };
+
+  const updateOverrides = (reqId: string, val: string) => {
+    onUpdate({ overrides: { ...plan.overrides, [reqId]: val } });
+  };
+
+  const toggleReject = (reqId: RequirementId) => {
+    if (plan.rejected.includes(reqId)) {
+      onUpdate({ rejected: plan.rejected.filter(id => id !== reqId) });
+    } else {
+      onUpdate({ rejected: [...plan.rejected, reqId] });
+    }
+  };
+
+  return (
+    <div className="plan-grid">
+      <div>
+        <div className="staff-panel" data-testid={`panel-staff-review-${plan.id}`}>
+          <div className="staff-panel-header">
+            <div>
+              <h2>City Staff Review Mode</h2>
+              <p>Confirm, adjust, or explain each suggested starting point before the plan is marked as reviewed.</p>
+            </div>
+            <div className="staff-tools">
+               <button 
+                  className="button-primary" 
+                  onClick={handleComplete} 
+                  disabled={hasUnsavedOverride} 
+                  data-testid={`button-complete-review-${plan.id}`}
+                  style={{ marginTop: 0 }}
+                >
+                  <CheckCircle2 size={16} /> Complete Review
+                </button>
+            </div>
+          </div>
+
+          {plan.matched.map((reqId) => {
+            const isRejected = plan.rejected.includes(reqId);
+            const reqCopyEn = copy.en.requirements[reqId];
+            const defaultDesc = reqCopyEn.desc;
+            
+            return (
+              <div className="staff-edit" key={reqId} style={{ opacity: isRejected ? 0.6 : 1 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center' }}>
+                  <strong style={{ fontSize: 13, textDecoration: isRejected ? 'line-through' : 'none' }}>{reqCopyEn.name}</strong>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    {isRejected ? (
+                      <button className="button-secondary" onClick={() => toggleReject(reqId)} data-testid={`button-reapprove-${plan.id}-${reqId}`}><Check size={13} /> Re-approve</button>
+                    ) : (
+                      <>
+                        <button className="button-secondary" onClick={() => updateNotes(reqId, plan.notes[reqId] ?? 'Approved by City Staff.')} data-testid={`button-approve-${plan.id}-${reqId}`}><Check size={13} /> Approve</button>
+                        <button className="button-danger" onClick={() => toggleReject(reqId)} data-testid={`button-reject-${plan.id}-${reqId}`}><X size={13} /> Reject</button>
+                      </>
+                    )}
+                    <button className="button-tertiary" onClick={() => { setNoteFor(noteFor === reqId ? null : reqId); setNoteText(plan.notes[reqId] ?? ''); }} data-testid={`button-note-${plan.id}-${reqId}`}><Plus size={13} /> Note</button>
+                    <button className="button-tertiary" onClick={() => { setOverrideFor(overrideFor === reqId ? null : reqId); setOverrideText(plan.overrides[reqId] ?? defaultDesc); }} data-testid={`button-override-${plan.id}-${reqId}`}><Pencil size={13} /> Edit</button>
+                  </div>
+                </div>
+                
+                {noteFor === reqId && (
+                  <div className="staff-edit-actions" style={{ justifyContent: 'stretch' }}>
+                    <input style={{ flex: 1 }} value={noteText} placeholder="Add a note for the applicant" onChange={(event) => setNoteText(event.target.value)} data-testid={`input-note-${plan.id}-${reqId}`} />
+                    <button className="button-primary" style={{ width: 'auto', marginTop: 0 }} onClick={() => { updateNotes(reqId, noteText); setNoteFor(null); }} data-testid={`button-save-note-${plan.id}-${reqId}`}>Save note</button>
+                  </div>
+                )}
+
+                {overrideFor === reqId && (
+                  <div style={{ marginTop: '12px' }}>
+                    <label style={{ fontSize: '12px', fontWeight: 'bold' }}>Override Recommendation Text</label>
+                    <textarea value={overrideText} onChange={e => setOverrideText(e.target.value)} style={{ width: '100%', minHeight: '60px', padding: '8px', marginTop: '4px' }} data-testid={`textarea-override-${plan.id}-${reqId}`} />
+                    <div className="staff-edit-actions">
+                      <button className="button-primary" disabled={!overrideText.trim()} style={{ width: 'auto', marginTop: 0 }} onClick={() => { updateOverrides(reqId, overrideText); setOverrideFor(null); }} data-testid={`button-save-override-${plan.id}-${reqId}`}>Save Override</button>
+                    </div>
+                  </div>
+                )}
+                
+                {!overrideFor && plan.overrides[reqId] && (
+                  <div className="modified-notice" style={{ marginTop: '10px' }}><CheckCircle2 size={13} style={{ verticalAlign: 'middle', marginRight: 4 }} /> Overridden: {plan.overrides[reqId]}</div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <aside className="plan-sidebar">
+         <div className="sidebar-card">
+          <h3>Intake Details</h3>
+          <div className="contact-row"><FileText size={15} /><div><strong>Project</strong><span>{plan.intake.description}</span></div></div>
+          <div className="contact-row"><MapPin size={15} /><div><strong>Location</strong><span>{plan.intake.address}, {plan.intake.zip}</span></div></div>
+          <div className="contact-row"><Building2 size={15} /><div><strong>Business type</strong><span>{plan.intake.businessType === 'other' ? plan.intake.businessOther : (plan.intake.businessType ? copy.en.businessLabels[plan.intake.businessType as BusinessType] : '')}</span></div></div>
+          <div className="contact-row"><ClipboardCheck size={15} /><div><strong>Planned changes</strong><span>{plan.intake.modifications.length ? plan.intake.modifications.map((item) => item === 'other' ? plan.intake.modificationOther : copy.en.modificationLabels[item as Modification]).join(', ') : 'None selected'}</span></div></div>
+          {plan.intake.files.length > 0 && <div className="contact-row"><FileText size={15} /><div><strong>Files attached</strong><span>{plan.intake.files.length} local file(s)</span></div></div>}
+        </div>
+      </aside>
+    </div>
+  );
+}
+
+export function StaffPortal({ 
+  activeQueue, 
+  catalog, 
+  onCompleteReview, 
+  onUpdateActivePlan,
+  onReopenReview
+}: { 
+  activeQueue: ActivePlan[];
+  catalog: ActivePlan[];
+  onCompleteReview: (planId: string, finalStatus: ActivePlan['status']) => void;
+  onUpdateActivePlan: (planId: string, updates: Partial<ActivePlan>) => void;
+  onReopenReview: (recordId: string) => void;
+}) {
+  const [staffTab, setStaffTab] = useState<'queue' | 'catalog'>('queue');
+  const [expandedPlans, setExpandedPlans] = useState<string[]>([]);
+  const [reviewerFilter, setReviewerFilter] = useState<string>('All');
+
+  const filteredQueue = useMemo(() => {
+    if (reviewerFilter === 'All') return activeQueue;
+    return activeQueue.filter(p => p.reviewer === reviewerFilter);
+  }, [activeQueue, reviewerFilter]);
+
+  const handleReopen = (id: string) => {
+    onReopenReview(id);
+    setStaffTab('queue');
+    setExpandedPlans(prev => Array.from(new Set([...prev, id])));
+  };
+
+  const toggleExpand = (id: string) => {
+    setExpandedPlans(prev => prev.includes(id) ? prev.filter(p => p !== id) : [...prev, id]);
+  };
+
+  return (
+    <main className="plan-shell">
+      <div className="verification-notice" data-testid="notice-staff-verification">
+        <AlertCircle size={18} />
+        <span>Notice: City staff review is required. Business owners must verify all information directly with the appropriate City department before starting work or signing lease agreements.</span>
+      </div>
+      
+      <div className="staff-tabs" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: 12, marginBottom: 24, borderBottom: '1px solid hsl(var(--border))' }}>
+        <div style={{ display: 'flex', gap: '12px' }}>
+          <button 
+            className={`tab-button ${staffTab === 'queue' ? 'active' : ''}`} 
+            onClick={() => setStaffTab('queue')}
+            data-testid="tab-staff-queue"
+          >
+            Active Review Queue ({activeQueue.length})
+          </button>
+          <button 
+            className={`tab-button ${staffTab === 'catalog' ? 'active' : ''}`} 
+            onClick={() => setStaffTab('catalog')}
+            data-testid="tab-staff-catalog"
+          >
+            Review Catalog & History
+          </button>
+        </div>
+        {staffTab === 'queue' && (
+          <select 
+            value={reviewerFilter} 
+            onChange={(e) => setReviewerFilter(e.target.value)} 
+            style={{ padding: '6px 12px', fontSize: 13, borderRadius: 8, border: '1px solid hsl(var(--input))', background: 'hsl(var(--background))' }}
+            data-testid="select-reviewer-filter"
+          >
+            <option value="All">All Reviewers</option>
+            {STAFF_REVIEWERS.map(r => <option key={r} value={r}>{r}</option>)}
+          </select>
+        )}
+      </div>
+
+      {staffTab === 'catalog' ? (
+        <ReviewCatalog records={catalog} onReopen={handleReopen} />
+      ) : filteredQueue.length === 0 ? (
+        <div className="no-match" style={{ textAlign: 'center', padding: '60px 20px' }}>
+          <ClipboardCheck size={42} color="hsl(var(--muted-foreground))" style={{ margin: '0 auto 16px' }} />
+          <h2>Queue Empty</h2>
+          <p>No plan matching the current filter has been submitted for review yet.</p>
+        </div>
+      ) : (
+        <div className="active-queue-list" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          {filteredQueue.map(plan => (
+            <div key={plan.id} className="active-plan-card" style={{ background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: '12px', overflow: 'hidden' }} data-testid={`active-plan-${plan.id}`}>
+              <div 
+                className="active-plan-header" 
+                onClick={() => toggleExpand(plan.id)} 
+                style={{ cursor: 'pointer', display: 'flex', justifyContent: 'space-between', padding: '16px', background: expandedPlans.includes(plan.id) ? 'hsl(var(--muted) / 0.3)' : 'transparent' }}
+              >
+                <div>
+                  <div style={{ fontWeight: 600, fontSize: '16px', marginBottom: '4px' }}>{plan.intake.address}</div>
+                  <div style={{ fontSize: '13px', color: 'hsl(var(--muted-foreground))', display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                    <Building2 size={13} /> {copy[plan.language === 'other' ? 'en' : plan.language].businessLabels[plan.intake.businessType as BusinessType] || plan.intake.businessOther}
+                    <span>&middot;</span>
+                    {plan.intake.modifications.map(m => m === 'other' ? plan.intake.modificationOther : copy.en.modificationLabels[m as Modification]).join(', ')}
+                    <span>&middot;</span>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><Calendar size={13} /> Submitted {new Date(plan.submittedAt!).toLocaleDateString()}</span>
+                  </div>
+                  <div style={{ fontSize: '13px', color: 'hsl(var(--muted-foreground))', marginTop: '6px' }}>
+                    Reviewer: <strong style={{ color: 'hsl(var(--foreground))' }}>{plan.reviewer || 'Unassigned'}</strong>
+                  </div>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <div className={`status-badge ${plan.status === 'In Review (Re-opened)' ? 'reviewed' : 'sent'}`}>
+                    {plan.status}
+                  </div>
+                  <button className="button-tertiary" style={{ padding: '6px 12px' }}>
+                    {expandedPlans.includes(plan.id) ? 'Collapse' : 'Review Plan'}
+                  </button>
+                </div>
+              </div>
+              
+              {expandedPlans.includes(plan.id) && (
+                <div className="active-plan-content" style={{ borderTop: '1px solid hsl(var(--border))', padding: '20px' }}>
+                  <StaffPlanReview 
+                    plan={plan} 
+                    onUpdate={(updates) => onUpdateActivePlan(plan.id, updates)} 
+                    onComplete={(status) => onCompleteReview(plan.id, status)} 
+                  />
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </main>
+  );
+}

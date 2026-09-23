@@ -10,7 +10,7 @@ export function Stepper({ activeTab, hasPlan, reviewState }: StepperProps) {
   let currentStep = 1;
   if (reviewState === 'reviewed') {
     currentStep = 3;
-  } else if (activeTab === 'staff' || hasPlan) {
+  } else if (hasPlan) {
     currentStep = 2;
   }
 
@@ -29,7 +29,7 @@ export function Stepper({ activeTab, hasPlan, reviewState }: StepperProps) {
           <span className="step-number">
             {currentStep > 2 ? <Check size={13} /> : '2'}
           </span>
-          Review (Staff Portal)
+          {activeTab === 'applicant' ? 'Submit for Review' : 'Review (Staff Portal)'}
         </div>
         <div className="step-line" />
         
