@@ -48,8 +48,8 @@ export function StaffSearchFilters({ filters, onChange, onClear }: StaffSearchFi
         <div className="staff-search-filters__identity">
           <span className="staff-search-filters__mark" aria-hidden="true"><ListFilter size={17} strokeWidth={2} /></span>
           <div>
-            <h2 id={`${id}-title`}>Find applications</h2>
-            <p>Search the queue by any detail. Filters work together.</p>
+            <h2 id={`${id}-title`}>Find records</h2>
+            <p>Search applicant entries and public permits. Filters work together.</p>
           </div>
         </div>
         {activeCount > 0 && (

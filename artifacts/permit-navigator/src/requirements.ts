@@ -1,7 +1,7 @@
 export type BusinessType = 'boba' | 'restaurant' | 'retail' | 'kitchen' | 'cafe' | 'salon' | 'office' | 'service' | 'other';
 export type Modification = 'plumbing' | 'walls' | 'signage' | 'hvac' | 'electrical' | 'exterior' | 'other';
 
-export const DISCLAIMER = 'Prototype Sample Data — Not official city advice.';
+export const DISCLAIMER = 'Prototype guidance is not official City advice. Public permit records link to City open data.';
 
 export type RequirementId = 'business-registration' | 'zoning-clearance' | 'building-permits' | 'sign-permits' | 'health-safety';
 

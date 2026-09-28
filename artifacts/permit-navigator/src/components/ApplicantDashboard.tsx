@@ -32,7 +32,7 @@ export function ApplicantDashboard({
       <div key={plan.id} className="catalog-card" style={{ marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }} data-testid={`dashboard-plan-card-${plan.id}`}>
         <div>
             <div style={{ fontWeight: 600, fontSize: 16 }}>{plan.intake.businessName || plan.intake.address || 'Untitled Project'}</div>
-            <div style={{ fontSize: 11, color: 'hsl(var(--muted-foreground))', marginTop: 3 }}>Application ID: {plan.id} · Synthetic prototype data</div>
+            <div style={{ fontSize: 11, color: 'hsl(var(--muted-foreground))', marginTop: 3 }}>Application ID: {plan.id} · Prototype application</div>
            <div style={{ fontSize: 13, color: 'hsl(var(--muted-foreground))', marginTop: 4 }}>
              {plan.intake.businessType ? (t.businessLabels[plan.intake.businessType] || plan.intake.businessOther || 'Unknown Type') : 'Draft'} &middot; {new Date(plan.updatedAt).toLocaleDateString()}
              <div style={{ display: 'inline-block', marginLeft: 8 }} className="catalog-badge">

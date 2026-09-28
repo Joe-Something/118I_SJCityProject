@@ -133,6 +133,10 @@ components:
         assignedDepartment: { type: string }
         applicantLanguage: { type: string }
         submittedAt: { type: ["string", "null"], format: date-time }
+        sourceUrl: { type: ["string", "null"] }
+        sourceDataset: { type: ["string", "null"] }
+        sourceDate: { type: ["string", "null"], format: date-time }
+        sourceImportedAt: { type: ["string", "null"], format: date-time }
         description: { type: string }
         notes: { type: ["string", "null"] }
         synthetic: { type: boolean }

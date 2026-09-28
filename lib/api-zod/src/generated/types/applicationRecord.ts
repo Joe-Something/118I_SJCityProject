@@ -17,6 +17,14 @@ export interface ApplicationRecord {
   applicantLanguage: string;
   /** @nullable */
   submittedAt?: Date | null;
+  /** @nullable */
+  sourceUrl?: string | null;
+  /** @nullable */
+  sourceDataset?: string | null;
+  /** @nullable */
+  sourceDate?: Date | null;
+  /** @nullable */
+  sourceImportedAt?: Date | null;
   description: string;
   /** @nullable */
   notes?: string | null;

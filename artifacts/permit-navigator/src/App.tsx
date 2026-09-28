@@ -238,7 +238,7 @@ function PortalWorkspace({ persona, userId, onLogout }: { persona: Persona; user
     setLanguage('en');
     setCustomLanguage('');
     setIntake({
-      businessName: 'Sample First Street Restaurant',
+      businessName: 'Business at 150 South First Street, San Jose, CA',
       businessType: 'restaurant',
       businessOther: '',
       address: '150 South First Street, San Jose, CA',
@@ -285,7 +285,7 @@ function PortalWorkspace({ persona, userId, onLogout }: { persona: Persona; user
     try {
       await createApplication({ applicantKey: persona.kind === 'applicant' ? persona.key : '', plan: JSON.parse(JSON.stringify(newPlan)) });
       await refreshRows();
-      toast({ title: 'Synthetic sample created', description: 'A synthetic action plan was saved to the database and sent to the review queue.' });
+      toast({ title: 'Demo application created', description: 'The example action plan was saved to the database and sent to the review queue.' });
     } catch {
       toast({ title: 'Could not save sample', description: 'Please try again.', variant: 'destructive' });
     }
@@ -693,7 +693,7 @@ function App() {
         routerReplace={(to) => setLocation(stripBase(to), { replace: true })}
       >
         <div className="global-safety-banner" data-testid="global-safety-banner">
-          Prototype Sample Data — Not official city advice.
+          Prototype guidance is not official City advice. Public permit records are linked to their source.
         </div>
         <Switch>
           <Route path="/" component={HomeRedirect} />

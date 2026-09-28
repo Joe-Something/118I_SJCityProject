@@ -1,6 +1,6 @@
 import { Router, type IRouter, type Request, type Response } from "express";
 import { getAuth } from "@clerk/express";
-import { and, desc, eq, gte, ilike, isNotNull, lt, or, type SQL } from "drizzle-orm";
+import { and, desc, eq, gte, ilike, isNotNull, lt, or, sql, type SQL } from "drizzle-orm";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import { db, applicationsTable, type Application } from "@workspace/db";
 import {
@@ -104,7 +104,7 @@ router.get("/applications/staff", async (req, res): Promise<void> => {
     [query.data.applicantLanguage, applicationsTable.applicantLanguage],
   ];
   // Staff queue contains submitted applications only; unsent drafts stay private.
-  const conditions: SQL[] = [isNotNull(applicationsTable.submittedAt)];
+  const conditions: SQL[] = [or(isNotNull(applicationsTable.submittedAt), eq(applicationsTable.synthetic, false))!];
   for (const [term, column] of fields) {
     if (term?.trim()) conditions.push(ilike(column, `%${term.trim().replace(/[\\%_]/g, "\\$&")}%`));
   }
@@ -129,7 +129,7 @@ router.get("/applications/staff", async (req, res): Promise<void> => {
     ].map(column => ilike(column, term)))!);
   }
   const rows = await db.select().from(applicationsTable).where(and(...conditions))
-    .orderBy(desc(applicationsTable.submittedAt)).limit(500);
+    .orderBy(desc(sql`coalesce(${applicationsTable.submittedAt}, ${applicationsTable.sourceDate})`)).limit(500);
   res.json(SearchStaffApplicationsResponse.parse(rows.map(respond)));
 });
 

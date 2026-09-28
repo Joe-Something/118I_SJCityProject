@@ -25,6 +25,7 @@ A bilingual prototype that helps first-time small-business owners assemble a per
 - This prototype uses synthetic database application records; it does not claim to provide official permit determinations.
 - Clerk signs in real users. Database applicant queries are scoped by Clerk user and applicant key, but staff desks are self-selected prototype personas, not verified staff permissions. Do not enter sensitive information or treat the staff API as production-authorized.
 - Older browser-local plans are imported to the database on the applicant's next login; new plans use the database as their source of truth.
+- The read-only Public permits tab imports commercial/industrial building permit metadata from the City of San José open-data CSV on API startup and periodically thereafter. Each record links to its source. The dataset does not provide business names, applicant languages, assigned reviewers, or submission dates; never present invented values for those. Public permits are not prototype applications or staff-review work items. Applicant/owner/contractor names and parcel numbers from the CSV are deliberately not imported.
 - Unsupported combinations return a no-match message rather than generating unverified rules.
 - Staff editing blocks final submission until the reviewed change is saved.
 

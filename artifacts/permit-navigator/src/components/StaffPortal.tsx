@@ -161,7 +161,7 @@ export function StaffPortal({
   onUpdateActivePlan: (planId: string, updates: Partial<ActivePlan>) => void;
   onReopenReview: (recordId: string) => void;
 }) {
-  const [staffTab, setStaffTab] = useState<'queue' | 'catalog'>('queue');
+  const [staffTab, setStaffTab] = useState<'queue' | 'catalog' | 'public'>('public');
   const [expandedPlans, setExpandedPlans] = useState<string[]>([]);
   
   const staffRole: StaffRole = desk === 'Building Code Reviewer' ? 'Building' : desk === 'Fire Prevention' ? 'Fire' : 'Master City Queue';
@@ -199,6 +199,7 @@ export function StaffPortal({
     ? catalog
     : catalog.filter(plan => (plan.departments || deriveDepartments(plan.intake, plan.matched)).includes(staffRole)),
   [catalog, staffRole]);
+  const publicPermits = records.filter(record => record.sourceUrl && !record.synthetic);
 
   const handleReopen = (id: string) => {
     onReopenReview(id);
@@ -233,8 +234,8 @@ export function StaffPortal({
       {recordsLoading && <p role="status">Searching database records…</p>}
       {recordsError && <div className="verification-notice" role="alert">{recordsError}</div>}
 
-      <div className="staff-tabs" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: 12, marginBottom: 24, borderBottom: '1px solid hsl(var(--border))' }}>
-        <div style={{ display: 'flex', gap: '12px' }}>
+      <div className="staff-tabs" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12, paddingBottom: 12, marginBottom: 24, borderBottom: '1px solid hsl(var(--border))' }}>
+        <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
           <button 
             className={`tab-button ${staffTab === 'queue' ? 'active' : ''}`} 
             onClick={() => setStaffTab('queue')}
@@ -249,6 +250,13 @@ export function StaffPortal({
           >
             Review Catalog & History
           </button>
+          <button
+            className={`tab-button ${staffTab === 'public' ? 'active' : ''}`}
+            onClick={() => setStaffTab('public')}
+            data-testid="tab-staff-public"
+          >
+            Public permits ({publicPermits.length})
+          </button>
         </div>
         {staffTab === 'queue' && (
           <select 
@@ -262,7 +270,34 @@ export function StaffPortal({
         )}
       </div>
 
-      {recordsError || recordsLoading ? null : staffTab === 'catalog' ? (
+      {recordsError || recordsLoading ? null : staffTab === 'public' ? (
+        <section aria-label="City open-data permit records">
+          <p style={{ marginBottom: 16, color: 'hsl(var(--muted-foreground))' }}>
+            Commercial/industrial building permits from the City of San José open-data portal. These are issued public records, not applicant submissions to this prototype and not items for staff review here. Business name, applicant language, submission date, and assigned reviewer are not supplied by this dataset.
+          </p>
+          {publicPermits.length === 0 ? <div className="no-match">No public permits match these filters. Try clearing the filters; if this is a new workspace, the City data may still be loading.</div> : (
+            <div className="active-queue-list" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {publicPermits.map(record => (
+                <article key={record.id} className="active-plan-card" style={{ background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: 12, padding: 18 }} data-testid={`public-permit-${record.id}`}>
+                  <div style={{ display: 'flex', alignItems: 'start', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
+                    <div>
+                      <h2 style={{ fontSize: 17, margin: '0 0 4px' }}>{record.businessName}</h2>
+                      <div style={{ fontSize: 13, color: 'hsl(var(--muted-foreground))' }}>City permit {record.id.replace('SJ-OPEN-', '')} · {record.businessCategory} · {record.requestType}</div>
+                    </div>
+                    <span className="catalog-badge">Public City dataset · {record.status}</span>
+                  </div>
+                  <p style={{ margin: '12px 0 6px' }}>{record.description}</p>
+                  <div style={{ fontSize: 12, color: 'hsl(var(--muted-foreground))', display: 'flex', gap: 14, flexWrap: 'wrap' }}>
+                    <span>Issue date: {record.sourceDate ? new Date(record.sourceDate).toLocaleDateString('en-US', { timeZone: 'UTC' }) : 'Not provided'}</span>
+                    <span>Imported: {record.sourceImportedAt ? new Date(record.sourceImportedAt).toLocaleDateString() : 'Not provided'}</span>
+                    <a href={record.sourceUrl!} target="_blank" rel="noopener noreferrer">View City source dataset ↗</a>
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
+        </section>
+      ) : staffTab === 'catalog' ? (
           <ReviewCatalog records={visibleCatalog} onReopen={handleReopen} />
       ) : filteredQueue.length === 0 ? (
         <div className="no-match" style={{ textAlign: 'center', padding: '60px 20px' }}>
@@ -286,7 +321,7 @@ export function StaffPortal({
                     <div style={{ fontWeight: 600, fontSize: '16px', marginBottom: '4px' }}>{record?.businessName || plan.intake.businessName || plan.intake.address}</div>
                     <div style={{ fontSize: 12, color: 'hsl(var(--muted-foreground))', marginBottom: 5 }}>
                       ID: {plan.id} · {record?.businessCategory || plan.intake.businessType} · {record?.requestType || 'Permit review'} · {record?.applicantLanguage || plan.language}
-                      {record?.synthetic && <strong> · SYNTHETIC PROTOTYPE DATA</strong>}
+                      {record?.synthetic && <strong> · Applicant demo entry (not a City record)</strong>}
                     </div>
                     {record && <div style={{ fontSize: 12, color: 'hsl(var(--muted-foreground))', marginBottom: 5 }}>
                       Submitted (UTC): {record.submittedAt ? new Date(record.submittedAt).toLocaleDateString('en-US', { timeZone: 'UTC' }) : 'Not submitted'} · {record.description}
