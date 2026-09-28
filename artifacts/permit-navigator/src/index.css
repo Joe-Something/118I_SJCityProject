@@ -726,3 +726,29 @@ button:disabled { cursor: not-allowed; opacity: .58; }
   color: hsl(var(--muted-foreground));
   opacity: 1;
 }
+
+.persona-page { min-height: 100dvh; display: flex; flex-direction: column; background: hsl(var(--background)); }
+.persona-main { flex: 1; width: min(1020px, 100%); margin: auto; display: grid; grid-template-columns: 1fr 430px; align-items: center; gap: 68px; padding: 64px 24px; }
+.persona-intro h1 { font: 700 clamp(42px, 5vw, 68px)/1.06 var(--app-font-serif); letter-spacing: -.035em; margin: 22px 0; color: hsl(var(--foreground)); }
+.persona-intro p { font-size: 18px; line-height: 1.6; color: hsl(var(--muted-foreground)); max-width: 450px; }
+.persona-card { background: hsl(var(--card)); border: 1px solid hsl(var(--border)); border-radius: 20px; padding: 30px; box-shadow: 0 20px 60px hsl(var(--foreground) / .08); }
+.persona-card h2 { font: 700 26px var(--app-font-serif); margin: 0 0 8px; }
+.persona-muted { font-size: 14px; color: hsl(var(--muted-foreground)); margin: 0 0 24px; }
+.persona-options { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 23px; }
+.persona-option { display: flex; flex-direction: column; gap: 12px; text-align: left; padding: 15px; border-radius: 12px; border: 1px solid hsl(var(--border)); color: hsl(var(--foreground)); background: hsl(var(--background)); }
+.persona-option.selected { border: 2px solid hsl(var(--primary)); padding: 14px; background: hsl(var(--primary) / .06); color: hsl(var(--primary)); }
+.persona-option span { display: flex; flex-direction: column; gap: 3px; }
+.persona-option strong { font-size: 14px; }
+.persona-option small { font-size: 12px; font-weight: 400; color: hsl(var(--muted-foreground)); }
+.persona-field { display: flex; flex-direction: column; gap: 8px; font-size: 13px; font-weight: 700; }
+.persona-field input, .persona-field select { width: 100%; border: 1px solid hsl(var(--input)); border-radius: 9px; background: hsl(var(--background)); color: hsl(var(--foreground)); padding: 11px 12px; font-size: 14px; }
+.persona-field input:focus, .persona-field select:focus, .persona-option:focus-visible { outline: 2px solid hsl(var(--primary)); outline-offset: 2px; }
+.persona-submit { width: 100%; justify-content: center; margin-top: 22px; }
+.persona-error { color: hsl(var(--destructive)); font-size: 13px; margin: 8px 0 0; }
+.persona-caution { border-top: 1px solid hsl(var(--border)); padding-top: 16px; margin: 21px 0 0; font-size: 12px; line-height: 1.55; color: hsl(var(--muted-foreground)); }
+@media (max-width: 760px) {
+  .persona-main { grid-template-columns: 1fr; gap: 22px; padding: 42px 18px; }
+  .persona-intro h1 { margin: 14px 0; }
+  .persona-intro p { font-size: 15px; }
+  .persona-card { padding: 22px; }
+}

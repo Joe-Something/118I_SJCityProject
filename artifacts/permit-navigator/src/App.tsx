@@ -3,7 +3,7 @@ import { ClerkProvider, Show, useUser, useClerk } from '@clerk/react';
 import { publishableKeyFromHost } from '@clerk/react/internal';
 import { shadcn } from '@clerk/themes';
 import { Switch, Route, useLocation, Router as WouterRouter, Redirect, Link } from 'wouter';
-import { Landmark, Sparkles, AlertCircle, ArrowLeft, Printer, Send, CheckCircle2, Languages, Lightbulb, MapPin, Building2, ClipboardCheck, FileText, X } from 'lucide-react';
+import { Landmark, Sparkles, AlertCircle, ArrowLeft, Printer, Send, CheckCircle2, Languages, Lightbulb, MapPin, FileText, X } from 'lucide-react';
 import { Toaster } from '@/components/ui/toaster';
 import { useToast } from '@/hooks/use-toast';
 
@@ -13,14 +13,14 @@ import { generateRandomActionPlan, STAFF_REVIEWERS } from './utils/generators';
 import { Intake, BusinessType, Modification } from './requirements';
 import { Language, copy } from './copy';
 
-import { LandingPage } from './components/LandingPage';
 import { SignInPage, SignUpPage } from './components/Auth';
-import { RoleSelector } from './components/RoleSelector';
+import { PersonaLogin } from './components/PersonaLogin';
 import { ApplicantDashboard } from './components/ApplicantDashboard';
 import { IntakeView } from './components/IntakeView';
 import { StaffPortal } from './components/StaffPortal';
 import { RequirementCard } from './components/RequirementCard';
 import { Chatbot } from './components/Chatbot';
+import { applicantId, readPersona, personaKey, PENDING_PERSONA_KEY, PLANS_KEY, readPlans, Persona } from './prototypeStore';
 
 const clerkPubKey = publishableKeyFromHost(
   window.location.hostname,
@@ -103,24 +103,13 @@ function LoadingPlan({ language }: { language: Language }) {
   );
 }
 
-function PortalRoute() {
-  const { user } = useUser();
+function PortalWorkspace({ persona, userId, onLogout }: { persona: Persona; userId: string; onLogout: () => void }) {
   const { signOut } = useClerk();
-  const [, setLocation] = useLocation();
   const { toast } = useToast();
 
-  const [prototypeRole, setPrototypeRole] = useState<'Applicant' | 'City Staff'>('Applicant');
-  const planStorageKey = `permit-navigator-plans:${user?.id ?? 'anonymous'}`;
-  const [plans, setPlans] = useState<ActivePlan[]>(() => {
-    const stored = window.sessionStorage.getItem(planStorageKey);
-    if (!stored) return [];
-    try {
-      return JSON.parse(stored) as ActivePlan[];
-    } catch {
-      window.sessionStorage.removeItem(planStorageKey);
-      return [];
-    }
-  });
+  const [plans, setPlans] = useState<ActivePlan[]>(readPlans);
+  const currentApplicantId = persona.kind === 'applicant' ? applicantId(userId, persona.key) : null;
+  const myPlans = plans.filter(plan => plan.userId === currentApplicantId);
   
   const [applicantView, setApplicantView] = useState<'intake' | 'draft-review' | 'dashboard' | 'plan-detail'>(() =>
     new URLSearchParams(window.location.search).get('view') === 'action-plan'
@@ -138,24 +127,59 @@ function PortalRoute() {
   const t = copy[language === 'other' ? 'en' : language];
 
   useEffect(() => {
-    window.sessionStorage.setItem(planStorageKey, JSON.stringify(plans));
-  }, [planStorageKey, plans]);
+    const serialized = JSON.stringify(plans);
+    if (window.localStorage.getItem(PLANS_KEY) !== serialized) {
+      window.localStorage.setItem(PLANS_KEY, serialized);
+    }
+  }, [plans]);
+
+  useEffect(() => {
+    const sync = (event: StorageEvent) => {
+      if (event.key === PLANS_KEY) setPlans(readPlans());
+    };
+    window.addEventListener('storage', sync);
+    return () => window.removeEventListener('storage', sync);
+  }, []);
+
+  useEffect(() => {
+    if (!currentApplicantId) return;
+    const legacyKey = `permit-navigator-plans:${userId}`;
+    const stored = sessionStorage.getItem(legacyKey);
+    if (!stored) return;
+    try {
+      const parsed: unknown = JSON.parse(stored);
+      if (!Array.isArray(parsed)) return;
+      const legacyPlans = parsed.filter((plan): plan is ActivePlan =>
+        plan && typeof plan.id === 'string' && plan.userId === userId && plan.intake && Array.isArray(plan.matched)
+      ).map(plan => ({ ...plan, userId: currentApplicantId }));
+      setPlans(previous => {
+        const ids = new Set(previous.map(plan => plan.id));
+        const merged = [...previous, ...legacyPlans.filter(plan => !ids.has(plan.id))];
+        localStorage.setItem(PLANS_KEY, JSON.stringify(merged));
+        return merged;
+      });
+      sessionStorage.removeItem(legacyKey);
+    } catch { /* Leave unreadable legacy data untouched. */ }
+  }, [currentApplicantId, userId]);
 
   const handleCreateNew = () => {
     setIntake(emptyIntake);
+    setCurrentPlanId(null);
     setApplicantView('intake');
   };
 
   const openDraftReview = () => {
     const selectedDraft = currentPlanId
-      ? plans.find(plan => plan.id === currentPlanId && plan.status === 'Draft')
+      ? myPlans.find(plan => plan.id === currentPlanId && plan.status === 'Draft')
       : undefined;
-    const latestDraft = [...plans]
+    const latestDraft = [...myPlans]
       .filter(plan => plan.status === 'Draft')
       .sort((a, b) => b.updatedAt - a.updatedAt)[0];
 
     if (!selectedDraft && latestDraft) {
       setCurrentPlanId(latestDraft.id);
+    } else if (!selectedDraft) {
+      setCurrentPlanId(null);
     }
     setApplicantView('draft-review');
   };
@@ -185,7 +209,7 @@ function PortalRoute() {
   };
 
   const handleGenerateRandom = () => {
-    if (!user) return;
+    if (!currentApplicantId) return;
     const { intake: randomIntake, reviewer } = generateRandomActionPlan(plans.length);
     const matched = getMatchedRequirements(randomIntake);
     
@@ -198,7 +222,7 @@ function PortalRoute() {
     
     const newPlan: ActivePlan = {
       id: generateId(),
-      userId: user.id,
+      userId: currentApplicantId,
       reviewer, // legacy
       departments: deps,
       departmentAssignees: assignees,
@@ -224,16 +248,22 @@ function PortalRoute() {
   };
 
   const handleGeneratePlan = () => {
+    if (!currentApplicantId) return;
+    const ownerId = currentApplicantId;
+    const draftIntake = intake;
+    const draftLanguage = language;
+    const draftCustomLanguage = customLanguage;
+    const draftSimplified = simplified;
     setLoading(true);
     setTimeout(() => {
-      const matched = getMatchedRequirements(intake);
+      const matched = getMatchedRequirements(draftIntake);
       const newPlan: ActivePlan = {
         id: generateId(),
-        userId: user?.id || 'unknown',
-        intake,
-        language,
-        customLanguage,
-        simplified,
+        userId: ownerId,
+        intake: draftIntake,
+        language: draftLanguage,
+        customLanguage: draftCustomLanguage,
+        simplified: draftSimplified,
         createdAt: Date.now(),
         updatedAt: Date.now(),
         status: 'Draft',
@@ -252,7 +282,7 @@ function PortalRoute() {
   const handleSubmitToStaff = () => {
     if (!currentPlanId) return;
     
-    const draftPlan = plans.find(p => p.id === currentPlanId);
+    const draftPlan = myPlans.find(p => p.id === currentPlanId && p.status === 'Draft');
     if (!draftPlan) return;
     
     const deps = deriveDepartments(draftPlan.intake, draftPlan.matched);
@@ -299,12 +329,12 @@ function PortalRoute() {
     ));
   };
 
-  const currentDraft = currentPlanId ? plans.find(p => p.id === currentPlanId && p.status === 'Draft') : null;
-  const activePlan = currentPlanId ? plans.find(p => p.id === currentPlanId) : null;
+  const currentDraft = currentPlanId ? myPlans.find(p => p.id === currentPlanId && p.status === 'Draft') : null;
+  const activePlan = currentPlanId ? myPlans.find(p => p.id === currentPlanId) : null;
   const planToShow = applicantView === 'draft-review' ? currentDraft : (applicantView === 'plan-detail' ? activePlan : null);
 
-  const activeQueue = plans.filter(p => ['Draft — Requires Review', 'In Review (Re-opened)'].includes(p.status));
-  const catalog = plans.filter(p => ['Approved', 'Rejected', 'Modified via Staff Override'].includes(p.status));
+  const activeQueue = plans.filter(p => p.submittedAt && ['Draft — Requires Review', 'In Review (Re-opened)'].includes(p.status));
+  const catalog = plans.filter(p => p.submittedAt && ['Approved', 'Rejected', 'Modified via Staff Override'].includes(p.status));
 
   return (
     <div className="app-shell" style={{ display: 'flex', flexDirection: 'column', minHeight: '100dvh' }}>
@@ -315,7 +345,7 @@ function PortalRoute() {
         </Link>
 
         <div className="top-actions">
-          {prototypeRole === 'Applicant' && (
+          {persona.kind === 'applicant' && (
             <div className="language-controls">
               <Languages size={15} className="text-muted-foreground" />
               <select value={language} onChange={(e) => setLanguage(e.target.value as Language)} data-testid="select-language-global" aria-label="Select Language">
@@ -340,25 +370,23 @@ function PortalRoute() {
             </div>
           )}
           
-          {prototypeRole === 'Applicant' && ['draft-review', 'plan-detail'].includes(applicantView) && (
+          {persona.kind === 'applicant' && ['draft-review', 'plan-detail'].includes(applicantView) && (
             <button className={`button-tertiary simplify-toggle ${simplified ? 'active' : ''}`} onClick={() => setSimplified(!simplified)} data-testid="button-simplify-language">
               <Lightbulb size={14} /> {simplified ? t.fullDescriptions : t.simplifyLanguage}
             </button>
           )}
 
-          <RoleSelector role={prototypeRole} setRole={setPrototypeRole} />
-
           <div className="signed-in-identity" data-testid="text-signed-in-user">
-            {user?.fullName || user?.primaryEmailAddress?.emailAddress || 'Signed-in user'}
+            {persona.kind === 'applicant' ? `Applicant · ${persona.key}` : `City Staff · ${persona.desk}`}
           </div>
           
-          <button className="button-secondary" style={{ padding: '6px 12px' }} onClick={() => signOut({ redirectUrl: basePath || "/welcome" })} data-testid="button-logout">
+          <button className="button-secondary" style={{ padding: '6px 12px' }} onClick={() => { onLogout(); void signOut({ redirectUrl: `${basePath}/welcome` }); }} data-testid="button-logout">
             Log out
           </button>
         </div>
       </header>
 
-      {prototypeRole === 'Applicant' && (
+      {persona.kind === 'applicant' && (
         <div className="applicant-top-nav-container">
           <div className="applicant-top-nav" data-testid="applicant-top-nav">
             <button 
@@ -389,19 +417,20 @@ function PortalRoute() {
         </div>
       )}
 
-      {prototypeRole === 'City Staff' ? (
+      {persona.kind === 'staff' ? (
         <StaffPortal 
+          desk={persona.desk}
           activeQueue={activeQueue} 
           catalog={catalog} 
           onCompleteReview={handleStaffComplete} 
           onUpdateActivePlan={handleStaffUpdate} 
           onReopenReview={handleStaffReopen}
         />
-      ) : prototypeRole === 'Applicant' ? (
+      ) : persona.kind === 'applicant' ? (
         loading ? (
           <LoadingPlan language={language} />
         ) : applicantView === 'dashboard' ? (
-          <ApplicantDashboard plans={plans} userId={user?.id || 'unknown'} onResume={handleResumePlan} onCreateNew={handleCreateNew} />
+          <ApplicantDashboard plans={myPlans} userId={currentApplicantId!} onResume={handleResumePlan} onCreateNew={handleCreateNew} />
         ) : applicantView === 'intake' ? (
           <IntakeView 
             intake={intake} 
@@ -532,6 +561,52 @@ function PortalRoute() {
   );
 }
 
+function PortalRoute() {
+  const { user } = useUser();
+  const [, setLocation] = useLocation();
+  const [persona, setPersona] = useState<Persona | null>(() => user
+    ? readPersona(sessionStorage.getItem(personaKey(user.id))) || readPersona(sessionStorage.getItem(PENDING_PERSONA_KEY))
+    : null);
+
+  useEffect(() => {
+    if (!user) return;
+    const pending = readPersona(sessionStorage.getItem(PENDING_PERSONA_KEY));
+    if (pending) {
+      sessionStorage.setItem(personaKey(user.id), JSON.stringify(pending));
+      sessionStorage.removeItem(PENDING_PERSONA_KEY);
+      setPersona(pending);
+    }
+  }, [user]);
+
+  if (!user) return null;
+  if (!persona) return <PersonaLogin signedIn onLogin={selected => {
+    sessionStorage.setItem(personaKey(user.id), JSON.stringify(selected));
+    setPersona(selected);
+  }} />;
+  return <PortalWorkspace key={`${user.id}:${JSON.stringify(persona)}`} userId={user.id} persona={persona} onLogout={() => {
+    sessionStorage.removeItem(personaKey(user.id));
+    sessionStorage.removeItem(PENDING_PERSONA_KEY);
+    setPersona(null);
+  }} />;
+}
+
+function WelcomeRoute() {
+  const { user } = useUser();
+  const [, setLocation] = useLocation();
+  useEffect(() => {
+    if (user && sessionStorage.getItem(PENDING_PERSONA_KEY)) setLocation('/portal');
+  }, [user, setLocation]);
+  return <PersonaLogin signedIn={!!user} onLogin={selected => {
+    if (user) {
+      sessionStorage.setItem(personaKey(user.id), JSON.stringify(selected));
+      setLocation('/portal');
+    } else {
+      sessionStorage.setItem(PENDING_PERSONA_KEY, JSON.stringify(selected));
+      setLocation('/sign-in');
+    }
+  }} />;
+}
+
 function HomeRedirect() {
   const { user } = useUser();
   const [, setLocation] = useLocation();
@@ -567,14 +642,7 @@ function App() {
         </div>
         <Switch>
           <Route path="/" component={HomeRedirect} />
-          <Route path="/welcome">
-            <Show when="signed-in">
-              <LandingPage signedIn={true} />
-            </Show>
-            <Show when="signed-out">
-              <LandingPage signedIn={false} />
-            </Show>
-          </Route>
+          <Route path="/welcome" component={WelcomeRoute} />
           <Route path="/sign-in/*?" component={SignInPage} />
           <Route path="/sign-up/*?" component={SignUpPage} />
           <Route path="/portal">

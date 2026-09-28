@@ -6,6 +6,7 @@ import { AlertCircle, ClipboardCheck, Building2, CheckCircle2, Check, X, Plus, P
 import { copy } from '../copy';
 import { RequirementId, BusinessType, Modification } from '../requirements';
 import { deriveDepartments } from '../utils/helpers';
+import { StaffDesk } from '../prototypeStore';
 
 function StaffPlanReview({ 
   plan, 
@@ -134,12 +135,14 @@ function StaffPlanReview({
 export type StaffRole = 'Master City Queue' | Department;
 
 export function StaffPortal({ 
+  desk,
   activeQueue, 
   catalog, 
   onCompleteReview, 
   onUpdateActivePlan,
   onReopenReview
 }: { 
+  desk: StaffDesk;
   activeQueue: ActivePlan[];
   catalog: ActivePlan[];
   onCompleteReview: (planId: string, finalStatus: ActivePlan['status']) => void;
@@ -149,7 +152,7 @@ export function StaffPortal({
   const [staffTab, setStaffTab] = useState<'queue' | 'catalog'>('queue');
   const [expandedPlans, setExpandedPlans] = useState<string[]>([]);
   
-  const [staffRole, setStaffRole] = useState<StaffRole>('Master City Queue');
+  const staffRole: StaffRole = desk === 'Building Code Reviewer' ? 'Building' : desk === 'Fire Prevention' ? 'Fire' : 'Master City Queue';
   const [reviewerFilter, setReviewerFilter] = useState<string>('All');
 
   const availableReviewers = useMemo(() => {
@@ -180,6 +183,11 @@ export function StaffPortal({
     return filtered;
   }, [activeQueue, staffRole, reviewerFilter]);
 
+  const visibleCatalog = useMemo(() => staffRole === 'Master City Queue'
+    ? catalog
+    : catalog.filter(plan => (plan.departments || deriveDepartments(plan.intake, plan.matched)).includes(staffRole)),
+  [catalog, staffRole]);
+
   const handleReopen = (id: string) => {
     onReopenReview(id);
     setStaffTab('queue');
@@ -202,19 +210,7 @@ export function StaffPortal({
           <strong data-testid="staff-role-label">Role: {staffRole === 'Master City Queue' ? 'Master Overview' : `City Staff: ${staffRole}`}</strong>
           <span>Reviewing {filteredQueue.length} active plans</span>
         </div>
-        <select 
-          value={staffRole} 
-          onChange={e => { setStaffRole(e.target.value as StaffRole); setReviewerFilter('All'); }}
-          className="filter-select"
-          data-testid="select-staff-role"
-          style={{ background: 'hsl(var(--card))', color: 'hsl(var(--foreground))' }}
-        >
-          <option value="Master City Queue">Master City Queue</option>
-          <option value="Building">Building</option>
-          <option value="Fire">Fire</option>
-          <option value="Environmental Services">Environmental Services</option>
-          <option value="Planning">Planning</option>
-        </select>
+        <span className="catalog-badge" data-testid="staff-desk-label">{desk} desk</span>
       </div>
 
       <div className="staff-tabs" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: 12, marginBottom: 24, borderBottom: '1px solid hsl(var(--border))' }}>
@@ -247,7 +243,7 @@ export function StaffPortal({
       </div>
 
       {staffTab === 'catalog' ? (
-        <ReviewCatalog records={catalog} onReopen={handleReopen} />
+          <ReviewCatalog records={visibleCatalog} onReopen={handleReopen} />
       ) : filteredQueue.length === 0 ? (
         <div className="no-match" style={{ textAlign: 'center', padding: '60px 20px' }}>
           <ClipboardCheck size={42} color="hsl(var(--muted-foreground))" style={{ margin: '0 auto 16px' }} />

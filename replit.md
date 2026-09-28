@@ -12,7 +12,7 @@ A bilingual prototype that helps first-time small-business owners assemble a per
 
 - pnpm workspaces, Node.js 24, TypeScript 5.9
 - Web: React, Vite, Tailwind CSS
-- UI state and permit sample data are local to the web artifact
+- Permit sample data and prototype plans are local to the web artifact and browser
 
 ## Where things live
 
@@ -22,7 +22,8 @@ A bilingual prototype that helps first-time small-business owners assemble a per
 
 ## Architecture decisions
 
-- This prototype intentionally uses local data and local state; it does not claim to provide official permit determinations.
+- This prototype intentionally uses browser-local plan data; it does not claim to provide official permit determinations.
+- Clerk signs in real users, but applicant keys and staff desks are self-selected prototype personas, not verified permissions. Plans are not synchronized across browsers or protected from a person with access to the same browser's storage.
 - Unsupported combinations return a no-match message rather than generating unverified rules.
 - Staff editing blocks final submission until the reviewed change is saved.
 
