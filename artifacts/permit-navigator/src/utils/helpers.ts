@@ -69,6 +69,7 @@ export function generateId() {
 }
 
 export const emptyIntake: Intake = {
+  businessName: '',
   businessType: '',
   businessOther: '',
   address: '',

@@ -40,6 +40,7 @@ export function generateRandomActionPlan(queueLength: number) {
   const selectedMods = shuffledMods.slice(0, numMods);
 
   const intake: Intake = {
+    businessName: `Sample ${selectedType.other || copy.en.businessLabels[selectedType.type]}`,
     businessType: selectedType.type,
     businessOther: selectedType.other,
     address,

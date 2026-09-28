@@ -16,6 +16,7 @@ export function IntakeForm({ intake, setIntake, onGenerate, language, setLanguag
   
   const validateAndGenerate = () => {
     const next: Record<string, string> = {};
+    if (!intake.businessName.trim()) next.businessName = 'Enter a business name.';
     if (!intake.businessType) next.business = t.errorBusiness;
     if (intake.businessType === 'other' && !intake.businessOther.trim()) next.businessOther = t.errorCustomBusiness;
     if (!intake.address.trim()) next.address = t.errorAddress;
@@ -85,6 +86,12 @@ export function IntakeForm({ intake, setIntake, onGenerate, language, setLanguag
     <div className="card-kicker">{t.startKicker}</div>
     <h2 id="intake-title">{t.startTitle}</h2>
     <p>{t.startBody}</p>
+
+    <div className="field">
+      <label htmlFor="business-name">Business name <span className="required">*</span></label>
+      <input id="business-name" value={intake.businessName} onChange={event => update('businessName', event.target.value)} placeholder="Your business or project name" data-testid="input-business-name" />
+      {errors.businessName && <div className="field-error" role="alert">{errors.businessName}</div>}
+    </div>
     
     <div className="field">
       <label htmlFor="business-type">{t.business} <span className="required">*</span></label>
@@ -135,6 +142,7 @@ export function IntakeForm({ intake, setIntake, onGenerate, language, setLanguag
     <div className="field">
       <label>{t.documents}</label>
       <div className="upload-zone"><FileText size={17} /><span>{t.upload}</span><input ref={fileRef} type="file" accept=".pdf,.png,.jpg,.jpeg" multiple onChange={handleFiles} data-testid="input-documents" /></div>
+      <p style={{ fontSize: 12, color: 'hsl(var(--muted-foreground))', margin: '8px 0 0' }}>Prototype: selected documents are not uploaded or saved with the application record.</p>
       {intake.files.length > 0 && <div className="file-list" data-testid="text-uploaded-files">{intake.files.map((file) => file.name).join(', ')}</div>}
       {errors.files && <div className="field-error">{errors.files}</div>}
     </div>

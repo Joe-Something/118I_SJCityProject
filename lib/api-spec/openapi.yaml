@@ -11,6 +11,101 @@ tags:
   - name: health
     description: Health operations
 paths:
+  /applications/mine:
+    get:
+      operationId: listMyApplications
+      tags: [applications]
+      parameters:
+        - in: query
+          name: applicantKey
+          required: true
+          schema: { type: string, minLength: 1 }
+      responses:
+        "200":
+          description: Applications belonging to this signed-in account and applicant key
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/ApplicationRecord" }
+  /applications/staff:
+    get:
+      operationId: searchStaffApplications
+      tags: [applications]
+      parameters:
+        - { in: query, name: search, schema: { type: string } }
+        - { in: query, name: applicationId, schema: { type: string } }
+        - { in: query, name: businessName, schema: { type: string } }
+        - { in: query, name: businessCategory, schema: { type: string } }
+        - { in: query, name: requestType, schema: { type: string } }
+        - { in: query, name: status, schema: { type: string } }
+        - { in: query, name: assignedDepartment, schema: { type: string } }
+        - { in: query, name: applicantLanguage, schema: { type: string } }
+        - { in: query, name: submissionDate, schema: { type: string, format: date } }
+        - { in: query, name: descriptionOrNotes, schema: { type: string } }
+      responses:
+        "200":
+          description: Matching submitted prototype records
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/ApplicationRecord" }
+  /applications:
+    post:
+      operationId: createApplication
+      tags: [applications]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ApplicationInput" }
+      responses:
+        "201":
+          description: Created application
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ApplicationRecord" }
+  /applications/{id}:
+    patch:
+      operationId: updateMyApplication
+      tags: [applications]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ApplicationInput" }
+      responses:
+        "200":
+          description: Updated owned application
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ApplicationRecord" }
+  /applications/{id}/review:
+    patch:
+      operationId: reviewApplication
+      tags: [applications]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ApplicationReview" }
+      responses:
+        "200":
+          description: Updated staff review
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ApplicationRecord" }
   /healthz:
     get:
       operationId: healthCheck
@@ -26,6 +121,35 @@ paths:
                 $ref: "#/components/schemas/HealthStatus"
 components:
   schemas:
+    ApplicationRecord:
+      type: object
+      required: [id, businessName, businessCategory, requestType, status, assignedDepartment, applicantLanguage, description, synthetic, plan, createdAt, updatedAt]
+      properties:
+        id: { type: string }
+        businessName: { type: string }
+        businessCategory: { type: string }
+        requestType: { type: string }
+        status: { type: string }
+        assignedDepartment: { type: string }
+        applicantLanguage: { type: string }
+        submittedAt: { type: ["string", "null"], format: date-time }
+        description: { type: string }
+        notes: { type: ["string", "null"] }
+        synthetic: { type: boolean }
+        plan: { type: object, additionalProperties: true }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    ApplicationInput:
+      type: object
+      required: [applicantKey, plan]
+      properties:
+        applicantKey: { type: string, minLength: 1, maxLength: 200 }
+        plan: { type: object, additionalProperties: true }
+    ApplicationReview:
+      type: object
+      required: [plan]
+      properties:
+        plan: { type: object, additionalProperties: true }
     HealthStatus:
       type: object
       properties:

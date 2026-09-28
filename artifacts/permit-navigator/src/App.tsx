@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { ClerkProvider, Show, useUser, useClerk } from '@clerk/react';
 import { publishableKeyFromHost } from '@clerk/react/internal';
 import { shadcn } from '@clerk/themes';
@@ -20,7 +20,9 @@ import { IntakeView } from './components/IntakeView';
 import { StaffPortal } from './components/StaffPortal';
 import { RequirementCard } from './components/RequirementCard';
 import { Chatbot } from './components/Chatbot';
-import { applicantId, readPersona, personaKey, PENDING_PERSONA_KEY, PLANS_KEY, readPlans, Persona } from './prototypeStore';
+import { StaffApplicationFilters } from './components/StaffSearchFilters';
+import { applicantId, readPersona, personaKey, PENDING_PERSONA_KEY, readPlans, Persona } from './prototypeStore';
+import { createApplication, listMyApplications, reviewApplication, searchStaffApplications, updateMyApplication, type ApplicationRecord } from '@workspace/api-client-react';
 
 const clerkPubKey = publishableKeyFromHost(
   window.location.hostname,
@@ -107,7 +109,52 @@ function PortalWorkspace({ persona, userId, onLogout }: { persona: Persona; user
   const { signOut } = useClerk();
   const { toast } = useToast();
 
-  const [plans, setPlans] = useState<ActivePlan[]>(readPlans);
+  const [records, setRecords] = useState<ApplicationRecord[]>([]);
+  const [recordsLoading, setRecordsLoading] = useState(true);
+  const [recordsError, setRecordsError] = useState('');
+  const [filters, setFilters] = useState<StaffApplicationFilters>({
+    search: '', applicationId: '', businessName: '', businessCategory: '',
+    requestType: '', status: '', assignedDepartment: '', applicantLanguage: '',
+    submissionDate: '', descriptionOrNotes: '',
+  });
+  const refreshRows = useCallback(async () => {
+    const rows = persona.kind === 'applicant'
+      ? await listMyApplications({ applicantKey: persona.key })
+      : await searchStaffApplications(Object.fromEntries(Object.entries(filters).filter(([, value]) => value.trim())) as Partial<StaffApplicationFilters>);
+    setRecords(rows);
+    setRecordsError('');
+  }, [persona, filters]);
+
+  useEffect(() => {
+    let mounted = true;
+    const load = async () => {
+      try {
+        const rows = persona.kind === 'applicant'
+          ? await listMyApplications({ applicantKey: persona.key })
+          : await searchStaffApplications(Object.fromEntries(Object.entries(filters).filter(([, value]) => value.trim())) as Partial<StaffApplicationFilters>);
+        if (mounted) { setRecords(rows); setRecordsError(''); }
+      } catch {
+        if (mounted) setRecordsError('Could not load applications from the database. Please try again.');
+      } finally {
+        if (mounted) setRecordsLoading(false);
+      }
+    };
+    setRecordsLoading(true);
+    void load();
+    const interval = window.setInterval(load, 15000);
+    window.addEventListener('focus', load);
+    return () => { mounted = false; window.clearInterval(interval); window.removeEventListener('focus', load); };
+  }, [persona, filters]);
+
+  const plans: ActivePlan[] = records.map(record => ({
+    ...(record.plan as unknown as ActivePlan),
+    id: record.id,
+    status: record.status as PlanStatus,
+    submittedAt: record.submittedAt ? new Date(record.submittedAt).getTime() : undefined,
+    updatedAt: new Date(record.updatedAt).getTime(),
+    createdAt: new Date(record.createdAt).getTime(),
+    intake: { ...(record.plan.intake as Intake), businessName: record.businessName, files: [] },
+  }));
   const currentApplicantId = persona.kind === 'applicant' ? applicantId(userId, persona.key) : null;
   const myPlans = plans.filter(plan => plan.userId === currentApplicantId);
   
@@ -127,39 +174,33 @@ function PortalWorkspace({ persona, userId, onLogout }: { persona: Persona; user
   const t = copy[language === 'other' ? 'en' : language];
 
   useEffect(() => {
-    const serialized = JSON.stringify(plans);
-    if (window.localStorage.getItem(PLANS_KEY) !== serialized) {
-      window.localStorage.setItem(PLANS_KEY, serialized);
-    }
-  }, [plans]);
-
-  useEffect(() => {
-    const sync = (event: StorageEvent) => {
-      if (event.key === PLANS_KEY) setPlans(readPlans());
-    };
-    window.addEventListener('storage', sync);
-    return () => window.removeEventListener('storage', sync);
-  }, []);
-
-  useEffect(() => {
     if (!currentApplicantId) return;
     const legacyKey = `permit-navigator-plans:${userId}`;
-    const stored = sessionStorage.getItem(legacyKey);
-    if (!stored) return;
+    const marker = `permit-navigator:db-imported:${currentApplicantId}`;
+    let previousSession: ActivePlan[] = [];
     try {
-      const parsed: unknown = JSON.parse(stored);
-      if (!Array.isArray(parsed)) return;
-      const legacyPlans = parsed.filter((plan): plan is ActivePlan =>
-        plan && typeof plan.id === 'string' && plan.userId === userId && plan.intake && Array.isArray(plan.matched)
-      ).map(plan => ({ ...plan, userId: currentApplicantId }));
-      setPlans(previous => {
-        const ids = new Set(previous.map(plan => plan.id));
-        const merged = [...previous, ...legacyPlans.filter(plan => !ids.has(plan.id))];
-        localStorage.setItem(PLANS_KEY, JSON.stringify(merged));
-        return merged;
-      });
-      sessionStorage.removeItem(legacyKey);
-    } catch { /* Leave unreadable legacy data untouched. */ }
+      const parsed: unknown = JSON.parse(sessionStorage.getItem(legacyKey) || '[]');
+      if (Array.isArray(parsed)) previousSession = parsed.filter((plan): plan is ActivePlan => plan?.userId === userId && typeof plan.id === 'string');
+    } catch { /* Skip corrupt session data. */ }
+    const oldPlans = [...readPlans().filter(plan => plan.userId === currentApplicantId), ...previousSession.map(plan => ({ ...plan, userId: currentApplicantId }))];
+    if (!oldPlans.length) return;
+    let cancelled = false;
+    const importPlans = async () => {
+      try {
+        const imported = new Set<string>(JSON.parse(localStorage.getItem(marker) || '[]') as string[]);
+        for (const plan of oldPlans) {
+          if (cancelled || imported.has(plan.id)) continue;
+          await createApplication({ applicantKey: persona.kind === 'applicant' ? persona.key : '', plan: JSON.parse(JSON.stringify(plan)) });
+          imported.add(plan.id);
+          localStorage.setItem(marker, JSON.stringify([...imported]));
+        }
+        if (!cancelled) await refreshRows();
+      } catch {
+        if (!cancelled) toast({ title: 'Import incomplete', description: 'Your older browser plans were kept locally. Try reloading to import them.', variant: 'destructive' });
+      }
+    };
+    void importPlans();
+    return () => { cancelled = true; };
   }, [currentApplicantId, userId]);
 
   const handleCreateNew = () => {
@@ -197,6 +238,7 @@ function PortalWorkspace({ persona, userId, onLogout }: { persona: Persona; user
     setLanguage('en');
     setCustomLanguage('');
     setIntake({
+      businessName: 'Sample First Street Restaurant',
       businessType: 'restaurant',
       businessOther: '',
       address: '150 South First Street, San Jose, CA',
@@ -208,7 +250,7 @@ function PortalWorkspace({ persona, userId, onLogout }: { persona: Persona; user
     });
   };
 
-  const handleGenerateRandom = () => {
+  const handleGenerateRandom = async () => {
     if (!currentApplicantId) return;
     const { intake: randomIntake, reviewer } = generateRandomActionPlan(plans.length);
     const matched = getMatchedRequirements(randomIntake);
@@ -240,14 +282,16 @@ function PortalWorkspace({ persona, userId, onLogout }: { persona: Persona; user
       matched,
     };
     
-    setPlans(prev => [...prev, newPlan]);
-    toast({
-      title: 'Success',
-      description: 'Random action plan generated and sent to City Staff Active Review Queue!',
-    });
+    try {
+      await createApplication({ applicantKey: persona.kind === 'applicant' ? persona.key : '', plan: JSON.parse(JSON.stringify(newPlan)) });
+      await refreshRows();
+      toast({ title: 'Synthetic sample created', description: 'A synthetic action plan was saved to the database and sent to the review queue.' });
+    } catch {
+      toast({ title: 'Could not save sample', description: 'Please try again.', variant: 'destructive' });
+    }
   };
 
-  const handleGeneratePlan = () => {
+  const handleGeneratePlan = async () => {
     if (!currentApplicantId) return;
     const ownerId = currentApplicantId;
     const draftIntake = intake;
@@ -255,7 +299,7 @@ function PortalWorkspace({ persona, userId, onLogout }: { persona: Persona; user
     const draftCustomLanguage = customLanguage;
     const draftSimplified = simplified;
     setLoading(true);
-    setTimeout(() => {
+    try {
       const matched = getMatchedRequirements(draftIntake);
       const newPlan: ActivePlan = {
         id: generateId(),
@@ -272,14 +316,18 @@ function PortalWorkspace({ persona, userId, onLogout }: { persona: Persona; user
         rejected: [],
         matched,
       };
-      setPlans(prev => [...prev, newPlan]);
-      setCurrentPlanId(newPlan.id);
-      setLoading(false);
+      const saved = await createApplication({ applicantKey: persona.kind === 'applicant' ? persona.key : '', plan: JSON.parse(JSON.stringify(newPlan)) });
+      await refreshRows();
+      setCurrentPlanId(saved.id);
       setApplicantView('draft-review');
-    }, 1500);
+    } catch {
+      toast({ title: 'Plan not saved', description: 'The database could not save your application. Please try again.', variant: 'destructive' });
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleSubmitToStaff = () => {
+  const handleSubmitToStaff = async () => {
     if (!currentPlanId) return;
     
     const draftPlan = myPlans.find(p => p.id === currentPlanId && p.status === 'Draft');
@@ -293,40 +341,38 @@ function PortalWorkspace({ persona, userId, onLogout }: { persona: Persona; user
       assignees[d] = departmentReviewers[submittedCount % departmentReviewers.length];
     });
     
-    setPlans(prev => prev.map(p => 
-      p.id === currentPlanId 
-        ? { ...p, status: 'Draft — Requires Review', submittedAt: Date.now(), updatedAt: Date.now(), departments: deps, departmentAssignees: assignees }
-        : p
-    ));
-    toast({
-      title: 'Submitted to City Staff Queue',
-      description: 'Your plan has been sent to the City Staff review queue.',
-    });
-    setApplicantView('dashboard');
+    try {
+      await updateMyApplication(currentPlanId, { applicantKey: persona.kind === 'applicant' ? persona.key : '',
+        plan: JSON.parse(JSON.stringify({ ...draftPlan, status: 'Draft — Requires Review', submittedAt: Date.now(), updatedAt: Date.now(), departments: deps, departmentAssignees: assignees })) });
+      await refreshRows();
+      toast({ title: 'Submitted to City Staff Queue', description: 'Your plan has been saved and sent to the review queue.' });
+      setApplicantView('dashboard');
+    } catch {
+      toast({ title: 'Submission failed', description: 'Your draft has not been sent. Please try again.', variant: 'destructive' });
+    }
   };
 
-  const handleStaffUpdate = (planId: string, updates: Partial<ActivePlan>) => {
-    setPlans(prev => prev.map(p => p.id === planId ? { ...p, ...updates } : p));
+  const saveStaffReview = async (planId: string, updates: Partial<ActivePlan>) => {
+    const current = plans.find(plan => plan.id === planId);
+    if (!current) return false;
+    try {
+      await reviewApplication(planId, { plan: JSON.parse(JSON.stringify({ ...current, ...updates })) });
+      await refreshRows();
+      return true;
+    } catch {
+      toast({ title: 'Review not saved', description: 'Please retry your change.', variant: 'destructive' });
+      return false;
+    }
   };
 
   const handleStaffComplete = (planId: string, status: PlanStatus) => {
-    setPlans(prev => prev.map(p => 
-      p.id === planId 
-        ? { ...p, status, completedAt: Date.now(), updatedAt: Date.now() }
-        : p
-    ));
-    toast({
-      title: 'Review Completed',
-      description: `Plan has been marked as ${status}.`,
+    void saveStaffReview(planId, { status, completedAt: Date.now(), updatedAt: Date.now() }).then(saved => {
+      if (saved) toast({ title: 'Review Completed', description: `Plan has been marked as ${status}.` });
     });
   };
 
   const handleStaffReopen = (planId: string) => {
-    setPlans(prev => prev.map(p => 
-      p.id === planId 
-        ? { ...p, status: 'In Review (Re-opened)', updatedAt: Date.now() }
-        : p
-    ));
+    void saveStaffReview(planId, { status: 'In Review (Re-opened)', updatedAt: Date.now() });
   };
 
   const currentDraft = currentPlanId ? myPlans.find(p => p.id === currentPlanId && p.status === 'Draft') : null;
@@ -421,13 +467,22 @@ function PortalWorkspace({ persona, userId, onLogout }: { persona: Persona; user
         <StaffPortal 
           desk={persona.desk}
           activeQueue={activeQueue} 
-          catalog={catalog} 
+          catalog={catalog}
+          records={records}
+          filters={filters}
+          onFiltersChange={setFilters}
+          recordsLoading={recordsLoading}
+          recordsError={recordsError}
           onCompleteReview={handleStaffComplete} 
-          onUpdateActivePlan={handleStaffUpdate} 
+          onUpdateActivePlan={(id, updates) => { void saveStaffReview(id, updates); }}
           onReopenReview={handleStaffReopen}
         />
       ) : persona.kind === 'applicant' ? (
         loading ? (
+          <LoadingPlan language={language} />
+        ) : recordsError ? (
+          <div className="plan-shell" role="alert"><div className="verification-notice">{recordsError}</div><button className="button-secondary" onClick={() => void refreshRows()}>Try again</button></div>
+        ) : recordsLoading ? (
           <LoadingPlan language={language} />
         ) : applicantView === 'dashboard' ? (
           <ApplicantDashboard plans={myPlans} userId={currentApplicantId!} onResume={handleResumePlan} onCreateNew={handleCreateNew} />

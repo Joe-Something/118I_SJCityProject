@@ -58,7 +58,7 @@ export function PersonaLogin({ onLogin, signedIn }: { onLogin: (persona: Persona
           <button className="button-primary persona-submit" type="submit" data-testid="button-persona-login">
             {signedIn ? `Enter ${mode === 'applicant' ? 'Applicant Dashboard' : 'Staff Portal'}` : 'Continue to secure sign in'}
           </button>
-          <p className="persona-caution">Prototype only: staff roles and applicant keys are self-selected, not verified City credentials. Plans are stored only in this browser. Do not enter sensitive information.</p>
+          <p className="persona-caution">Prototype only: staff roles and applicant keys are self-selected, not verified City credentials. Applications are saved to a prototype database. Do not enter sensitive information.</p>
         </form>
       </main>
       <section className="footer"><div className="footer-inner"><span>Permit Navigator · San José</span><Disclaimer /></div></section>

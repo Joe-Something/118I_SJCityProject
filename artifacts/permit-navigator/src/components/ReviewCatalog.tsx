@@ -65,7 +65,8 @@ export function ReviewCatalog({ records, onReopen }: { records: ActivePlan[], on
             <div key={record.id} className="catalog-card" data-testid={`catalog-record-${record.id}`}>
               <div className="catalog-card-header">
                 <div>
-                  <div className="catalog-card-title">{record.intake.address}</div>
+                  <div className="catalog-card-title">{record.intake.businessName || record.intake.address} <span className="catalog-badge">SYNTHETIC PROTOTYPE DATA</span></div>
+                  <div className="catalog-card-sub">Application ID: {record.id}</div>
                   <div className="catalog-card-sub">
                     <MapPin size={12} /> {record.intake.address} &middot; <Building2 size={12} /> {record.intake.businessType === 'other' ? record.intake.businessOther : record.intake.businessType}
                   </div>

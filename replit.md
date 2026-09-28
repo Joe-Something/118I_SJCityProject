@@ -12,7 +12,7 @@ A bilingual prototype that helps first-time small-business owners assemble a per
 
 - pnpm workspaces, Node.js 24, TypeScript 5.9
 - Web: React, Vite, Tailwind CSS
-- Permit sample data and prototype plans are local to the web artifact and browser
+- Permit guidance rules are local to the web artifact; application records are stored in the Replit PostgreSQL database
 
 ## Where things live
 
@@ -22,8 +22,9 @@ A bilingual prototype that helps first-time small-business owners assemble a per
 
 ## Architecture decisions
 
-- This prototype intentionally uses browser-local plan data; it does not claim to provide official permit determinations.
-- Clerk signs in real users, but applicant keys and staff desks are self-selected prototype personas, not verified permissions. Plans are not synchronized across browsers or protected from a person with access to the same browser's storage.
+- This prototype uses synthetic database application records; it does not claim to provide official permit determinations.
+- Clerk signs in real users. Database applicant queries are scoped by Clerk user and applicant key, but staff desks are self-selected prototype personas, not verified staff permissions. Do not enter sensitive information or treat the staff API as production-authorized.
+- Older browser-local plans are imported to the database on the applicant's next login; new plans use the database as their source of truth.
 - Unsupported combinations return a no-match message rather than generating unverified rules.
 - Staff editing blocks final submission until the reviewed change is saved.
 

@@ -7,6 +7,8 @@ import { copy } from '../copy';
 import { RequirementId, BusinessType, Modification } from '../requirements';
 import { deriveDepartments } from '../utils/helpers';
 import { StaffDesk } from '../prototypeStore';
+import { StaffSearchFilters, type StaffApplicationFilters } from './StaffSearchFilters';
+import type { ApplicationRecord } from '@workspace/api-client-react';
 
 function StaffPlanReview({ 
   plan, 
@@ -137,7 +139,12 @@ export type StaffRole = 'Master City Queue' | Department;
 export function StaffPortal({ 
   desk,
   activeQueue, 
-  catalog, 
+  catalog,
+  records,
+  filters,
+  onFiltersChange,
+  recordsLoading,
+  recordsError,
   onCompleteReview, 
   onUpdateActivePlan,
   onReopenReview
@@ -145,6 +152,11 @@ export function StaffPortal({
   desk: StaffDesk;
   activeQueue: ActivePlan[];
   catalog: ActivePlan[];
+  records: ApplicationRecord[];
+  filters: StaffApplicationFilters;
+  onFiltersChange: (next: StaffApplicationFilters) => void;
+  recordsLoading: boolean;
+  recordsError: string;
   onCompleteReview: (planId: string, finalStatus: ActivePlan['status']) => void;
   onUpdateActivePlan: (planId: string, updates: Partial<ActivePlan>) => void;
   onReopenReview: (recordId: string) => void;
@@ -213,6 +225,14 @@ export function StaffPortal({
         <span className="catalog-badge" data-testid="staff-desk-label">{desk} desk</span>
       </div>
 
+      <StaffSearchFilters filters={filters} onChange={onFiltersChange} onClear={() => onFiltersChange({
+        search: '', applicationId: '', businessName: '', businessCategory: '',
+        requestType: '', status: '', assignedDepartment: '', applicantLanguage: '',
+        submissionDate: '', descriptionOrNotes: '',
+      })} />
+      {recordsLoading && <p role="status">Searching database records…</p>}
+      {recordsError && <div className="verification-notice" role="alert">{recordsError}</div>}
+
       <div className="staff-tabs" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: 12, marginBottom: 24, borderBottom: '1px solid hsl(var(--border))' }}>
         <div style={{ display: 'flex', gap: '12px' }}>
           <button 
@@ -242,7 +262,7 @@ export function StaffPortal({
         )}
       </div>
 
-      {staffTab === 'catalog' ? (
+      {recordsError || recordsLoading ? null : staffTab === 'catalog' ? (
           <ReviewCatalog records={visibleCatalog} onReopen={handleReopen} />
       ) : filteredQueue.length === 0 ? (
         <div className="no-match" style={{ textAlign: 'center', padding: '60px 20px' }}>
@@ -254,6 +274,7 @@ export function StaffPortal({
         <div className="active-queue-list" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
           {filteredQueue.map(plan => {
             const deps = plan.departments || deriveDepartments(plan.intake, plan.matched);
+            const record = records.find(item => item.id === plan.id);
             return (
               <div key={plan.id} className="active-plan-card" style={{ background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: '12px', overflow: 'hidden' }} data-testid={`active-plan-${plan.id}`}>
                 <div 
@@ -262,7 +283,15 @@ export function StaffPortal({
                   style={{ cursor: 'pointer', display: 'flex', justifyContent: 'space-between', padding: '16px', background: expandedPlans.includes(plan.id) ? 'hsl(var(--muted) / 0.3)' : 'transparent' }}
                 >
                   <div>
-                    <div style={{ fontWeight: 600, fontSize: '16px', marginBottom: '4px' }}>{plan.intake.address}</div>
+                    <div style={{ fontWeight: 600, fontSize: '16px', marginBottom: '4px' }}>{record?.businessName || plan.intake.businessName || plan.intake.address}</div>
+                    <div style={{ fontSize: 12, color: 'hsl(var(--muted-foreground))', marginBottom: 5 }}>
+                      ID: {plan.id} · {record?.businessCategory || plan.intake.businessType} · {record?.requestType || 'Permit review'} · {record?.applicantLanguage || plan.language}
+                      {record?.synthetic && <strong> · SYNTHETIC PROTOTYPE DATA</strong>}
+                    </div>
+                    {record && <div style={{ fontSize: 12, color: 'hsl(var(--muted-foreground))', marginBottom: 5 }}>
+                      Submitted (UTC): {record.submittedAt ? new Date(record.submittedAt).toLocaleDateString('en-US', { timeZone: 'UTC' }) : 'Not submitted'} · {record.description}
+                      {record.notes && <> · Notes: {record.notes}</>}
+                    </div>}
                     <div style={{ fontSize: '13px', color: 'hsl(var(--muted-foreground))', display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
                       <Building2 size={13} /> {copy[plan.language === 'other' ? 'en' : plan.language].businessLabels[plan.intake.businessType as BusinessType] || plan.intake.businessOther}
                       <span>&middot;</span>

@@ -6,6 +6,7 @@ export const DISCLAIMER = 'Prototype Sample Data — Not official city advice.';
 export type RequirementId = 'business-registration' | 'zoning-clearance' | 'building-permits' | 'sign-permits' | 'health-safety';
 
 export type Intake = {
+  businessName: string;
   businessType: BusinessType | '';
   businessOther: string;
   address: string;
