@@ -18,6 +18,15 @@ export interface WorkspaceEscalation {
   testRecipient: string | null;
 }
 
+export type WorkspaceRecordFreshness = typeof WorkspaceRecordFreshness[keyof typeof WorkspaceRecordFreshness];
+
+
+export const WorkspaceRecordFreshness = {
+  demo: 'demo',
+  cached: 'cached',
+  outdated: 'outdated',
+} as const;
+
 export interface WorkspaceRecord {
   id: string;
   category: string;
@@ -29,6 +38,42 @@ export interface WorkspaceRecord {
   /** @nullable */
   sourceUrl: string | null;
   updatedAt: string;
+  /** @nullable */
+  sourceDate: string | null;
+  /** @nullable */
+  sourceImportedAt: string | null;
+  freshness: WorkspaceRecordFreshness;
+}
+
+export type WorkspacePrototypeSourceTopic = typeof WorkspacePrototypeSourceTopic[keyof typeof WorkspacePrototypeSourceTopic];
+
+
+export const WorkspacePrototypeSourceTopic = {
+  rules: 'rules',
+  fees: 'fees',
+  status: 'status',
+  alerts: 'alerts',
+} as const;
+
+export type WorkspacePrototypeSourceState = typeof WorkspacePrototypeSourceState[keyof typeof WorkspacePrototypeSourceState];
+
+
+export const WorkspacePrototypeSourceState = {
+  demo: 'demo',
+  outdated: 'outdated',
+  unavailable: 'unavailable',
+} as const;
+
+export interface WorkspacePrototypeSource {
+  id: string;
+  topic: WorkspacePrototypeSourceTopic;
+  title: string;
+  version: string;
+  revisedAt: string;
+  officialReferenceUrl: string;
+  content: string;
+  checkedAt: string;
+  state: WorkspacePrototypeSourceState;
 }
 
 export type WorkspaceConversationMode = typeof WorkspaceConversationMode[keyof typeof WorkspaceConversationMode];

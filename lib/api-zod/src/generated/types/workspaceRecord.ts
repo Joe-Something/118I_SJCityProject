@@ -5,6 +5,7 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { WorkspaceRecordFreshness } from './workspaceRecordFreshness';
 
 export interface WorkspaceRecord {
   id: string;
@@ -17,4 +18,9 @@ export interface WorkspaceRecord {
   /** @nullable */
   sourceUrl: string | null;
   updatedAt: Date;
+  /** @nullable */
+  sourceDate: Date | null;
+  /** @nullable */
+  sourceImportedAt: Date | null;
+  freshness: WorkspaceRecordFreshness;
 }

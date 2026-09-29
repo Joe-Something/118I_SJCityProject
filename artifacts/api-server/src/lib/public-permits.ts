@@ -84,19 +84,23 @@ export async function refreshPublicPermits() {
     .sort((a, b) => b.sourceDate.getTime() - a.sourceDate.getTime())
     .slice(0, 60);
   if (!rows.length) throw new Error("City permit dataset contains no usable commercial records");
-  await db.insert(applicationsTable).values(rows).onConflictDoUpdate({
-    target: applicationsTable.id,
-    set: {
-      businessName: sql`excluded.business_name`,
-      businessCategory: sql`excluded.business_category`,
-      requestType: sql`excluded.request_type`,
-      status: sql`excluded.status`,
-      description: sql`excluded.description`,
-      sourceDate: sql`excluded.source_date`,
-      sourceImportedAt: importedAt,
-      plan: sql`excluded.plan`,
-      updatedAt: importedAt,
-    },
+  // Preserve the last known import if the City download or parsing fails.
+  // Historical rows remain labeled with their original import timestamp.
+  await db.transaction(async tx => {
+    await tx.insert(applicationsTable).values(rows).onConflictDoUpdate({
+      target: applicationsTable.id,
+      set: {
+        businessName: sql`excluded.business_name`,
+        businessCategory: sql`excluded.business_category`,
+        requestType: sql`excluded.request_type`,
+        status: sql`excluded.status`,
+        description: sql`excluded.description`,
+        sourceDate: sql`excluded.source_date`,
+        sourceImportedAt: importedAt,
+        plan: sql`excluded.plan`,
+        updatedAt: importedAt,
+      },
+    });
   });
   logger.info({ imported: rows.length, source: PUBLIC_PERMITS_DATASET }, "Refreshed City public permit records");
 }

@@ -1,0 +1,1 @@
+- [San José source access](city-source-access.md) — public City pages can reject server fetches; treat reachability and publication freshness separately from official status.

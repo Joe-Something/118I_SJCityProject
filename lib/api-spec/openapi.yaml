@@ -11,6 +11,18 @@ tags:
   - name: health
     description: Health operations
 paths:
+  /workspace/prototype-sources:
+    get:
+      operationId: listWorkspacePrototypeSources
+      tags: [workspace]
+      responses:
+        "200":
+          description: Fictional, versioned permit-reference documents for the prototype; not City publications
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/WorkspacePrototypeSource" }
   /workspace/records:
     get:
       operationId: listWorkspaceRecords
@@ -242,7 +254,7 @@ components:
         testRecipient: { type: ["string", "null"] }
     WorkspaceRecord:
       type: object
-      required: [id, category, status, department, language, description, synthetic, sourceUrl, updatedAt]
+      required: [id, category, status, department, language, description, synthetic, sourceUrl, updatedAt, sourceDate, sourceImportedAt, freshness]
       properties:
         id: { type: string }
         category: { type: string }
@@ -253,6 +265,22 @@ components:
         synthetic: { type: boolean }
         sourceUrl: { type: ["string", "null"] }
         updatedAt: { type: string, format: date-time }
+        sourceDate: { type: ["string", "null"], format: date-time }
+        sourceImportedAt: { type: ["string", "null"], format: date-time }
+        freshness: { type: string, enum: [demo, cached, outdated] }
+    WorkspacePrototypeSource:
+      type: object
+      required: [id, topic, title, version, revisedAt, officialReferenceUrl, content, checkedAt, state]
+      properties:
+        id: { type: string }
+        topic: { type: string, enum: [rules, fees, status, alerts] }
+        title: { type: string }
+        version: { type: string }
+        revisedAt: { type: string, format: date-time }
+        officialReferenceUrl: { type: string, format: uri }
+        content: { type: string }
+        checkedAt: { type: string, format: date-time }
+        state: { type: string, enum: [demo, outdated, unavailable] }
     WorkspaceConversation:
       type: object
       required: [id, title, mode, createdAt, updatedAt]

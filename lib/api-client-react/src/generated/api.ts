@@ -33,6 +33,7 @@ import type {
   WorkspaceEscalation,
   WorkspaceMessage,
   WorkspaceMessageInput,
+  WorkspacePrototypeSource,
   WorkspaceRecord,
   WorkspaceReply
 } from './api.schemas';
@@ -63,6 +64,77 @@ const withQueryKey = <T extends object, K>(query: T, queryKey: K): T & { queryKe
   }
   return result;
 };
+
+export const getListWorkspacePrototypeSourcesUrl = () => {
+
+
+
+
+  return `/api/workspace/prototype-sources`
+}
+
+export const listWorkspacePrototypeSources = async ( options?: Parameters<typeof customFetch>[1]): Promise<WorkspacePrototypeSource[]> => {
+
+  return customFetch<WorkspacePrototypeSource[]>(getListWorkspacePrototypeSourcesUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListWorkspacePrototypeSourcesQueryKey = () => {
+    return [
+    `/api/workspace/prototype-sources`
+    ] as const;
+    }
+
+
+export const getListWorkspacePrototypeSourcesQueryOptions = <TData = Awaited<ReturnType<typeof listWorkspacePrototypeSources>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listWorkspacePrototypeSources>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListWorkspacePrototypeSourcesQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listWorkspacePrototypeSources>>> = ({ signal }) => listWorkspacePrototypeSources({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listWorkspacePrototypeSources>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListWorkspacePrototypeSourcesQueryResult = NonNullable<Awaited<ReturnType<typeof listWorkspacePrototypeSources>>>
+export type ListWorkspacePrototypeSourcesQueryError = ErrorType<unknown>
+
+
+
+export function useListWorkspacePrototypeSources<TData = Awaited<ReturnType<typeof listWorkspacePrototypeSources>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listWorkspacePrototypeSources>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListWorkspacePrototypeSourcesQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
 
 export const getListWorkspaceRecordsUrl = (params?: ListWorkspaceRecordsParams,) => {
   const normalizedParams = new URLSearchParams();

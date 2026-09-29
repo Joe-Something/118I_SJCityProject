@@ -8,6 +8,20 @@
 import * as zod from 'zod';
 
 
+export const ListWorkspacePrototypeSourcesResponseItem = zod.object({
+  "id": zod.string(),
+  "topic": zod.enum(['rules', 'fees', 'status', 'alerts']),
+  "title": zod.string(),
+  "version": zod.string(),
+  "revisedAt": zod.coerce.date(),
+  "officialReferenceUrl": zod.string().url(),
+  "content": zod.string(),
+  "checkedAt": zod.coerce.date(),
+  "state": zod.enum(['demo', 'outdated', 'unavailable'])
+})
+export const ListWorkspacePrototypeSourcesResponse = zod.array(ListWorkspacePrototypeSourcesResponseItem)
+
+
 export const listWorkspaceRecordsQuerySearchMax = 100;
 
 
@@ -26,7 +40,10 @@ export const ListWorkspaceRecordsResponseItem = zod.object({
   "description": zod.string(),
   "synthetic": zod.boolean(),
   "sourceUrl": zod.string().nullable(),
-  "updatedAt": zod.coerce.date()
+  "updatedAt": zod.coerce.date(),
+  "sourceDate": zod.coerce.date().nullable(),
+  "sourceImportedAt": zod.coerce.date().nullable(),
+  "freshness": zod.enum(['demo', 'cached', 'outdated'])
 })
 export const ListWorkspaceRecordsResponse = zod.array(ListWorkspaceRecordsResponseItem)
 
@@ -125,7 +142,10 @@ export const SendWorkspaceMessageResponse = zod.object({
   "description": zod.string(),
   "synthetic": zod.boolean(),
   "sourceUrl": zod.string().nullable(),
-  "updatedAt": zod.coerce.date()
+  "updatedAt": zod.coerce.date(),
+  "sourceDate": zod.coerce.date().nullable(),
+  "sourceImportedAt": zod.coerce.date().nullable(),
+  "freshness": zod.enum(['demo', 'cached', 'outdated'])
 })),
   "synthetic": zod.boolean(),
   "escalation": zod.string().nullable(),
