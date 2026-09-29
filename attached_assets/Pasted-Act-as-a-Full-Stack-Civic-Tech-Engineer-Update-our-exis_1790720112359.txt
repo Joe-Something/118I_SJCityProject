@@ -1,0 +1,31 @@
+Act as a Full-Stack Civic Tech Engineer. Update our existing application to fully support a production-grade database architecture, user-role separation, data safety protocols, and TRACE red-teaming guardrails.
+
+### 1. Database & Seed Data Setup
+- Migrate all hardcoded/JSON sample data to a persistent database (SQLite/PostgreSQL).
+- Ensure the database includes at least 2 primary tables (e.g., `reports`/`applications` and `status_history`/`assignments`).
+- Every record must include a `status`, `created_at`, `updated_at`, and an `is_synthetic` boolean flag.
+- Seed the database with 20+ diverse rows relevant to our civic domain. Mark all synthetic rows clearly with `is_synthetic = true`[cite: 2]. Include 3 intentional edge cases in the seed data:
+  1. A duplicate report or entry[cite: 2].
+  2. A record with missing non-critical fields[cite: 2].
+  3. A non-English/multilingual submission[cite: 2].
+- Never include real resident PII in seed data[cite: 2].
+
+### 2. View & Access Control Layer (TRACE - Access Lens)
+- Implement strict separation between the Resident View and the Staff Portal[cite: 2].
+- Resident View Rules:
+  - Users can search, submit, or check the status of a report/application[cite: 2].
+  - System outputs displayed to residents MUST NEVER reveal reporter/resident PII (e.g., `reporter_name`, `reporter_phone`, or full contact addresses). Mask or omit these fields in API responses served to resident views[cite: 1].
+- Staff View Rules:
+  - Authorized staff can view full details, update statuses, and view audit histories[cite: 2].
+
+### 3. Guardrails & System Prompt Rules (TRACE Lenses)
+Update the core LLM/Agent system instructions in the app to enforce the following TRACE safety rules[cite: 1, 2]:
+- Trust & Input Validation: Detect and flag high-volume automated submissions, spam, or malformed inputs[cite: 1, 2]. Do not automatically write spam to high-priority queues[cite: 1, 2].
+- Reliability & Ambiguity Handling: If a user submission is ambiguous, missing key details, or vague, ask a specific clarifying question instead of guessing or failing silently[cite: 1, 2].
+- Access & PII Protection: Never output resident names, phone numbers, or email addresses in public-facing conversational responses[cite: 1]. Refer to the user generically (e.g., "the reporter")[cite: 1].
+- Consequence & Urgency Routing: If an input indicates severe harm, hazmat, or public safety issues (e.g., chemical spills, active hazard), immediately route it to a high-urgency status tag with visual error/warning banners[cite: 1, 2].
+- Escalation & Human-in-the-Loop: For high-stakes or edge-case situations, display a clear, explicit banner stating: "Escalated to Human Review" with a logged timestamp, ticket ID, and designated department inbox[cite: 1, 2].
+
+### 4. Verification Step
+- Ensure all app routes function without throwing empty states or missing seed file errors[cite: 2].
+- Verify that restarting the application retains all database records[cite: 2].

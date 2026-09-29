@@ -1,0 +1,32 @@
+Act as a Lead Full-Stack Engineer and UI/UX Designer. Transform our current civic app into an enterprise-grade platform with a full-screen AI workspace, integrated Model Context Protocol (MCP) security controls, structured topic subcategories, and persistent database integration.
+
+### 1. Full-Screen AI Interface (Cisco-Style AI Portal)
+- Expand the AI interface from a small widget/bubble chatbot into a full-screen, dedicated webpage experience modeled after internal enterprise AI systems (like Cisco's AI portal).
+- Layout Structure:
+  - Left Sidebar: Workspace navigation, agent mode selection, conversation history, and quick access to core civic tools.
+  - Center Canvas: Main prompt execution area with clear visual indicators for active data sources, security status, and agent thinking/execution steps.
+  - System Banners: Prominent status header indicating the current environment mode and data governance policies.
+
+### 2. MCP Server Layer & Security Controls (TRACE - Access & Trust Lenses)
+- Integrate a simulated Model Context Protocol (MCP) server architecture layer to handle secure data access and system integrations[cite: 1, 2].
+- Security & Guardrails via MCP:
+  - Implement role-based access control (RBAC) at the MCP tool boundary to prevent data leakage (Access Lens)[cite: 1, 2].
+  - Strip reporter PII (names, phone numbers, full street addresses) BEFORE returning database results to the public/resident view.
+  - Enforce explicit security rules: Block unauthorized schema reflection attacks, SQL/prompt injection, and unauthorized role escalations[cite: 1, 2].
+  - Flag high-urgency or hazardous reports (e.g., chemical spills, safety hazards) and route them to an explicit human escalation queue (Consequence & Escalation Lenses)[cite: 1, 2].
+
+### 3. Agent Subcategories & Data Sources
+Configure the AI workspace to support distinct subcategories based on the task type:
+- Subcategory A: Live Data (Online Reference)
+  - Connects to web/external reference context and real-time civic parameters.
+- Subcategory B: Data Research (San José City Data)
+  - Queries local SJ city database tables, checklists, and municipal domain logic.
+- Synthetic Data Governance Rule:
+  - Every time the AI agent cites, displays, or retrieves synthetic records, it MUST explicitly output a visible warning badge or declaration: "Demo Data — Synthetic" (e.g., "[Synthetic Record #1042]").
+  - Ensure the system mirrors real San José municipal workflows without ever storing or displaying actual resident PII.
+
+### 4. Database Setup & Seed Data
+- Migrate any temporary memory stores to a persistent database (SQLite/PostgreSQL) with at least 2 connected tables (e.g., `reports`/`businesses` and `status_history`)[cite: 2].
+- Seed the database with 20+ diverse rows across District 2 / San José civic contexts[cite: 2]. Mark all synthetic records with `is_synthetic = true`[cite: 2].
+- Include 3 edge-case rows in seed data: 1 duplicate entry, 1 entry with missing non-critical fields, and 1 non-English entry[cite: 2].
+- Verify that all database state persists across app restarts[cite: 2].
