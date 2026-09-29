@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,500;8..60,600;8..60,700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,500;8..60,600;8..60,700&family=Space+Mono:wght@400;700&display=swap');
 @layer theme, base, clerk, components, utilities;
 @import 'tailwindcss';
 @import '@clerk/themes/shadcn.css';
@@ -35,49 +35,49 @@
 }
 
 :root {
-  --background: 220 14% 96%;
-  --foreground: 222 47% 11%;
-  --border: 220 13% 85%;
-  --input: 220 13% 85%;
-  --ring: 224 64% 33%;
-  --card: 0 0% 100%;
-  --card-foreground: 222 47% 11%;
-  --card-border: 220 13% 85%;
-  --primary: 224 64% 33%;
-  --primary-foreground: 0 0% 100%;
-  --secondary: 0 0% 100%;
-  --secondary-foreground: 224 64% 33%;
-  --muted: 220 13% 91%;
-  --muted-foreground: 215 16% 47%;
-  --accent: 224 64% 33%;
-  --accent-foreground: 0 0% 100%;
-  --destructive: 0 84% 60%;
-  --destructive-foreground: 0 0% 100%;
+  --background: 43 27% 95%;
+  --foreground: 199 32% 17%;
+  --border: 39 14% 81%;
+  --input: 39 14% 81%;
+  --ring: 191 48% 27%;
+  --card: 42 30% 98%;
+  --card-foreground: 199 32% 17%;
+  --card-border: 39 14% 81%;
+  --primary: 191 48% 27%;
+  --primary-foreground: 43 27% 96%;
+  --secondary: 44 24% 91%;
+  --secondary-foreground: 191 48% 27%;
+  --muted: 42 16% 89%;
+  --muted-foreground: 197 12% 39%;
+  --accent: 19 66% 51%;
+  --accent-foreground: 43 27% 96%;
+  --destructive: 7 61% 43%;
+  --destructive-foreground: 43 27% 96%;
   --app-font-sans: 'DM Sans', ui-sans-serif, system-ui, sans-serif;
   --app-font-serif: 'Source Serif 4', Georgia, serif;
-  --app-font-mono: 'DM Sans', ui-monospace, monospace;
+  --app-font-mono: 'Space Mono', ui-monospace, monospace;
   --radius: 0.8rem;
 }
 
 .dark {
-  --background: 222 47% 11%;
-  --foreground: 220 14% 96%;
-  --border: 215 28% 17%;
-  --input: 215 28% 17%;
-  --ring: 224 64% 53%;
-  --card: 222 47% 11%;
-  --card-foreground: 220 14% 96%;
-  --card-border: 215 28% 17%;
-  --primary: 224 64% 53%;
-  --primary-foreground: 222 47% 11%;
-  --secondary: 215 28% 17%;
-  --secondary-foreground: 220 14% 96%;
-  --muted: 215 28% 17%;
-  --muted-foreground: 215 20% 65%;
-  --accent: 224 64% 53%;
-  --accent-foreground: 222 47% 11%;
-  --destructive: 0 62% 56%;
-  --destructive-foreground: 0 0% 100%;
+  --background: 196 32% 12%;
+  --foreground: 42 26% 94%;
+  --border: 193 20% 28%;
+  --input: 193 20% 28%;
+  --ring: 42 54% 64%;
+  --card: 196 29% 17%;
+  --card-foreground: 42 26% 94%;
+  --card-border: 193 20% 28%;
+  --primary: 42 54% 64%;
+  --primary-foreground: 196 32% 12%;
+  --secondary: 193 22% 22%;
+  --secondary-foreground: 42 26% 94%;
+  --muted: 193 22% 22%;
+  --muted-foreground: 42 12% 70%;
+  --accent: 19 67% 62%;
+  --accent-foreground: 196 32% 12%;
+  --destructive: 7 65% 60%;
+  --destructive-foreground: 196 32% 12%;
 }
 
 * { box-sizing: border-box; }

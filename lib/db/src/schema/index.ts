@@ -18,3 +18,5 @@
 //   export type Post = typeof postsTable.$inferSelect;
 
 export * from "./applications";
+export * from "./status-history";
+export * from "./workspace";

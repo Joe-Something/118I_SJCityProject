@@ -8,7 +8,7 @@ import { RequirementId, BusinessType, Modification } from '../requirements';
 import { deriveDepartments } from '../utils/helpers';
 import { StaffDesk } from '../prototypeStore';
 import { StaffSearchFilters, type StaffApplicationFilters } from './StaffSearchFilters';
-import type { ApplicationRecord } from '@workspace/api-client-react';
+import { getListWorkspaceEscalationsQueryKey, useListApplicationHistory, useListWorkspaceEscalations, type ApplicationRecord } from '@workspace/api-client-react';
 
 function StaffPlanReview({ 
   plan, 
@@ -25,6 +25,7 @@ function StaffPlanReview({
   const [overrideText, setOverrideText] = useState('');
 
   const hasUnsavedOverride = overrideFor !== null;
+  const history = useListApplicationHistory(plan.id);
 
   const handleComplete = () => {
     let status: ActivePlan['status'] = 'Approved';
@@ -122,6 +123,16 @@ function StaffPlanReview({
 
       <aside className="plan-sidebar">
          <div className="sidebar-card">
+           <h3>Status history</h3>
+           {history.isLoading && <p>Loading audit history…</p>}
+           {history.isError && <p role="alert">History unavailable. <button onClick={() => void history.refetch()}>Retry</button></p>}
+           {history.data?.length === 0 && <p>No status events recorded yet.</p>}
+           {history.data?.map(event => <div className="contact-row" key={event.id}>
+             <ClipboardCheck size={15} />
+             <div><strong>{event.status}</strong><span>{event.actor} · {new Date(event.createdAt).toLocaleString()} {event.synthetic ? '· Demo Data — Synthetic' : ''}</span></div>
+           </div>)}
+         </div>
+         <div className="sidebar-card">
           <h3>Intake Details</h3>
           <div className="contact-row"><FileText size={15} /><div><strong>Project</strong><span>{plan.intake.description}</span></div></div>
           <div className="contact-row"><MapPin size={15} /><div><strong>Location</strong><span>{plan.intake.address}, {plan.intake.zip}</span></div></div>
@@ -165,6 +176,10 @@ export function StaffPortal({
   const [expandedPlans, setExpandedPlans] = useState<string[]>([]);
   
   const staffRole: StaffRole = desk === 'Building Code Reviewer' ? 'Building' : desk === 'Fire Prevention' ? 'Fire' : 'Master City Queue';
+  const escalations = useListWorkspaceEscalations({ query: {
+    enabled: staffRole === 'Fire' || staffRole === 'Master City Queue',
+    queryKey: getListWorkspaceEscalationsQueryKey(),
+  } });
   const [reviewerFilter, setReviewerFilter] = useState<string>('All');
 
   const availableReviewers = useMemo(() => {
@@ -220,11 +235,29 @@ export function StaffPortal({
       
       <div className="staff-banner">
         <div>
-          <strong data-testid="staff-role-label">Role: {staffRole === 'Master City Queue' ? 'Master Overview' : `City Staff: ${staffRole}`}</strong>
+          <strong data-testid="staff-role-label">Selected desk: {staffRole === 'Master City Queue' ? 'Master Overview' : staffRole}</strong>
           <span>Reviewing {filteredQueue.length} active plans</span>
         </div>
         <span className="catalog-badge" data-testid="staff-desk-label">{desk} desk</span>
       </div>
+      {(staffRole === 'Fire' || staffRole === 'Master City Queue') && (
+        <section className="verification-notice" aria-label="High-urgency review queue">
+          <AlertCircle size={18} />
+          <div>
+            <strong>High-urgency human-review queue (prototype)</strong>
+            <p>This is an internal demonstration queue. No City inbox or emergency service is connected.</p>
+            {escalations.isLoading && <p>Loading flagged items…</p>}
+            {escalations.isError && <p role="alert">Review queue requires an administrator-assigned Fire or Economic Development staff role.</p>}
+            {escalations.data?.length === 0 && <p>No safety-flagged workspace items.</p>}
+            {escalations.data?.map(item => (
+              <p key={item.ticketId}>
+                <strong>Escalated to Human Review</strong> · {item.status} · Ticket {item.ticketId} ·
+                {' '}{new Date(item.createdAt).toLocaleString()} · {item.departmentInbox}
+              </p>
+            ))}
+          </div>
+        </section>
+      )}
 
       <StaffSearchFilters filters={filters} onChange={onFiltersChange} onClear={() => onFiltersChange({
         search: '', applicationId: '', businessName: '', businessCategory: '',

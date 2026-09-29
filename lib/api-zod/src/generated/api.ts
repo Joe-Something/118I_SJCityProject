@@ -8,6 +8,128 @@
 import * as zod from 'zod';
 
 
+export const listWorkspaceRecordsQuerySearchMax = 100;
+
+
+
+export const ListWorkspaceRecordsQueryParams = zod.object({
+  "search": zod.coerce.string().max(listWorkspaceRecordsQuerySearchMax).optional(),
+  "mode": zod.enum(['research', 'live']).optional()
+})
+
+export const ListWorkspaceRecordsResponseItem = zod.object({
+  "id": zod.string(),
+  "category": zod.string(),
+  "status": zod.string(),
+  "department": zod.string(),
+  "language": zod.string(),
+  "description": zod.string(),
+  "synthetic": zod.boolean(),
+  "sourceUrl": zod.string().nullable(),
+  "updatedAt": zod.coerce.date()
+})
+export const ListWorkspaceRecordsResponse = zod.array(ListWorkspaceRecordsResponseItem)
+
+
+export const ListWorkspaceEscalationsResponseItem = zod.object({
+  "ticketId": zod.string(),
+  "status": zod.string(),
+  "departmentInbox": zod.string(),
+  "summary": zod.string(),
+  "createdAt": zod.coerce.date()
+})
+export const ListWorkspaceEscalationsResponse = zod.array(ListWorkspaceEscalationsResponseItem)
+
+
+export const ListWorkspaceConversationsResponseItem = zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "mode": zod.enum(['research', 'live']),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+export const ListWorkspaceConversationsResponse = zod.array(ListWorkspaceConversationsResponseItem)
+
+
+export const CreateWorkspaceConversationBody = zod.object({
+  "mode": zod.enum(['research', 'live'])
+})
+
+export const CreateWorkspaceConversationResponse = zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "mode": zod.enum(['research', 'live']),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+export const ListWorkspaceMessagesParams = zod.object({
+  "id": zod.coerce.string().uuid()
+})
+
+export const ListWorkspaceMessagesResponseItem = zod.object({
+  "id": zod.string(),
+  "role": zod.enum(['user', 'assistant']),
+  "content": zod.string(),
+  "createdAt": zod.coerce.date()
+})
+export const ListWorkspaceMessagesResponse = zod.array(ListWorkspaceMessagesResponseItem)
+
+
+export const SendWorkspaceMessageParams = zod.object({
+  "id": zod.coerce.string().uuid()
+})
+
+export const sendWorkspaceMessageBodyContentMin = 3;
+export const sendWorkspaceMessageBodyContentMax = 2000;
+
+
+
+export const SendWorkspaceMessageBody = zod.object({
+  "content": zod.string().min(sendWorkspaceMessageBodyContentMin).max(sendWorkspaceMessageBodyContentMax)
+})
+
+export const SendWorkspaceMessageResponse = zod.object({
+  "message": zod.object({
+  "id": zod.string(),
+  "role": zod.enum(['user', 'assistant']),
+  "content": zod.string(),
+  "createdAt": zod.coerce.date()
+}),
+  "sources": zod.array(zod.object({
+  "id": zod.string(),
+  "category": zod.string(),
+  "status": zod.string(),
+  "department": zod.string(),
+  "language": zod.string(),
+  "description": zod.string(),
+  "synthetic": zod.boolean(),
+  "sourceUrl": zod.string().nullable(),
+  "updatedAt": zod.coerce.date()
+})),
+  "synthetic": zod.boolean(),
+  "escalation": zod.string().nullable(),
+  "securityStatus": zod.string()
+})
+
+
+export const ListApplicationHistoryParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const ListApplicationHistoryResponseItem = zod.object({
+  "id": zod.string(),
+  "applicationId": zod.string(),
+  "status": zod.string(),
+  "actor": zod.string(),
+  "synthetic": zod.boolean(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+export const ListApplicationHistoryResponse = zod.array(ListApplicationHistoryResponseItem)
+
+
 
 
 

@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ClerkProvider, Show, useUser, useClerk } from '@clerk/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { publishableKeyFromHost } from '@clerk/react/internal';
 import { shadcn } from '@clerk/themes';
 import { Switch, Route, useLocation, Router as WouterRouter, Redirect, Link } from 'wouter';
-import { Landmark, Sparkles, AlertCircle, ArrowLeft, Printer, Send, CheckCircle2, Languages, Lightbulb, MapPin, FileText, X } from 'lucide-react';
+import { Landmark, Sparkles, AlertCircle, ArrowLeft, ArrowUpRight, Printer, Send, CheckCircle2, Languages, Lightbulb, MapPin, FileText, X } from 'lucide-react';
+import './workspace.css';
 import { Toaster } from '@/components/ui/toaster';
 import { useToast } from '@/hooks/use-toast';
 
@@ -19,7 +21,7 @@ import { ApplicantDashboard } from './components/ApplicantDashboard';
 import { IntakeView } from './components/IntakeView';
 import { StaffPortal } from './components/StaffPortal';
 import { RequirementCard } from './components/RequirementCard';
-import { Chatbot } from './components/Chatbot';
+import { AIWorkspace, PublicWorkspace } from './components/AIWorkspace';
 import { StaffApplicationFilters } from './components/StaffSearchFilters';
 import { applicantId, readPersona, personaKey, PENDING_PERSONA_KEY, readPlans, Persona } from './prototypeStore';
 import { createApplication, listMyApplications, reviewApplication, searchStaffApplications, updateMyApplication, type ApplicationRecord } from '@workspace/api-client-react';
@@ -31,6 +33,7 @@ const clerkPubKey = publishableKeyFromHost(
 
 const clerkProxyUrl = import.meta.env.VITE_CLERK_PROXY_URL;
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
+const queryClient = new QueryClient();
 
 function stripBase(path: string): string {
   return basePath && path.startsWith(basePath)
@@ -133,8 +136,10 @@ function PortalWorkspace({ persona, userId, onLogout }: { persona: Persona; user
           ? await listMyApplications({ applicantKey: persona.key })
           : await searchStaffApplications(Object.fromEntries(Object.entries(filters).filter(([, value]) => value.trim())) as Partial<StaffApplicationFilters>);
         if (mounted) { setRecords(rows); setRecordsError(''); }
-      } catch {
-        if (mounted) setRecordsError('Could not load applications from the database. Please try again.');
+      } catch (error) {
+        if (mounted) setRecordsError(persona.kind === 'staff' && error && typeof error === 'object' && 'status' in error && error.status === 403
+          ? 'Staff access requires an administrator-assigned Clerk role and department. Selecting a desk does not grant access.'
+          : 'Could not load applications from the database. Please try again.');
       } finally {
         if (mounted) setRecordsLoading(false);
       }
@@ -391,6 +396,7 @@ function PortalWorkspace({ persona, userId, onLogout }: { persona: Persona; user
         </Link>
 
         <div className="top-actions">
+          <Link href="/workspace" className="portal-workspace-link" data-testid="link-workspace-topbar"><Sparkles size={15} /> AI Workspace <ArrowUpRight size={14}/></Link>
           {persona.kind === 'applicant' && (
             <div className="language-controls">
               <Languages size={15} className="text-muted-foreground" />
@@ -511,6 +517,12 @@ function PortalWorkspace({ persona, userId, onLogout }: { persona: Persona; user
           </div>
         ) : planToShow ? (
           <div className="plan-shell">
+            {/\b(?:chemical spill|hazmat|toxic leak|gas leak|active fire|electrical fire|immediate danger|safety hazard|derrame qu[ií]mico|fuga de gas|incendio activo)\b/i.test(planToShow.intake.description) && (
+              <div className="verification-notice" role="alert">
+                <AlertCircle size={18} />
+                <span><strong>Escalated to Human Review · High urgency.</strong> This prototype cannot contact City dispatch or emergency responders. Leave the area and call emergency services if there is immediate danger.</span>
+              </div>
+            )}
             <div className="verification-notice" data-testid="text-verification-notice">
               <AlertCircle size={18} />
               <span>Notice: City staff review is required. Business owners must verify all information directly with the appropriate City department before starting work or signing lease agreements.</span>
@@ -610,7 +622,9 @@ function PortalWorkspace({ persona, userId, onLogout }: { persona: Persona; user
         ) : null
       ) : null}
 
-      <Chatbot />
+      <Link href="/workspace" className="chatbot-fab" data-testid="link-open-workspace" aria-label="Open full AI Workspace">
+        <Sparkles size={18}/><span className="chatbot-fab-text">Open AI Workspace</span><ArrowUpRight size={15}/>
+      </Link>
       <Toaster />
     </div>
   );
@@ -682,6 +696,7 @@ function App() {
   const [, setLocation] = useLocation();
 
   return (
+    <QueryClientProvider client={queryClient}>
     <WouterRouter base={basePath}>
       <ClerkProvider
         publishableKey={clerkPubKey}
@@ -708,12 +723,21 @@ function App() {
               <Redirect to="/welcome" />
             </Show>
           </Route>
+          <Route path="/workspace">
+            <Show when="signed-in">
+              <AIWorkspace />
+            </Show>
+            <Show when="signed-out">
+              <PublicWorkspace />
+            </Show>
+          </Route>
           <Route>
             <Redirect to="/" />
           </Route>
         </Switch>
       </ClerkProvider>
     </WouterRouter>
+    </QueryClientProvider>
   );
 }
 

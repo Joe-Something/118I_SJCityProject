@@ -11,6 +11,101 @@ tags:
   - name: health
     description: Health operations
 paths:
+  /workspace/records:
+    get:
+      operationId: listWorkspaceRecords
+      tags: [workspace]
+      parameters:
+        - { in: query, name: search, schema: { type: string, maxLength: 100 } }
+        - { in: query, name: mode, schema: { type: string, enum: [research, live] } }
+      responses:
+        "200":
+          description: PII-free synthetic demonstration records and public permit metadata
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/WorkspaceRecord" }
+  /workspace/escalations:
+    get:
+      operationId: listWorkspaceEscalations
+      tags: [workspace]
+      responses:
+        "200":
+          description: Authorized staff review queue for safety-flagged workspace items
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/WorkspaceEscalation" }
+  /workspace/conversations:
+    get:
+      operationId: listWorkspaceConversations
+      tags: [workspace]
+      responses:
+        "200":
+          description: Current user's conversations
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/WorkspaceConversation" }
+    post:
+      operationId: createWorkspaceConversation
+      tags: [workspace]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/WorkspaceConversationInput" }
+      responses:
+        "201":
+          description: Created conversation
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WorkspaceConversation" }
+  /workspace/conversations/{id}/messages:
+    parameters:
+      - { in: path, name: id, required: true, schema: { type: string, format: uuid } }
+    get:
+      operationId: listWorkspaceMessages
+      tags: [workspace]
+      responses:
+        "200":
+          description: Messages in a conversation owned by this user
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/WorkspaceMessage" }
+    post:
+      operationId: sendWorkspaceMessage
+      tags: [workspace]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/WorkspaceMessageInput" }
+      responses:
+        "201":
+          description: Persisted assistant response and tool safety metadata
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WorkspaceReply" }
+  /applications/{id}/history:
+    get:
+      operationId: listApplicationHistory
+      tags: [applications]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Status changes for the owner or an authorized staff member
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/StatusEvent" }
   /applications/mine:
     get:
       operationId: listMyApplications
@@ -121,6 +216,77 @@ paths:
                 $ref: "#/components/schemas/HealthStatus"
 components:
   schemas:
+    WorkspaceEscalation:
+      type: object
+      required: [ticketId, status, departmentInbox, summary, createdAt]
+      properties:
+        ticketId: { type: string }
+        status: { type: string }
+        departmentInbox: { type: string }
+        summary: { type: string }
+        createdAt: { type: string, format: date-time }
+    WorkspaceRecord:
+      type: object
+      required: [id, category, status, department, language, description, synthetic, sourceUrl, updatedAt]
+      properties:
+        id: { type: string }
+        category: { type: string }
+        status: { type: string }
+        department: { type: string }
+        language: { type: string }
+        description: { type: string }
+        synthetic: { type: boolean }
+        sourceUrl: { type: ["string", "null"] }
+        updatedAt: { type: string, format: date-time }
+    WorkspaceConversation:
+      type: object
+      required: [id, title, mode, createdAt, updatedAt]
+      properties:
+        id: { type: string }
+        title: { type: string }
+        mode: { type: string, enum: [research, live] }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    WorkspaceConversationInput:
+      type: object
+      required: [mode]
+      properties:
+        mode: { type: string, enum: [research, live] }
+    WorkspaceMessage:
+      type: object
+      required: [id, role, content, createdAt]
+      properties:
+        id: { type: string }
+        role: { type: string, enum: [user, assistant] }
+        content: { type: string }
+        createdAt: { type: string, format: date-time }
+    WorkspaceMessageInput:
+      type: object
+      required: [content]
+      properties:
+        content: { type: string, minLength: 3, maxLength: 2000 }
+    WorkspaceReply:
+      type: object
+      required: [message, sources, synthetic, escalation, securityStatus]
+      properties:
+        message: { $ref: "#/components/schemas/WorkspaceMessage" }
+        sources:
+          type: array
+          items: { $ref: "#/components/schemas/WorkspaceRecord" }
+        synthetic: { type: boolean }
+        escalation: { type: ["string", "null"] }
+        securityStatus: { type: string }
+    StatusEvent:
+      type: object
+      required: [id, applicationId, status, actor, synthetic, createdAt, updatedAt]
+      properties:
+        id: { type: string }
+        applicationId: { type: string }
+        status: { type: string }
+        actor: { type: string }
+        synthetic: { type: boolean }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
     ApplicationRecord:
       type: object
       required: [id, businessName, businessCategory, requestType, status, assignedDepartment, applicantLanguage, description, synthetic, plan, createdAt, updatedAt]

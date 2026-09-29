@@ -5,6 +5,97 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+export interface WorkspaceEscalation {
+  ticketId: string;
+  status: string;
+  departmentInbox: string;
+  summary: string;
+  createdAt: string;
+}
+
+export interface WorkspaceRecord {
+  id: string;
+  category: string;
+  status: string;
+  department: string;
+  language: string;
+  description: string;
+  synthetic: boolean;
+  /** @nullable */
+  sourceUrl: string | null;
+  updatedAt: string;
+}
+
+export type WorkspaceConversationMode = typeof WorkspaceConversationMode[keyof typeof WorkspaceConversationMode];
+
+
+export const WorkspaceConversationMode = {
+  research: 'research',
+  live: 'live',
+} as const;
+
+export interface WorkspaceConversation {
+  id: string;
+  title: string;
+  mode: WorkspaceConversationMode;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type WorkspaceConversationInputMode = typeof WorkspaceConversationInputMode[keyof typeof WorkspaceConversationInputMode];
+
+
+export const WorkspaceConversationInputMode = {
+  research: 'research',
+  live: 'live',
+} as const;
+
+export interface WorkspaceConversationInput {
+  mode: WorkspaceConversationInputMode;
+}
+
+export type WorkspaceMessageRole = typeof WorkspaceMessageRole[keyof typeof WorkspaceMessageRole];
+
+
+export const WorkspaceMessageRole = {
+  user: 'user',
+  assistant: 'assistant',
+} as const;
+
+export interface WorkspaceMessage {
+  id: string;
+  role: WorkspaceMessageRole;
+  content: string;
+  createdAt: string;
+}
+
+export interface WorkspaceMessageInput {
+  /**
+     * @minLength 3
+     * @maxLength 2000
+     */
+  content: string;
+}
+
+export interface WorkspaceReply {
+  message: WorkspaceMessage;
+  sources: WorkspaceRecord[];
+  synthetic: boolean;
+  /** @nullable */
+  escalation: string | null;
+  securityStatus: string;
+}
+
+export interface StatusEvent {
+  id: string;
+  applicationId: string;
+  status: string;
+  actor: string;
+  synthetic: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export type ApplicationRecordPlan = { [key: string]: unknown };
 
 export interface ApplicationRecord {
@@ -54,6 +145,22 @@ export interface ApplicationReview {
 export interface HealthStatus {
   status: string;
 }
+
+export type ListWorkspaceRecordsParams = {
+/**
+ * @maxLength 100
+ */
+search?: string;
+mode?: ListWorkspaceRecordsMode;
+};
+
+export type ListWorkspaceRecordsMode = typeof ListWorkspaceRecordsMode[keyof typeof ListWorkspaceRecordsMode];
+
+
+export const ListWorkspaceRecordsMode = {
+  research: 'research',
+  live: 'live',
+} as const;
 
 export type ListMyApplicationsParams = {
 /**

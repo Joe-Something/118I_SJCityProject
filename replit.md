@@ -23,9 +23,10 @@ A bilingual prototype that helps first-time small-business owners assemble a per
 ## Architecture decisions
 
 - This prototype uses synthetic database application records; it does not claim to provide official permit determinations.
-- Clerk signs in real users. Database applicant queries are scoped by Clerk user and applicant key, but staff desks are self-selected prototype personas, not verified staff permissions. Do not enter sensitive information or treat the staff API as production-authorized.
+- Clerk signs in real users. Applicant queries are scoped by Clerk user and applicant key. Choosing a staff desk is only a UI preference; staff API reads, reviews, audit history, and the escalation queue now require administrator-assigned Clerk `privateMetadata.staffRole = "reviewer"` and `privateMetadata.staffDepartment = "Planning" | "Building" | "Fire" | "Economic Development"`. Access denies by default. Department restrictions are enforced on the server. Do not enter sensitive information or present this prototype as a City system.
 - Older browser-local plans are imported to the database on the applicant's next login; new plans use the database as their source of truth.
 - The read-only Public permits tab imports commercial/industrial building permit metadata from the City of San José open-data CSV on API startup and periodically thereafter. Each record links to its source. The dataset does not provide business names, applicant languages, assigned reviewers, or submission dates; never present invented values for those. Public permits are not prototype applications or staff-review work items. Applicant/owner/contractor names and parcel numbers from the CSV are deliberately not imported.
+- The full-screen AI workspace uses a simulated, allowlisted tool boundary. Research mode exposes PII-free District 2 synthetic demonstrations; online-reference mode uses the periodically refreshed public City permit cache, not live City infrastructure or real-time browsing. Safety escalations are stored in a prototype high-urgency queue visible only to authorized Fire/Economic Development reviewers; no City inbox or emergency dispatcher is connected. Never imply an actual City handoff has happened.
 - Unsupported combinations return a no-match message rather than generating unverified rules.
 - Staff editing blocks final submission until the reviewed change is saved.
 
@@ -35,6 +36,7 @@ A bilingual prototype that helps first-time small-business owners assemble a per
 - Generates a structured permit action plan from a local five-category knowledge base.
 - Supports English/Spanish UI, plain-language descriptions, printing, and simulated staff submission.
 - Provides City staff approval, rejection, notes, and recommendation overrides.
+- Provides signed-in AI conversations and a publicly searchable, explicitly labeled synthetic reference desk.
 
 ## User preferences
 

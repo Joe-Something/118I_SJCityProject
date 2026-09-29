@@ -1,8 +1,9 @@
 import { Router, type IRouter, type Request, type Response } from "express";
-import { getAuth } from "@clerk/express";
 import { and, desc, eq, gte, ilike, isNotNull, lt, or, sql, type SQL } from "drizzle-orm";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
-import { db, applicationsTable, type Application } from "@workspace/db";
+import { db, applicationsTable, statusHistoryTable, type Application } from "@workspace/db";
+import { authorizedStaff, signedInUser } from "../lib/access";
+import { ListApplicationHistoryParams, ListApplicationHistoryResponse } from "@workspace/api-zod";
 import {
   CreateApplicationBody, CreateApplicationResponse,
   ListMyApplicationsQueryParams, ListMyApplicationsResponse,
@@ -18,11 +19,7 @@ const statuses = new Set([
 ]);
 const completed = new Set(["Approved", "Rejected", "Modified via Staff Override"]);
 
-function currentUser(req: Request, res: Response): string | null {
-  const id = getAuth(req).userId;
-  if (!id) res.status(401).json({ error: "Sign in to access applications." });
-  return id;
-}
+const currentUser = signedInUser;
 
 function parsePlan(value: Record<string, unknown>): { intake: Record<string, unknown>; status: string; language: string; matched: string[]; departments: string[] } | null {
   const intake = value.intake;
@@ -91,7 +88,8 @@ router.get("/applications/mine", async (req, res): Promise<void> => {
 });
 
 router.get("/applications/staff", async (req, res): Promise<void> => {
-  if (!currentUser(req, res)) return;
+  const staff = await authorizedStaff(req, res);
+  if (!staff) return;
   const query = SearchStaffApplicationsQueryParams.safeParse(req.query);
   if (!query.success) { res.status(400).json({ error: "Invalid search filters." }); return; }
   const fields: [string | undefined, AnyPgColumn][] = [
@@ -104,7 +102,13 @@ router.get("/applications/staff", async (req, res): Promise<void> => {
     [query.data.applicantLanguage, applicationsTable.applicantLanguage],
   ];
   // Staff queue contains submitted applications only; unsent drafts stay private.
-  const conditions: SQL[] = [or(isNotNull(applicationsTable.submittedAt), eq(applicationsTable.synthetic, false))!];
+  const conditions: SQL[] = [or(isNotNull(applicationsTable.submittedAt), isNotNull(applicationsTable.sourceUrl))!];
+  if (staff.department !== "Economic Development") {
+    conditions.push(or(
+      ilike(applicationsTable.assignedDepartment, `%${staff.department}%`),
+      isNotNull(applicationsTable.sourceUrl),
+    )!);
+  }
   for (const [term, column] of fields) {
     if (term?.trim()) conditions.push(ilike(column, `%${term.trim().replace(/[\\%_]/g, "\\$&")}%`));
   }
@@ -142,11 +146,17 @@ router.post("/applications", async (req, res): Promise<void> => {
   if (!fields) { res.status(400).json({ error: "Incomplete application plan." }); return; }
   const id = crypto.randomUUID();
   const now = new Date();
+  const urgent = /\b(?:chemical spill|hazmat|toxic leak|gas leak|active fire|electrical fire|immediate danger|safety hazard|derrame qu[ií]mico|fuga de gas|incendio activo)\b/i.test(fields.description);
   const plan = { ...body.data.plan, id, userId: `${userId}:${body.data.applicantKey.trim().toLowerCase()}`, intake: { ...(body.data.plan.intake as object), files: [] } };
   const [row] = await db.insert(applicationsTable).values({
     id, ownerId: userId, applicantKey: body.data.applicantKey.trim().toLowerCase(),
-    ...fields, synthetic: true, plan, submittedAt: fields.status === "Draft" ? null : now,
+    ...fields, assignedDepartment: urgent ? "Fire" : fields.assignedDepartment,
+    synthetic: true, plan, submittedAt: fields.status === "Draft" && !urgent ? null : now,
   }).returning();
+  await db.insert(statusHistoryTable).values({
+    id: crypto.randomUUID(), applicationId: id, status: urgent ? "High Urgency — Human Review" : fields.status,
+    actor: "Applicant", synthetic: true,
+  });
   res.status(201).json(CreateApplicationResponse.parse(respond(row)));
 });
 
@@ -162,7 +172,7 @@ router.patch("/applications/:id", async (req, res): Promise<void> => {
   ));
   if (!existing) { res.status(404).json({ error: "Application not found." }); return; }
   const fields = fieldsFromPlan(body.data.plan);
-  if (!fields || existing.status !== "Draft" || !["Draft", "Draft — Requires Review"].includes(fields.status)) {
+  if (!fields || existing.status !== "Draft" || existing.submittedAt || !["Draft", "Draft — Requires Review"].includes(fields.status)) {
     res.status(400).json({ error: "This application cannot be changed in its current status." }); return;
   }
   const now = new Date();
@@ -170,17 +180,24 @@ router.patch("/applications/:id", async (req, res): Promise<void> => {
   const [row] = await db.update(applicationsTable).set({
     ...fields, plan, updatedAt: now, submittedAt: existing.submittedAt ?? (fields.status === "Draft" ? null : now),
   }).where(eq(applicationsTable.id, existing.id)).returning();
+  if (row.status !== existing.status) await db.insert(statusHistoryTable).values({
+    id: crypto.randomUUID(), applicationId: row.id, status: row.status,
+    actor: "Applicant", synthetic: row.synthetic,
+  });
   res.json(UpdateMyApplicationResponse.parse(respond(row)));
 });
 
 router.patch("/applications/:id/review", async (req, res): Promise<void> => {
-  // Prototype staff personas are self-selected in the client; this is not a production authorization boundary.
-  if (!currentUser(req, res)) return;
+  const staff = await authorizedStaff(req, res);
+  if (!staff) return;
   const params = ReviewApplicationParams.safeParse(req.params);
   const body = ReviewApplicationBody.safeParse(req.body);
   if (!params.success || !body.success) { res.status(400).json({ error: "Invalid review update." }); return; }
   const [existing] = await db.select().from(applicationsTable).where(eq(applicationsTable.id, params.data.id));
-  if (!existing || !existing.submittedAt) { res.status(404).json({ error: "Submitted application not found." }); return; }
+  if (!existing || !existing.submittedAt || !!existing.sourceUrl ||
+      (staff.department !== "Economic Development" && !existing.assignedDepartment.includes(staff.department))) {
+    res.status(404).json({ error: "Submitted application not found for this department." }); return;
+  }
   const proposed = body.data.plan;
   const status = typeof proposed.status === "string" ? proposed.status : existing.status;
   if (!statuses.has(status) || status === "Draft" || (completed.has(existing.status) && status !== "In Review (Re-opened)")) {
@@ -196,7 +213,30 @@ router.patch("/applications/:id/review", async (req, res): Promise<void> => {
   if (!fields) { res.status(400).json({ error: "Invalid stored plan." }); return; }
   const [row] = await db.update(applicationsTable).set({ plan, status, notes: fields.notes, updatedAt: new Date() })
     .where(eq(applicationsTable.id, existing.id)).returning();
+  await db.insert(statusHistoryTable).values({
+    id: crypto.randomUUID(), applicationId: row.id, status: row.status,
+    actor: `Staff · ${staff.department}`, synthetic: row.synthetic,
+  });
   res.json(ReviewApplicationResponse.parse(respond(row)));
+});
+
+router.get("/applications/:id/history", async (req, res): Promise<void> => {
+  const userId = currentUser(req, res);
+  if (!userId) return;
+  const params = ListApplicationHistoryParams.safeParse(req.params);
+  if (!params.success) { res.status(400).json({ error: "Invalid application ID." }); return; }
+  const [application] = await db.select().from(applicationsTable).where(eq(applicationsTable.id, params.data.id));
+  if (!application) { res.status(404).json({ error: "Application not found." }); return; }
+  if (application.ownerId !== userId) {
+    const staff = await authorizedStaff(req, res);
+    if (!staff) return;
+    if (staff.department !== "Economic Development" && !application.assignedDepartment.includes(staff.department)) {
+      res.status(403).json({ error: "Not assigned to this department." }); return;
+    }
+  }
+  const history = await db.select().from(statusHistoryTable)
+    .where(eq(statusHistoryTable.applicationId, application.id)).orderBy(desc(statusHistoryTable.createdAt));
+  res.json(ListApplicationHistoryResponse.parse(history));
 });
 
 export default router;
