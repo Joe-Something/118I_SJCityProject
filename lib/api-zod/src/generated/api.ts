@@ -36,9 +36,28 @@ export const ListWorkspaceEscalationsResponseItem = zod.object({
   "status": zod.string(),
   "departmentInbox": zod.string(),
   "summary": zod.string(),
-  "createdAt": zod.coerce.date()
+  "createdAt": zod.coerce.date(),
+  "acknowledgedAt": zod.coerce.date().nullable(),
+  "deliveryStatus": zod.string(),
+  "testRecipient": zod.string().nullable()
 })
 export const ListWorkspaceEscalationsResponse = zod.array(ListWorkspaceEscalationsResponseItem)
+
+
+export const AcknowledgeWorkspaceEscalationParams = zod.object({
+  "id": zod.coerce.string().uuid()
+})
+
+export const AcknowledgeWorkspaceEscalationResponse = zod.object({
+  "ticketId": zod.string(),
+  "status": zod.string(),
+  "departmentInbox": zod.string(),
+  "summary": zod.string(),
+  "createdAt": zod.coerce.date(),
+  "acknowledgedAt": zod.coerce.date().nullable(),
+  "deliveryStatus": zod.string(),
+  "testRecipient": zod.string().nullable()
+})
 
 
 export const ListWorkspaceConversationsResponseItem = zod.object({

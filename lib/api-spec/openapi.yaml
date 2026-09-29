@@ -38,6 +38,18 @@ paths:
               schema:
                 type: array
                 items: { $ref: "#/components/schemas/WorkspaceEscalation" }
+  /workspace/escalations/{id}/acknowledge:
+    post:
+      operationId: acknowledgeWorkspaceEscalation
+      tags: [workspace]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: Item acknowledged in the protected prototype queue, not proof of email delivery
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WorkspaceEscalation" }
   /workspace/conversations:
     get:
       operationId: listWorkspaceConversations
@@ -218,13 +230,16 @@ components:
   schemas:
     WorkspaceEscalation:
       type: object
-      required: [ticketId, status, departmentInbox, summary, createdAt]
+      required: [ticketId, status, departmentInbox, summary, createdAt, acknowledgedAt, deliveryStatus, testRecipient]
       properties:
         ticketId: { type: string }
         status: { type: string }
         departmentInbox: { type: string }
         summary: { type: string }
         createdAt: { type: string, format: date-time }
+        acknowledgedAt: { type: ["string", "null"], format: date-time }
+        deliveryStatus: { type: string }
+        testRecipient: { type: ["string", "null"] }
     WorkspaceRecord:
       type: object
       required: [id, category, status, department, language, description, synthetic, sourceUrl, updatedAt]

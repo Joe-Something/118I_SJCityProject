@@ -520,7 +520,7 @@ function PortalWorkspace({ persona, userId, onLogout }: { persona: Persona; user
             {/\b(?:chemical spill|hazmat|toxic leak|gas leak|active fire|electrical fire|immediate danger|safety hazard|derrame qu[ií]mico|fuga de gas|incendio activo)\b/i.test(planToShow.intake.description) && (
               <div className="verification-notice" role="alert">
                 <AlertCircle size={18} />
-                <span><strong>Escalated to Human Review · High urgency.</strong> This prototype cannot contact City dispatch or emergency responders. Leave the area and call emergency services if there is immediate danger.</span>
+                 <span><strong>High-urgency concern detected.</strong> This plan has not been sent to City staff, dispatch, or emergency responders. Leave the area and call emergency services if there is immediate danger.</span>
               </div>
             )}
             <div className="verification-notice" data-testid="text-verification-notice">

@@ -12,4 +12,9 @@ export interface WorkspaceEscalation {
   departmentInbox: string;
   summary: string;
   createdAt: Date;
+  /** @nullable */
+  acknowledgedAt: Date | null;
+  deliveryStatus: string;
+  /** @nullable */
+  testRecipient: string | null;
 }

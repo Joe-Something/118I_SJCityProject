@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { ActivePlan, Department } from '../types';
 import { ReviewCatalog } from './ReviewCatalog';
 import { STAFF_REVIEWERS } from '../utils/generators';
@@ -8,7 +9,7 @@ import { RequirementId, BusinessType, Modification } from '../requirements';
 import { deriveDepartments } from '../utils/helpers';
 import { StaffDesk } from '../prototypeStore';
 import { StaffSearchFilters, type StaffApplicationFilters } from './StaffSearchFilters';
-import { getListWorkspaceEscalationsQueryKey, useListApplicationHistory, useListWorkspaceEscalations, type ApplicationRecord } from '@workspace/api-client-react';
+import { getListWorkspaceEscalationsQueryKey, useAcknowledgeWorkspaceEscalation, useListApplicationHistory, useListWorkspaceEscalations, type ApplicationRecord } from '@workspace/api-client-react';
 
 function StaffPlanReview({ 
   plan, 
@@ -172,13 +173,17 @@ export function StaffPortal({
   onUpdateActivePlan: (planId: string, updates: Partial<ActivePlan>) => void;
   onReopenReview: (recordId: string) => void;
 }) {
+  const queryClient = useQueryClient();
   const [staffTab, setStaffTab] = useState<'queue' | 'catalog' | 'public'>('public');
   const [expandedPlans, setExpandedPlans] = useState<string[]>([]);
+  const [ackError, setAckError] = useState('');
+  const acknowledge = useAcknowledgeWorkspaceEscalation();
   
   const staffRole: StaffRole = desk === 'Building Code Reviewer' ? 'Building' : desk === 'Fire Prevention' ? 'Fire' : 'Master City Queue';
   const escalations = useListWorkspaceEscalations({ query: {
     enabled: staffRole === 'Fire' || staffRole === 'Master City Queue',
     queryKey: getListWorkspaceEscalationsQueryKey(),
+    refetchInterval: 30_000,
   } });
   const [reviewerFilter, setReviewerFilter] = useState<string>('All');
 
@@ -244,16 +249,35 @@ export function StaffPortal({
         <section className="verification-notice" aria-label="High-urgency review queue">
           <AlertCircle size={18} />
           <div>
-            <strong>High-urgency human-review queue (prototype)</strong>
-            <p>This is an internal demonstration queue. No City inbox or emergency service is connected.</p>
+            <strong>High-urgency review queue (prototype)</strong>
+            <p>Items are stored here only. The test address is not City-owned; opening an email draft does not send or confirm delivery. No City inbox, automatic retry, or emergency service is connected.</p>
             {escalations.isLoading && <p>Loading flagged items…</p>}
-            {escalations.isError && <p role="alert">Review queue requires an administrator-assigned Fire or Economic Development staff role.</p>}
+            {escalations.isError && <p role="alert">Review queue unavailable or your account lacks an administrator-assigned Fire or Economic Development staff role. <button onClick={() => void escalations.refetch()}>Retry</button></p>}
+            {ackError && <p role="alert">{ackError}</p>}
             {escalations.data?.length === 0 && <p>No safety-flagged workspace items.</p>}
             {escalations.data?.map(item => (
-              <p key={item.ticketId}>
-                <strong>Escalated to Human Review</strong> · {item.status} · Ticket {item.ticketId} ·
-                {' '}{new Date(item.createdAt).toLocaleString()} · {item.departmentInbox}
-              </p>
+              <div key={item.ticketId} style={{ marginTop: 12 }}>
+                <strong>High-urgency flag</strong> · Ticket {item.ticketId} · {new Date(item.createdAt).toLocaleString()}
+                <p>{item.status}{item.acknowledgedAt ? ` · ${new Date(item.acknowledgedAt).toLocaleString()}` : ''}</p>
+                <p>{item.departmentInbox} · {item.deliveryStatus}</p>
+                {item.testRecipient && <a
+                  href={`mailto:${encodeURIComponent(item.testRecipient)}?subject=${encodeURIComponent(`TEST ONLY - Permit Navigator urgent ticket ${item.ticketId}`)}&body=${encodeURIComponent(`TEST ONLY - Not City dispatch. A safety concern was flagged in the Permit Navigator prototype. Ticket: ${item.ticketId}. No resident details are included. Email sending and receipt are not tracked by this prototype.`)}`}
+                >Open test email draft (does not confirm sending)</a>}
+                {!item.acknowledgedAt && <button
+                  className="button-secondary"
+                  style={{ marginLeft: 12 }}
+                  disabled={acknowledge.isPending}
+                  onClick={async () => {
+                    setAckError('');
+                    try {
+                      await acknowledge.mutateAsync({ id: item.ticketId });
+                      await queryClient.invalidateQueries({ queryKey: getListWorkspaceEscalationsQueryKey() });
+                    } catch {
+                      setAckError('Acknowledgement could not be saved. Retry after checking your connection.');
+                    }
+                  }}
+                >Acknowledge in prototype queue</button>}
+              </div>
             ))}
           </div>
         </section>

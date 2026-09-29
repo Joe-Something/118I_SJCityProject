@@ -213,6 +213,74 @@ export function useListWorkspaceEscalations<TData = Awaited<ReturnType<typeof li
 
 
 
+export const getAcknowledgeWorkspaceEscalationUrl = (id: string,) => {
+
+
+
+
+  return `/api/workspace/escalations/${id}/acknowledge`
+}
+
+export const acknowledgeWorkspaceEscalation = async (id: string, options?: Parameters<typeof customFetch>[1]): Promise<WorkspaceEscalation> => {
+
+  return customFetch<WorkspaceEscalation>(getAcknowledgeWorkspaceEscalationUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getAcknowledgeWorkspaceEscalationMutationKey = () => ['acknowledgeWorkspaceEscalation'] as const;
+
+export const getAcknowledgeWorkspaceEscalationMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof acknowledgeWorkspaceEscalation>>, TError,AcknowledgeWorkspaceEscalationMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof acknowledgeWorkspaceEscalation>>, TError,AcknowledgeWorkspaceEscalationMutationVariables, TContext> => {
+
+const mutationKey = getAcknowledgeWorkspaceEscalationMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof acknowledgeWorkspaceEscalation>>, AcknowledgeWorkspaceEscalationMutationVariables> = (props) => {
+          const {id} = props ?? {};
+
+          return  acknowledgeWorkspaceEscalation(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AcknowledgeWorkspaceEscalationMutationResult = NonNullable<Awaited<ReturnType<typeof acknowledgeWorkspaceEscalation>>>
+
+    export type AcknowledgeWorkspaceEscalationMutationError = ErrorType<unknown>
+    export type AcknowledgeWorkspaceEscalationMutationVariables = {id: string}
+
+    export const useAcknowledgeWorkspaceEscalation = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof acknowledgeWorkspaceEscalation>>, TError,AcknowledgeWorkspaceEscalationMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof acknowledgeWorkspaceEscalation>>,
+        TError,
+        AcknowledgeWorkspaceEscalationMutationVariables,
+        TContext
+      > => {
+      return useMutation(getAcknowledgeWorkspaceEscalationMutationOptions(options));
+    }
+
 export const getListWorkspaceConversationsUrl = () => {
 
 

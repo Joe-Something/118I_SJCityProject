@@ -11,6 +11,11 @@ export interface WorkspaceEscalation {
   departmentInbox: string;
   summary: string;
   createdAt: string;
+  /** @nullable */
+  acknowledgedAt: string | null;
+  deliveryStatus: string;
+  /** @nullable */
+  testRecipient: string | null;
 }
 
 export interface WorkspaceRecord {

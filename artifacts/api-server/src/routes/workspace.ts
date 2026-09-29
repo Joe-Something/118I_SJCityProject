@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { and, desc, eq, ilike, or } from "drizzle-orm";
+import { and, desc, eq, ilike, inArray, or } from "drizzle-orm";
 import OpenAI from "openai";
 import {
   db, applicationsTable, workspaceConversationsTable, workspaceMessagesTable,
@@ -10,7 +10,8 @@ import {
   CreateWorkspaceConversationResponse, ListWorkspaceMessagesParams,
   ListWorkspaceMessagesResponse, SendWorkspaceMessageParams,
   SendWorkspaceMessageBody, SendWorkspaceMessageResponse,
-  ListWorkspaceEscalationsResponse,
+  ListWorkspaceEscalationsResponse, AcknowledgeWorkspaceEscalationParams,
+  AcknowledgeWorkspaceEscalationResponse,
 } from "@workspace/api-zod";
 import { authorizedStaff, signedInUser } from "../lib/access";
 import { PUBLIC_PERMITS_DATASET } from "../lib/public-permits";
@@ -20,6 +21,30 @@ const recentRequests = new Map<string, number[]>();
 const riskyInput = /\b(?:select\s+.+\s+from|drop\s+table|union\s+select|information_schema|pg_catalog|ignore\s+(all\s+)?(previous|prior)\s+instructions|system\s+prompt|become\s+(an?\s+)?admin|override\s+your\s+role)\b/i;
 const urgentInput = /\b(?:chemical spill|hazmat|toxic leak|gas leak|active fire|electrical fire|immediate danger|severe harm|safety hazard|derrame qu[ií]mico|fuga de gas|incendio activo)\b/i;
 const vagueInput = /^(?:hi|hello|help|permit|what do i need|ayuda|hola|i need help)[?.! ]*$/i;
+const testRecipient = process.env.NODE_ENV === "production" ? null : process.env.URGENT_TEST_EMAIL?.trim() || null;
+
+function escalationRecord(row: typeof workspaceMessagesTable.$inferSelect) {
+  return {
+    ticketId: row.id,
+    status: row.status === "high-urgency-acknowledged" ? "Acknowledged in prototype queue" : "Awaiting prototype staff acknowledgement",
+    departmentInbox: testRecipient ? `Test email draft: ${testRecipient} (not City-owned)` : "No test email configured",
+    testRecipient,
+    deliveryStatus: "Email delivery not verified; no automatic dispatch or retries",
+    summary: "Potential safety hazard flagged by the workspace. No resident contact details are included in the email draft.",
+    createdAt: row.createdAt,
+    acknowledgedAt: row.status === "high-urgency-acknowledged" ? row.updatedAt : null,
+  };
+}
+
+async function escalationStaff(req: Parameters<typeof authorizedStaff>[0], res: Parameters<typeof authorizedStaff>[1]) {
+  const staff = await authorizedStaff(req, res);
+  if (!staff) return null;
+  if (staff.department !== "Fire" && staff.department !== "Economic Development") {
+    res.status(403).json({ error: "This queue is restricted to authorized Fire or Economic Development reviewers." });
+    return null;
+  }
+  return staff;
+}
 
 function scrub(text: string) {
   return text
@@ -72,22 +97,30 @@ router.get("/workspace/records", async (req, res): Promise<void> => {
 });
 
 router.get("/workspace/escalations", async (req, res): Promise<void> => {
-  const staff = await authorizedStaff(req, res);
-  if (!staff) return;
-  if (staff.department !== "Fire" && staff.department !== "Economic Development") {
-    res.status(403).json({ error: "This queue is restricted to Fire Prevention reviewers." });
+  if (!await escalationStaff(req, res)) return;
+  const rows = await db.select().from(workspaceMessagesTable)
+    .where(inArray(workspaceMessagesTable.status, ["high-urgency", "high-urgency-acknowledged"]))
+    .orderBy(desc(workspaceMessagesTable.createdAt)).limit(100);
+  res.json(ListWorkspaceEscalationsResponse.parse(rows.map(escalationRecord)));
+});
+
+router.post("/workspace/escalations/:id/acknowledge", async (req, res): Promise<void> => {
+  if (!await escalationStaff(req, res)) return;
+  const params = AcknowledgeWorkspaceEscalationParams.safeParse(req.params);
+  if (!params.success) { res.status(400).json({ error: "Invalid ticket." }); return; }
+  const [updated] = await db.update(workspaceMessagesTable)
+    .set({ status: "high-urgency-acknowledged", updatedAt: new Date() })
+    .where(and(eq(workspaceMessagesTable.id, params.data.id), eq(workspaceMessagesTable.status, "high-urgency")))
+    .returning();
+  if (!updated) {
+    const [existing] = await db.select().from(workspaceMessagesTable)
+      .where(and(eq(workspaceMessagesTable.id, params.data.id), eq(workspaceMessagesTable.status, "high-urgency-acknowledged")));
+    if (!existing) { res.status(404).json({ error: "Urgent ticket not found." }); return; }
+    res.json(AcknowledgeWorkspaceEscalationResponse.parse(escalationRecord(existing)));
     return;
   }
-  const rows = await db.select().from(workspaceMessagesTable)
-    .where(eq(workspaceMessagesTable.status, "high-urgency"))
-    .orderBy(desc(workspaceMessagesTable.createdAt)).limit(100);
-  res.json(ListWorkspaceEscalationsResponse.parse(rows.map(row => ({
-    ticketId: row.id,
-    status: "High urgency · awaiting human review",
-    departmentInbox: "Fire Prevention review inbox (simulated; no City dispatch)",
-    summary: "Potential safety hazard flagged by the workspace. No resident contact details are stored in this queue.",
-    createdAt: row.createdAt,
-  }))));
+  req.log.info({ ticketId: updated.id }, "Prototype urgent ticket acknowledged by authorized staff");
+  res.json(AcknowledgeWorkspaceEscalationResponse.parse(escalationRecord(updated)));
 });
 
 router.get("/workspace/conversations", async (req, res): Promise<void> => {
@@ -147,11 +180,11 @@ router.post("/workspace/conversations/:id/messages", async (req, res): Promise<v
   const responseId = crypto.randomUUID();
   const timestamp = new Date();
   const escalation = hazardous
-    ? `Escalated to Human Review · ${timestamp.toISOString()} · Ticket ${responseId} · Fire Prevention review inbox (simulated; not connected to City dispatch)`
+    ? `Flagged in prototype review queue · ${timestamp.toISOString()} · Ticket ${responseId} · No email delivery or City dispatch confirmed`
     : null;
   let answer: string;
   if (hazardous) {
-    answer = "This may be an immediate safety hazard. Leave the area and contact emergency services or the appropriate City department now. This prototype has not notified emergency responders. A human-review item is marked in this workspace only.";
+    answer = "This may be an immediate safety hazard. Leave the area and contact emergency services or the appropriate City department now. This prototype has not notified emergency responders or City staff. A human-review item is marked in this workspace only.";
   } else if (vagueInput.test(input) || input.length < 12) {
     answer = "What kind of business or permit are you asking about, and is this a new location or a modification to an existing space?";
   } else {

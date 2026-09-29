@@ -21,3 +21,8 @@ timeoutMs = 20000
 
 [nix]
 channel = "stable-25_05"
+
+[userenv]
+
+[userenv.development]
+URGENT_TEST_EMAIL = "jose.g.garcia01@sjsu.edu"
