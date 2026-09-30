@@ -10,6 +10,7 @@ export * from './applicationInput';
 export * from './applicationInputPlan';
 export * from './applicationRecord';
 export * from './applicationRecordPlan';
+export * from './applicationResponseInput';
 export * from './applicationReview';
 export * from './applicationReviewPlan';
 export * from './healthStatus';

@@ -1,13 +1,18 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Search, History, MapPin, Building2, CheckCircle2, Clock3, Pencil } from 'lucide-react';
 import { ActivePlan } from '../types';
 import { deriveDepartments } from '../utils/helpers';
 
-export function ReviewCatalog({ records, onReopen }: { records: ActivePlan[], onReopen: (id: string) => Promise<boolean> }) {
+export function ReviewCatalog({ records, onReopen, renderDetail }: {
+  records: ActivePlan[];
+  onReopen: (id: string) => Promise<boolean>;
+  renderDetail: (record: ActivePlan) => ReactNode;
+}) {
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<'All' | 'Approved' | 'Rejected' | 'Modified via Staff Override'>('All');
   const [reopenErrors, setReopenErrors] = useState<Record<string, string>>({});
   const [reopeningIds, setReopeningIds] = useState<Set<string>>(() => new Set());
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const handleReopen = async (id: string) => {
     setReopenErrors(current => {
@@ -115,6 +120,17 @@ export function ReviewCatalog({ records, onReopen }: { records: ActivePlan[], on
                     {record.status}
                   </div>
                   <button
+                    type="button"
+                    className="button-secondary"
+                    aria-expanded={expandedId === record.id}
+                    aria-controls={`catalog-detail-${record.id}`}
+                    onClick={() => setExpandedId(current => current === record.id ? null : record.id)}
+                    data-testid={`button-expand-catalog-${record.id}`}
+                    style={{ padding: '6px 12px', fontSize: '12px' }}
+                  >
+                    {expandedId === record.id ? 'Hide details' : 'View full application'}
+                  </button>
+                  <button
                     className="button-secondary"
                     onClick={() => void handleReopen(record.id)}
                     disabled={reopeningIds.has(record.id)}
@@ -130,7 +146,11 @@ export function ReviewCatalog({ records, onReopen }: { records: ActivePlan[], on
                   {reopenErrors[record.id]}
                 </div>
               )}
-              <div className="catalog-card-body">
+              {expandedId === record.id ? (
+                <div id={`catalog-detail-${record.id}`} className="active-plan-content" style={{ borderTop: '1px solid hsl(var(--border))', padding: '20px' }}>
+                  {renderDetail(record)}
+                </div>
+              ) : <div className="catalog-card-body">
                 <div className="catalog-detail">
                   <strong>Reviewed on:</strong> {record.completedAt ? new Date(record.completedAt).toLocaleString() : 'N/A'}
                 </div>
@@ -169,7 +189,7 @@ export function ReviewCatalog({ records, onReopen }: { records: ActivePlan[], on
                     </ul>
                   ) : <span className="catalog-none"> No modifications recorded.</span>}
                 </div>
-              </div>
+              </div>}
             </div>
           ))}
         </div>

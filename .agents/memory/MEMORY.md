@@ -1,2 +1,3 @@
 - [San José source access](city-source-access.md) — public City pages can reject server fetches; treat reachability and publication freshness separately from official status.
 - [Workspace package installs](workspace-package-installs.md) — pnpm add can reserialize workspace YAML and drop safety comments; preserve the original configuration.
+- [Applicant response writes](applicant-response-writes.md) — keep in-app responses separate from review decisions so completed cases can receive them safely.

@@ -24,7 +24,7 @@ import { RequirementCard } from './components/RequirementCard';
 import { AIWorkspace, PublicWorkspace } from './components/AIWorkspace';
 import { StaffApplicationFilters } from './components/StaffSearchFilters';
 import { applicantId, readPersona, personaKey, PENDING_PERSONA_KEY, readPlans, Persona } from './prototypeStore';
-import { createApplication, reviewApplication, updateMyApplication } from '@workspace/api-client-react';
+import { createApplication, getListApplicationHistoryQueryKey, postApplicationResponse, reviewApplication, updateMyApplication } from '@workspace/api-client-react';
 import { useApplicationRecords } from './hooks/useApplicationRecords';
 
 const clerkPubKey = publishableKeyFromHost(
@@ -341,6 +341,22 @@ function PortalWorkspace({ persona, userId, onLogout }: { persona: Persona; user
     }
   };
 
+  const postStaffResponse = async (planId: string, text: string): Promise<boolean> => {
+    try {
+      await postApplicationResponse(planId, { text });
+      void queryClient.invalidateQueries({ queryKey: getListApplicationHistoryQueryKey(planId) });
+    } catch {
+      toast({ title: 'Response not saved', description: 'Please retry after checking your connection.', variant: 'destructive' });
+      return false;
+    }
+    try {
+      await refreshRows();
+    } catch {
+      toast({ title: 'Response saved', description: 'The latest plan could not be refreshed. Reload the page to see the posted response.' });
+    }
+    return true;
+  };
+
   const handleStaffComplete = (planId: string, status: PlanStatus) => {
     void saveStaffReview(planId, { status, completedAt: Date.now(), updatedAt: Date.now() }).then(saved => {
       if (saved) toast({ title: 'Review Completed', description: `Plan has been marked as ${status}.` });
@@ -451,7 +467,8 @@ function PortalWorkspace({ persona, userId, onLogout }: { persona: Persona; user
           recordsError={recordsError}
           recordsRefreshWarning={recordsRefreshWarning}
           onCompleteReview={handleStaffComplete} 
-          onUpdateActivePlan={(id, updates) => { void saveStaffReview(id, updates); }}
+          onUpdateActivePlan={(id, updates) => saveStaffReview(id, updates)}
+          onPostResponse={postStaffResponse}
           onReopenReview={handleStaffReopen}
         />
       ) : persona.kind === 'applicant' ? (
@@ -488,6 +505,12 @@ function PortalWorkspace({ persona, userId, onLogout }: { persona: Persona; user
           </div>
         ) : planToShow ? (
           <div className="plan-shell">
+            {planToShow.notes?._staff_response && (
+              <section className="verification-notice" aria-label="Response on your plan" data-testid={`notice-applicant-response-${planToShow.id}`}>
+                <FileText size={18} aria-hidden="true" />
+                <div><strong>Response posted to your plan</strong><p style={{ whiteSpace: 'pre-wrap', margin: '6px 0 0' }}>{planToShow.notes._staff_response}</p><small>This response appears in the app only; no email was sent.</small></div>
+              </section>
+            )}
             {/\b(?:chemical spill|hazmat|toxic leak|gas leak|active fire|electrical fire|immediate danger|safety hazard|derrame qu[ií]mico|fuga de gas|incendio activo)\b/i.test(planToShow.intake.description) && (
               <div className="verification-notice" role="alert">
                 <AlertCircle size={18} />

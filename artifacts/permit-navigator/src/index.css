@@ -255,9 +255,11 @@ button:disabled { cursor: not-allowed; opacity: .58; }
 .staff-edit { background: hsl(var(--card)); border: 1px solid hsl(var(--border)); padding: 13px; border-radius: 9px; margin-top: 10px; }
 .staff-edit .input-row { grid-template-columns: 1fr 1fr; }
 .staff-edit label { display: block; font-size: 11px; font-weight: 700; margin-bottom: 5px; }
-.staff-edit input, .staff-edit textarea { width: 100%; border: 1px solid hsl(var(--input)); border-radius: 7px; background: hsl(var(--background)); color: hsl(var(--foreground)); padding: 8px; font-size: 12px; }
+.staff-edit input, .staff-edit textarea, .staff-note-editor select { width: 100%; border: 1px solid hsl(var(--input)); border-radius: 7px; background: hsl(var(--background)); color: hsl(var(--foreground)); padding: 8px; font-size: 12px; }
 .staff-edit textarea { min-height: 63px; resize: vertical; }
 .staff-edit-actions { display: flex; gap: 7px; margin-top: 10px; justify-content: flex-end; }
+.staff-note-editor { margin-top: 12px; }
+.staff-note-editor label:not(:first-child) { margin-top: 10px; }
 .modified-notice { padding: 11px 13px; border-radius: 8px; background: hsl(var(--primary) / .1); border: 1px solid hsl(var(--primary) / .22); color: hsl(var(--primary)); font-size: 12px; margin-bottom: 13px; }
 .loading-plan { min-height: 400px; display: grid; place-items: center; padding: 40px; }
 .loading-inner { width: min(100%, 430px); text-align: center; }
@@ -813,8 +815,11 @@ button:disabled { cursor: not-allowed; opacity: .58; }
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 12px;
   margin-bottom: 12px;
 }
+.catalog-card-header > div:last-child { flex-wrap: wrap; }
 .catalog-card-title {
   font-weight: 700;
   font-size: 16px;

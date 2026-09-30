@@ -130,6 +130,23 @@ paths:
               schema:
                 type: array
                 items: { $ref: "#/components/schemas/StatusEvent" }
+  /applications/{id}/response:
+    post:
+      operationId: postApplicationResponse
+      tags: [applications]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ApplicationResponseInput" }
+      responses:
+        "200":
+          description: Staff response posted to the applicant's saved plan, with no email delivery
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ApplicationRecord" }
   /applications/mine:
     get:
       operationId: listMyApplications
@@ -365,6 +382,11 @@ components:
       required: [plan]
       properties:
         plan: { type: object, additionalProperties: true }
+    ApplicationResponseInput:
+      type: object
+      required: [text]
+      properties:
+        text: { type: string, minLength: 1, maxLength: 3000 }
     HealthStatus:
       type: object
       properties:

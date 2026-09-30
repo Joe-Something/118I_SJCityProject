@@ -173,6 +173,40 @@ export const ListApplicationHistoryResponseItem = zod.object({
 export const ListApplicationHistoryResponse = zod.array(ListApplicationHistoryResponseItem)
 
 
+export const PostApplicationResponseParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const postApplicationResponseBodyTextMax = 3000;
+
+
+
+export const PostApplicationResponseBody = zod.object({
+  "text": zod.string().min(1).max(postApplicationResponseBodyTextMax)
+})
+
+export const PostApplicationResponseResponse = zod.object({
+  "id": zod.string(),
+  "businessName": zod.string(),
+  "businessCategory": zod.string(),
+  "requestType": zod.string(),
+  "status": zod.string(),
+  "assignedDepartment": zod.string(),
+  "applicantLanguage": zod.string(),
+  "submittedAt": zod.coerce.date().nullish(),
+  "sourceUrl": zod.string().nullish(),
+  "sourceDataset": zod.string().nullish(),
+  "sourceDate": zod.coerce.date().nullish(),
+  "sourceImportedAt": zod.coerce.date().nullish(),
+  "description": zod.string(),
+  "notes": zod.string().nullish(),
+  "synthetic": zod.boolean(),
+  "plan": zod.record(zod.string(), zod.unknown()),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
 
 
 

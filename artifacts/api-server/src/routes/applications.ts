@@ -3,7 +3,7 @@ import { and, desc, eq, gte, ilike, isNotNull, lt, or, sql, type SQL } from "dri
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import { db, applicationsTable, statusHistoryTable, type Application } from "@workspace/db";
 import { authorizedStaff, signedInUser } from "../lib/access";
-import { ListApplicationHistoryParams, ListApplicationHistoryResponse } from "@workspace/api-zod";
+import { ListApplicationHistoryParams, ListApplicationHistoryResponse, PostApplicationResponseBody, PostApplicationResponseParams, PostApplicationResponseResponse } from "@workspace/api-zod";
 import {
   CreateApplicationBody, CreateApplicationResponse,
   ListMyApplicationsQueryParams, ListMyApplicationsResponse,
@@ -203,21 +203,65 @@ router.patch("/applications/:id/review", async (req, res): Promise<void> => {
   if (!statuses.has(status) || status === "Draft" || (completed.has(existing.status) && status !== "In Review (Re-opened)")) {
     res.status(400).json({ error: "Invalid review status." }); return;
   }
+  const proposedNotes = {
+    ...(existing.plan.notes && typeof existing.plan.notes === "object" && !Array.isArray(existing.plan.notes) ? existing.plan.notes : {}),
+    ...(proposed.notes && typeof proposed.notes === "object" && !Array.isArray(proposed.notes) ? proposed.notes : {}),
+  } as Record<string, unknown>;
+  // Response text belongs to the dedicated posting endpoint, including when another review save overlaps it.
+  delete proposedNotes._staff_response;
   const plan = { ...existing.plan, status,
-    notes: proposed.notes && typeof proposed.notes === "object" && !Array.isArray(proposed.notes) ? proposed.notes : existing.plan.notes,
+    notes: proposedNotes,
     overrides: proposed.overrides && typeof proposed.overrides === "object" && !Array.isArray(proposed.overrides) ? proposed.overrides : existing.plan.overrides,
     rejected: Array.isArray(proposed.rejected) && proposed.rejected.every(item => typeof item === "string") ? proposed.rejected : existing.plan.rejected,
     completedAt: completed.has(status) ? Date.now() : null, updatedAt: Date.now(),
   };
   const fields = fieldsFromPlan(plan);
   if (!fields) { res.status(400).json({ error: "Invalid stored plan." }); return; }
-  const [row] = await db.update(applicationsTable).set({ plan, status, notes: fields.notes, updatedAt: new Date() })
+  const planWithCurrentResponse = sql<Record<string, unknown>>`
+    ${JSON.stringify(plan)}::jsonb ||
+    jsonb_build_object('notes', ${JSON.stringify(proposedNotes)}::jsonb ||
+      CASE WHEN jsonb_typeof(${applicationsTable.plan}->'notes'->'_staff_response') = 'string'
+        THEN jsonb_build_object('_staff_response', ${applicationsTable.plan}->'notes'->'_staff_response')
+        ELSE '{}'::jsonb END)`;
+  const [row] = await db.update(applicationsTable).set({ plan: planWithCurrentResponse, status, notes: fields.notes, updatedAt: new Date() })
     .where(eq(applicationsTable.id, existing.id)).returning();
   await db.insert(statusHistoryTable).values({
     id: crypto.randomUUID(), applicationId: row.id, status: row.status,
     actor: `Staff · ${staff.department}`, synthetic: row.synthetic,
   });
   res.json(ReviewApplicationResponse.parse(respond(row)));
+});
+
+router.post("/applications/:id/response", async (req, res): Promise<void> => {
+  const staff = await authorizedStaff(req, res);
+  if (!staff) return;
+  const params = PostApplicationResponseParams.safeParse(req.params);
+  const body = PostApplicationResponseBody.safeParse(req.body);
+  if (!params.success || !body.success || !body.data.text.trim()) {
+    res.status(400).json({ error: "A response of up to 3000 characters is required." }); return;
+  }
+  const [existing] = await db.select().from(applicationsTable).where(eq(applicationsTable.id, params.data.id));
+  if (!existing || !existing.submittedAt || !!existing.sourceUrl ||
+      (staff.department !== "Economic Development" && !existing.assignedDepartment.includes(staff.department))) {
+    res.status(404).json({ error: "Submitted application not found for this department." }); return;
+  }
+  const text = body.data.text.trim();
+  const row = await db.transaction(async tx => {
+    const [updated] = await tx.update(applicationsTable).set({
+      plan: sql<Record<string, unknown>>`jsonb_set(${applicationsTable.plan}, '{notes}',
+        (CASE WHEN jsonb_typeof(${applicationsTable.plan}->'notes') = 'object'
+          THEN ${applicationsTable.plan}->'notes' ELSE '{}'::jsonb END) ||
+        jsonb_build_object('_staff_response', ${text}), true)`,
+      updatedAt: new Date(),
+    }).where(eq(applicationsTable.id, existing.id)).returning();
+    await tx.insert(statusHistoryTable).values({
+      id: crypto.randomUUID(), applicationId: updated.id,
+      status: "Response posted to applicant plan",
+      actor: `Staff · ${staff.department}`, synthetic: updated.synthetic,
+    });
+    return updated;
+  });
+  res.json(PostApplicationResponseResponse.parse(respond(row)));
 });
 
 router.get("/applications/:id/history", async (req, res): Promise<void> => {

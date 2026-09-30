@@ -3,13 +3,14 @@ import { useQueryClient } from '@tanstack/react-query';
 import { ActivePlan, Department } from '../types';
 import { ReviewCatalog } from './ReviewCatalog';
 import { STAFF_REVIEWERS } from '../utils/generators';
-import { AlertCircle, ClipboardCheck, Building2, CheckCircle2, Check, X, Plus, Pencil, FileText, MapPin, Calendar } from 'lucide-react';
+import { AlertCircle, ClipboardCheck, Building2, CheckCircle2, Check, X, Plus, Pencil, Calendar } from 'lucide-react';
 import { copy } from '../copy';
 import { RequirementId, BusinessType, Modification } from '../requirements';
 import { deriveDepartments } from '../utils/helpers';
 import { StaffDesk } from '../prototypeStore';
 import { StaffSearchFilters, type StaffApplicationFilters } from './StaffSearchFilters';
-import { getListWorkspaceEscalationsQueryKey, useAcknowledgeWorkspaceEscalation, useListApplicationHistory, useListWorkspaceEscalations, type ApplicationRecord } from '@workspace/api-client-react';
+import { getListWorkspaceEscalationsQueryKey, useAcknowledgeWorkspaceEscalation, useListWorkspaceEscalations, type ApplicationRecord } from '@workspace/api-client-react';
+import { StaffApplicationDetail } from './StaffApplicationDetail';
 
 function StaffPlanReview({ 
   plan, 
@@ -17,16 +18,21 @@ function StaffPlanReview({
   onComplete 
 }: { 
   plan: ActivePlan; 
-  onUpdate: (updates: Partial<ActivePlan>) => void;
+  onUpdate: (updates: Partial<ActivePlan>) => Promise<boolean>;
   onComplete: (status: ActivePlan['status']) => void;
 }) {
   const [noteFor, setNoteFor] = useState<RequirementId | null>(null);
   const [noteText, setNoteText] = useState('');
   const [overrideFor, setOverrideFor] = useState<RequirementId | null>(null);
   const [overrideText, setOverrideText] = useState('');
+  const [saving, setSaving] = useState(false);
 
-  const hasUnsavedOverride = overrideFor !== null;
-  const history = useListApplicationHistory(plan.id);
+  const hasUnsavedEdit = overrideFor !== null || noteFor !== null;
+  const persist = async (updates: Partial<ActivePlan>): Promise<boolean> => {
+    setSaving(true);
+    try { return await onUpdate(updates); }
+    finally { setSaving(false); }
+  };
 
   const handleComplete = () => {
     let status: ActivePlan['status'] = 'Approved';
@@ -36,25 +42,23 @@ function StaffPlanReview({
   };
 
   const updateNotes = (reqId: string, val: string) => {
-    onUpdate({ notes: { ...plan.notes, [reqId]: val } });
+    return persist({ notes: { ...plan.notes, [reqId]: val } });
   };
 
   const updateOverrides = (reqId: string, val: string) => {
-    onUpdate({ overrides: { ...plan.overrides, [reqId]: val } });
+    return persist({ overrides: { ...plan.overrides, [reqId]: val } });
   };
 
   const toggleReject = (reqId: RequirementId) => {
     if (plan.rejected.includes(reqId)) {
-      onUpdate({ rejected: plan.rejected.filter(id => id !== reqId) });
+      return persist({ rejected: plan.rejected.filter(id => id !== reqId) });
     } else {
-      onUpdate({ rejected: [...plan.rejected, reqId] });
+      return persist({ rejected: [...plan.rejected, reqId] });
     }
   };
 
   return (
-    <div className="plan-grid">
-      <div>
-        <div className="staff-panel" data-testid={`panel-staff-review-${plan.id}`}>
+    <div className="staff-panel" aria-busy={saving} data-testid={`panel-staff-review-${plan.id}`}>
           <div className="staff-panel-header">
             <div>
               <h2>City Staff Review Mode</h2>
@@ -64,7 +68,7 @@ function StaffPlanReview({
                <button 
                   className="button-primary" 
                   onClick={handleComplete} 
-                  disabled={hasUnsavedOverride} 
+                  disabled={hasUnsavedEdit || saving}
                   data-testid={`button-complete-review-${plan.id}`}
                   style={{ marginTop: 0 }}
                 >
@@ -83,12 +87,12 @@ function StaffPlanReview({
                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center' }}>
                   <strong style={{ fontSize: 13, textDecoration: isRejected ? 'line-through' : 'none' }}>{reqCopyEn.name}</strong>
                   <div style={{ display: 'flex', gap: 6 }}>
-                    {isRejected ? (
-                      <button className="button-secondary" onClick={() => toggleReject(reqId)} data-testid={`button-reapprove-${plan.id}-${reqId}`}><Check size={13} /> Re-approve</button>
+                     {isRejected ? (
+                       <button className="button-secondary" disabled={saving} onClick={() => void toggleReject(reqId)} data-testid={`button-reapprove-${plan.id}-${reqId}`}><Check size={13} /> Re-approve</button>
                     ) : (
                       <>
-                        <button className="button-secondary" onClick={() => updateNotes(reqId, plan.notes[reqId] ?? 'Approved by City Staff.')} data-testid={`button-approve-${plan.id}-${reqId}`}><Check size={13} /> Approve</button>
-                        <button className="button-danger" onClick={() => toggleReject(reqId)} data-testid={`button-reject-${plan.id}-${reqId}`}><X size={13} /> Reject</button>
+                         <button className="button-secondary" disabled={saving} onClick={() => void updateNotes(reqId, plan.notes[reqId] ?? 'Reviewed as a preliminary item; verify with the relevant department.')} data-testid={`button-approve-${plan.id}-${reqId}`}><Check size={13} /> Approve</button>
+                         <button className="button-danger" disabled={saving} onClick={() => void toggleReject(reqId)} data-testid={`button-reject-${plan.id}-${reqId}`}><X size={13} /> Reject</button>
                       </>
                     )}
                     <button className="button-tertiary" onClick={() => { setNoteFor(noteFor === reqId ? null : reqId); setNoteText(plan.notes[reqId] ?? ''); }} data-testid={`button-note-${plan.id}-${reqId}`}><Plus size={13} /> Note</button>
@@ -97,9 +101,19 @@ function StaffPlanReview({
                 </div>
                 
                 {noteFor === reqId && (
-                  <div className="staff-edit-actions" style={{ justifyContent: 'stretch' }}>
-                    <input style={{ flex: 1 }} value={noteText} placeholder="Add a note for the applicant" onChange={(event) => setNoteText(event.target.value)} data-testid={`input-note-${plan.id}-${reqId}`} />
-                    <button className="button-primary" style={{ width: 'auto', marginTop: 0 }} onClick={() => { updateNotes(reqId, noteText); setNoteFor(null); }} data-testid={`button-save-note-${plan.id}-${reqId}`}>Save note</button>
+                  <div className="staff-note-editor">
+                    <label htmlFor={`template-${plan.id}-${reqId}`}>Recommendation template</label>
+                    <select id={`template-${plan.id}-${reqId}`} value="" onChange={event => setNoteText(event.target.value)} data-testid={`select-note-template-${plan.id}-${reqId}`}>
+                      <option value="">Choose a starting point</option>
+                      <option value="Additional information is needed before this item can be reviewed. Please confirm the project scope with the relevant department.">Request clarification</option>
+                      <option value="Department consultation is recommended before making a decision on this item. No approval has been issued.">Recommend department consultation</option>
+                      <option value="This item was reviewed as a possible starting point. Confirm current requirements directly with the relevant City department before proceeding.">Document preliminary review</option>
+                    </select>
+                    <label htmlFor={`note-${plan.id}-${reqId}`}>Applicant-facing note</label>
+                    <div className="staff-edit-actions" style={{ justifyContent: 'stretch' }}>
+                      <textarea id={`note-${plan.id}-${reqId}`} style={{ flex: 1, minHeight: 74 }} value={noteText} placeholder="Edit the note before saving it to this plan" onChange={(event) => setNoteText(event.target.value)} data-testid={`input-note-${plan.id}-${reqId}`} />
+                       <button className="button-primary" style={{ width: 'auto', marginTop: 0 }} disabled={!noteText.trim() || saving} onClick={async () => { if (await updateNotes(reqId, noteText.trim())) setNoteFor(null); }} data-testid={`button-save-note-${plan.id}-${reqId}`}>{saving ? 'Saving…' : 'Save note to plan'}</button>
+                    </div>
                   </div>
                 )}
                 {!noteFor && plan.notes[reqId] && (
@@ -113,7 +127,7 @@ function StaffPlanReview({
                     <label style={{ fontSize: '12px', fontWeight: 'bold' }}>Override Recommendation Text</label>
                     <textarea value={overrideText} onChange={e => setOverrideText(e.target.value)} style={{ width: '100%', minHeight: '60px', padding: '8px', marginTop: '4px' }} data-testid={`textarea-override-${plan.id}-${reqId}`} />
                     <div className="staff-edit-actions">
-                      <button className="button-primary" disabled={!overrideText.trim()} style={{ width: 'auto', marginTop: 0 }} onClick={() => { updateOverrides(reqId, overrideText); setOverrideFor(null); }} data-testid={`button-save-override-${plan.id}-${reqId}`}>Save Override</button>
+                       <button className="button-primary" disabled={!overrideText.trim() || saving} style={{ width: 'auto', marginTop: 0 }} onClick={async () => { if (await updateOverrides(reqId, overrideText)) setOverrideFor(null); }} data-testid={`button-save-override-${plan.id}-${reqId}`}>{saving ? 'Saving…' : 'Save Override'}</button>
                     </div>
                   </div>
                 )}
@@ -124,29 +138,6 @@ function StaffPlanReview({
               </div>
             );
           })}
-        </div>
-      </div>
-
-      <aside className="plan-sidebar">
-         <div className="sidebar-card">
-           <h3>Status history</h3>
-           {history.isLoading && <p>Loading audit history…</p>}
-           {history.isError && <p role="alert">History unavailable. <button onClick={() => void history.refetch()}>Retry</button></p>}
-           {history.data?.length === 0 && <p>No status events recorded yet.</p>}
-           {history.data?.map(event => <div className="contact-row" key={event.id}>
-             <ClipboardCheck size={15} />
-             <div><strong>{event.status}</strong><span>{event.actor} · {new Date(event.createdAt).toLocaleString()} {event.synthetic ? '· Demo Data — Synthetic' : ''}</span></div>
-           </div>)}
-         </div>
-         <div className="sidebar-card">
-          <h3>Intake Details</h3>
-          <div className="contact-row"><FileText size={15} /><div><strong>Project</strong><span>{plan.intake.description}</span></div></div>
-          <div className="contact-row"><MapPin size={15} /><div><strong>Location</strong><span>{plan.intake.address}, {plan.intake.zip}</span></div></div>
-          <div className="contact-row"><Building2 size={15} /><div><strong>Business type</strong><span>{plan.intake.businessType === 'other' ? plan.intake.businessOther : (plan.intake.businessType ? copy.en.businessLabels[plan.intake.businessType as BusinessType] : '')}</span></div></div>
-          <div className="contact-row"><ClipboardCheck size={15} /><div><strong>Planned changes</strong><span>{plan.intake.modifications.length ? plan.intake.modifications.map((item) => item === 'other' ? plan.intake.modificationOther : copy.en.modificationLabels[item as Modification]).join(', ') : 'None selected'}</span></div></div>
-          {plan.intake.files.length > 0 && <div className="contact-row"><FileText size={15} /><div><strong>Files attached</strong><span>{plan.intake.files.length} local file(s)</span></div></div>}
-        </div>
-      </aside>
     </div>
   );
 }
@@ -165,6 +156,7 @@ export function StaffPortal({
   recordsRefreshWarning,
   onCompleteReview, 
   onUpdateActivePlan,
+  onPostResponse,
   onReopenReview
 }: { 
   desk: StaffDesk;
@@ -177,7 +169,8 @@ export function StaffPortal({
   recordsError: string;
   recordsRefreshWarning: string;
   onCompleteReview: (planId: string, finalStatus: ActivePlan['status']) => void;
-  onUpdateActivePlan: (planId: string, updates: Partial<ActivePlan>) => void;
+  onUpdateActivePlan: (planId: string, updates: Partial<ActivePlan>) => Promise<boolean>;
+  onPostResponse: (planId: string, text: string) => Promise<boolean>;
   onReopenReview: (recordId: string) => Promise<boolean>;
 }) {
   const queryClient = useQueryClient();
@@ -370,7 +363,17 @@ export function StaffPortal({
           )}
         </section>
       ) : staffTab === 'catalog' ? (
-          <ReviewCatalog records={visibleCatalog} onReopen={handleReopen} />
+          <ReviewCatalog
+            records={visibleCatalog}
+            onReopen={handleReopen}
+            renderDetail={plan => (
+              <StaffApplicationDetail
+                plan={plan}
+                record={records.find(item => item.id === plan.id)}
+                onPostResponse={text => onPostResponse(plan.id, text)}
+              />
+            )}
+          />
       ) : filteredQueue.length === 0 ? (
         <div className="no-match" style={{ textAlign: 'center', padding: '60px 20px' }}>
           <ClipboardCheck size={42} color="hsl(var(--muted-foreground))" style={{ margin: '0 auto 16px' }} />
@@ -384,10 +387,16 @@ export function StaffPortal({
             const record = records.find(item => item.id === plan.id);
             return (
               <div key={plan.id} className="active-plan-card" style={{ background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: '12px', overflow: 'hidden' }} data-testid={`active-plan-${plan.id}`}>
-                <div 
+                <div
                   className="active-plan-header" 
                   onClick={() => toggleExpand(plan.id)} 
+                  onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); toggleExpand(plan.id); } }}
+                  role="button"
+                  tabIndex={0}
+                  aria-expanded={expandedPlans.includes(plan.id)}
+                  aria-controls={`staff-detail-${plan.id}`}
                   style={{ cursor: 'pointer', display: 'flex', justifyContent: 'space-between', padding: '16px', background: expandedPlans.includes(plan.id) ? 'hsl(var(--muted) / 0.3)' : 'transparent' }}
+                  data-testid={`button-expand-application-${plan.id}`}
                 >
                   <div>
                     <div style={{ fontWeight: 600, fontSize: '16px', marginBottom: '4px' }}>{record?.businessName || plan.intake.businessName || plan.intake.address}</div>
@@ -422,19 +431,25 @@ export function StaffPortal({
                     <div className={`status-badge ${plan.status === 'In Review (Re-opened)' ? 'reviewed' : 'sent'}`}>
                       {plan.status}
                     </div>
-                    <button className="button-tertiary" style={{ padding: '6px 12px' }}>
+                    <span className="button-tertiary" style={{ padding: '6px 12px' }}>
                       {expandedPlans.includes(plan.id) ? 'Collapse' : 'Review Plan'}
-                    </button>
+                    </span>
                   </div>
                 </div>
                 
                 {expandedPlans.includes(plan.id) && (
-                  <div className="active-plan-content" style={{ borderTop: '1px solid hsl(var(--border))', padding: '20px' }}>
-                    <StaffPlanReview 
-                      plan={plan} 
-                      onUpdate={(updates) => onUpdateActivePlan(plan.id, updates)} 
-                      onComplete={(status) => onCompleteReview(plan.id, status)} 
-                    />
+                  <div id={`staff-detail-${plan.id}`} className="active-plan-content" style={{ borderTop: '1px solid hsl(var(--border))', padding: '20px' }}>
+                    <StaffApplicationDetail
+                      plan={plan}
+                      record={record}
+                      onPostResponse={text => onPostResponse(plan.id, text)}
+                    >
+                      <StaffPlanReview
+                        plan={plan}
+                        onUpdate={(updates) => onUpdateActivePlan(plan.id, updates)}
+                        onComplete={(status) => onCompleteReview(plan.id, status)}
+                      />
+                    </StaffApplicationDetail>
                   </div>
                 )}
               </div>

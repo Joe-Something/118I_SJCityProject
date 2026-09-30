@@ -202,6 +202,14 @@ export interface ApplicationReview {
   plan: ApplicationReviewPlan;
 }
 
+export interface ApplicationResponseInput {
+  /**
+     * @minLength 1
+     * @maxLength 3000
+     */
+  text: string;
+}
+
 export interface HealthStatus {
   status: string;
 }
