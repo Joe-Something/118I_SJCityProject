@@ -1,0 +1,29 @@
+You are an expert full-stack developer. Build a production-ready Web Application / Dashboard for City Staff to review and process application forms.
+
+### Core Requirements & Modifications:
+
+1. Remove Prototype & Demo Branding:
+   - Eliminate all UI elements, badges, banners, header tags, or footer notes that label the application as a "prototype," "MVP," "demo," or "mockup."
+   - Ensure all language, status tags, and components reflect a live, operational enterprise application.
+
+2. Application Form - Expanded Detail View:
+   When city staff clicks or expands an individual application form row/card, render a comprehensive detail panel/view containing three primary sections:
+
+   A. Applicant Information & Form Submission
+      - Display complete applicant details (e.g., Full Name, Organization/Business, Contact Info, Property/Project Address, Submission Date, Application Type).
+      - Include the full submitted data fields, uploaded documentation list with preview/download triggers, and form submission history/audit log.
+
+   B. Standardized Recommendations
+      - Display automated/standardized recommendation scores or status determinations based on application criteria (e.g., "Recommended for Approval," "Conditional Approval Required," "Requires Additional Environmental Review").
+      - Provide a breakdown of key policy compliance checks (e.g., Zoning Compliance: PASS, Public Safety Review: PENDING, Utility Capacity: PASS).
+      - Include pre-formatted, standardized staff recommendation templates that city staff can select, edit, and apply to their formal review notes.
+
+   C. Guidance Options & Next Steps
+      - Provide staff-facing procedural guidance tailored to the current application status and type (e.g., "Step-by-step checklist for conditional approvals").
+      - Include selectable action workflows (e.g., "Request Information from Applicant," "Schedule Public Hearing," "Issue Permit," "Escalate to Department Head").
+      - Offer customizable response templates and guidance notes to send directly to the applicant via automated email/notifications.
+
+### Design & Tech Stack Guidelines:
+- Clean, accessible, modern UI (e.g., React/Next.js with Tailwind CSS, Shadcn UI, or Material UI).
+- Scannable, structured layout using accordions, tabs, or side-drawers for expanded application details.
+- Fully interactive state management for expanding records, selecting recommendations, and triggering guidance workflows.
