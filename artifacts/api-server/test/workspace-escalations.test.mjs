@@ -291,6 +291,25 @@ test("an audit-write failure rolls back the urgent ticket acknowledgement", asyn
       await pool.query(`DROP FUNCTION public.${functionName}()`);
     }
   }
+
+  const retry = await ack("fire", auditFailureTicketId);
+  assert.equal(retry.status, 200, "the same staff member can retry after the audit store recovers");
+  assert.equal(retry.body.status, "Acknowledged in prototype queue");
+  assert.equal(retry.body.acknowledgedBy, "fire");
+  assert.equal(retry.body.acknowledgedDepartment, "Fire");
+
+  const [acknowledgedTicket] = await db.select().from(workspaceMessagesTable)
+    .where(eq(workspaceMessagesTable.id, auditFailureTicketId));
+  assert.equal(acknowledgedTicket.status, "high-urgency-acknowledged");
+  assert.equal(acknowledgedTicket.updatedAt.toISOString(), retry.body.acknowledgedAt);
+
+  const auditRowsAfterRetry = await db.select().from(workspaceAcknowledgementsTable)
+    .where(eq(workspaceAcknowledgementsTable.ticketId, auditFailureTicketId));
+  assert.equal(auditRowsAfterRetry.length, 1, "a recovered retry creates exactly one audit event");
+  assert.equal(auditRowsAfterRetry[0].ticketId, auditFailureTicketId);
+  assert.equal(auditRowsAfterRetry[0].staffUserId, "fire");
+  assert.equal(auditRowsAfterRetry[0].staffDepartment, "Fire");
+  assert.equal(auditRowsAfterRetry[0].acknowledgedAt.toISOString(), retry.body.acknowledgedAt);
 });
 
 test("simultaneous reviewers share the first acknowledgement and create one audit event", async () => {
