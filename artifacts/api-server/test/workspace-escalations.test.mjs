@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 import { randomUUID } from "node:crypto";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 import path from "node:path";
 import esbuild from "esbuild";
@@ -27,7 +27,14 @@ if (process.env.NODE_ENV !== "test" || !process.env.DATABASE_URL) {
 
 const fixture = randomUUID();
 const conversationId = fixture;
-const importerPermitNumber = `2026-${randomUUID().replace(/\D/g, "")}-CI`;
+const fixturePermitNumbers = [
+  "2026-990001-CI",
+  "2026-990002-CI",
+  "2026-990003-CI",
+  "2026-990004-CI",
+];
+const fixtureRecordIds = fixturePermitNumbers.map(number => `SJ-OPEN-${number}`);
+const importerPermitNumber = fixturePermitNumbers[0];
 const importerRecordId = `SJ-OPEN-${importerPermitNumber}`;
 const ticketId = randomUUID();
 const ordinaryId = randomUUID();
@@ -52,6 +59,23 @@ let outputDir;
 let server;
 let baseUrl;
 const residentTicketIds = [];
+
+async function withFrozenTime(isoDate, callback) {
+  const NativeDate = globalThis.Date;
+  const fixedTime = new NativeDate(isoDate).getTime();
+  globalThis.Date = class extends NativeDate {
+    constructor(...args) {
+      if (args.length === 0) super(fixedTime);
+      else super(...args);
+    }
+    static now() { return fixedTime; }
+  };
+  try {
+    return await callback();
+  } finally {
+    globalThis.Date = NativeDate;
+  }
+}
 
 async function request(method, route, actor = "anonymous", body) {
   const response = await fetch(`${baseUrl}/api${route}`, {
@@ -184,6 +208,7 @@ after(async () => {
   await db.delete(applicationsTable)
     .where(inArray(applicationsTable.id, [
       currentPublicRecordId, outdatedPublicRecordId, syntheticRecordId, importerRecordId,
+      ...fixtureRecordIds,
       staleCachedCityRecordId, futureCachedCityRecordId, currentCachedCityRecordId,
       nonCityCachedRecordId, applicantCreatedRecordId,
     ]));
@@ -261,6 +286,7 @@ test("City permit import persists and returns only allowlisted public metadata",
     contractor: "PRIVATE_CONTRACTOR_SENTINEL",
     parcel: "PRIVATE_PARCEL_SENTINEL",
   };
+  await db.delete(applicationsTable).where(inArray(applicationsTable.id, fixtureRecordIds));
   const existingRecordTime = new Date(Date.now() - 60_000);
   await db.insert(applicationsTable).values({
     id: importerRecordId,
@@ -284,27 +310,36 @@ test("City permit import persists and returns only allowlisted public metadata",
     createdAt: existingRecordTime,
     updatedAt: existingRecordTime,
   });
-  const headers = [
-    "FOLDERNUMBER", "FOLDERDESC", "gx_location", "FOLDERNAME",
-    "SUBTYPEDESCRIPTION", "WORKDESCRIPTION", "ISSUEDATE",
-    "APPLICANT", "OWNER", "CONTRACTOR", "PARCELNUMBER",
-  ];
-  const today = new Date();
-  const values = [
-    importerPermitNumber, "Commercial/Industrial", "55 Sample Way",
-    "Tenant improvement", "Restaurant", "Interior renovation",
-    `${today.getUTCMonth() + 1}/${today.getUTCDate()}/${today.getUTCFullYear()}`,
-    privateValues.applicant, privateValues.owner, privateValues.contractor, privateValues.parcel,
-  ];
-  const csv = `${headers.join(",")}\n${values.map(value => `"${value.replaceAll('"', '""')}"`).join(",")}\n`;
+  const csv = await readFile(
+    new URL("./fixtures/public-permits-issue-dates.csv", import.meta.url),
+    "utf8",
+  );
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async () => new Response(csv, { status: 200 });
+  let publicResults;
   try {
-    await refreshPublicPermits();
+    publicResults = await withFrozenTime("2026-09-30T09:15:00.000Z", async () => {
+      await refreshPublicPermits();
+      globalThis.fetch = originalFetch;
+      const results = new Map();
+      for (const recordId of fixtureRecordIds) {
+        const response = await request(
+          "GET",
+          `/workspace/records?mode=live&search=${encodeURIComponent(recordId)}`,
+        );
+        assert.equal(response.status, 200);
+        results.set(recordId, ListWorkspaceRecordsResponse.parse(response.body));
+      }
+      return results;
+    });
   } finally {
     globalThis.fetch = originalFetch;
   }
 
+  const savedRows = await db.select().from(applicationsTable)
+    .where(inArray(applicationsTable.id, fixtureRecordIds));
+  assert.deepEqual(savedRows.map(row => row.id), [importerRecordId],
+    "only the in-window issue date should be saved");
   const [persisted] = await db.select().from(applicationsTable)
     .where(eq(applicationsTable.id, importerRecordId));
   assert.ok(persisted, "the CSV row should be imported");
@@ -327,12 +362,7 @@ test("City permit import persists and returns only allowlisted public metadata",
     assert.ok(!JSON.stringify(persisted).includes(value), `sensitive value persisted: ${value}`);
   }
 
-  const response = await request(
-    "GET",
-    `/workspace/records?mode=live&search=${encodeURIComponent(importerRecordId)}`,
-  );
-  assert.equal(response.status, 200);
-  const publicRecords = ListWorkspaceRecordsResponse.parse(response.body);
+  const publicRecords = publicResults.get(importerRecordId);
   assert.equal(publicRecords.length, 1);
   const [publicRecord] = publicRecords;
   assert.deepEqual(Object.keys(publicRecord).sort(), [
@@ -344,7 +374,14 @@ test("City permit import persists and returns only allowlisted public metadata",
   assert.equal(publicRecord.description, "Commercial/industrial building permit metadata");
   assert.equal(publicRecord.synthetic, false);
   for (const value of Object.values(privateValues)) {
-    assert.ok(!JSON.stringify(response.body).includes(value), `sensitive value returned: ${value}`);
+    assert.ok(!JSON.stringify(publicRecords).includes(value), `sensitive value returned: ${value}`);
+  }
+  for (const rejectedRecordId of fixtureRecordIds.slice(1)) {
+    assert.deepEqual(
+      publicResults.get(rejectedRecordId),
+      [],
+      `rejected issue date must not be returned publicly: ${rejectedRecordId}`,
+    );
   }
 });
 

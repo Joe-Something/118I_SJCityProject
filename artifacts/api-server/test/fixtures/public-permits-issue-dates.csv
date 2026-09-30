@@ -1,0 +1,5 @@
+FOLDERNUMBER,FOLDERDESC,gx_location,FOLDERNAME,SUBTYPEDESCRIPTION,WORKDESCRIPTION,ISSUEDATE,APPLICANT,OWNER,CONTRACTOR,PARCELNUMBER
+2026-990001-CI,Commercial/Industrial,55 Sample Way,Tenant improvement,Restaurant,Interior renovation,9/15/2026,PRIVATE_APPLICANT_SENTINEL,PRIVATE_OWNER_SENTINEL,PRIVATE_CONTRACTOR_SENTINEL,PRIVATE_PARCEL_SENTINEL
+2026-990002-CI,Commercial/Industrial,56 Sample Way,Old permit,Office,Interior renovation,8/30/2026,Old Applicant,Old Owner,Old Contractor,OLD-PARCEL
+2026-990003-CI,Commercial/Industrial,57 Sample Way,Future permit,Office,Interior renovation,10/1/2026,Future Applicant,Future Owner,Future Contractor,FUTURE-PARCEL
+2026-990004-CI,Commercial/Industrial,58 Sample Way,Malformed permit,Office,Interior renovation,not-a-date,Malformed Applicant,Malformed Owner,Malformed Contractor,MALFORMED-PARCEL
