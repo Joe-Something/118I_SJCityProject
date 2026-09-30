@@ -14,6 +14,7 @@ import {
   ListWorkspacePrototypeSourcesResponse,
   ListWorkspaceRecordsResponse,
 } from "@workspace/api-zod";
+import { refreshPublicPermits } from "../src/lib/public-permits.ts";
 import { prototypeSources } from "../src/lib/prototype-sources.ts";
 
 // Exercise the real route, access checks, response schemas, and PostgreSQL.
@@ -25,6 +26,8 @@ if (process.env.NODE_ENV !== "test" || !process.env.DATABASE_URL) {
 
 const fixture = randomUUID();
 const conversationId = fixture;
+const importerPermitNumber = `2026-${randomUUID().replace(/\D/g, "")}-CI`;
+const importerRecordId = `SJ-OPEN-${importerPermitNumber}`;
 const ticketId = randomUUID();
 const ordinaryId = randomUUID();
 const auditFailureTicketId = randomUUID();
@@ -162,7 +165,7 @@ after(async () => {
   await db.delete(workspaceMessagesTable).where(eq(workspaceMessagesTable.conversationId, conversationId));
   await db.delete(workspaceConversationsTable).where(eq(workspaceConversationsTable.id, conversationId));
   await db.delete(applicationsTable)
-    .where(inArray(applicationsTable.id, [currentPublicRecordId, outdatedPublicRecordId, syntheticRecordId]));
+    .where(inArray(applicationsTable.id, [currentPublicRecordId, outdatedPublicRecordId, syntheticRecordId, importerRecordId]));
   if (outputDir) await rm(outputDir, { recursive: true, force: true });
   await pool.end();
 });
@@ -217,6 +220,100 @@ test("reference endpoints and prototype freshness states match generated respons
   assert.equal(demoRecords[0].sourceUrl, null);
   assert.equal(demoRecords[0].sourceDate, null);
   assert.equal(demoRecords[0].sourceImportedAt, null);
+});
+
+test("City permit import persists and returns only allowlisted public metadata", async () => {
+  const privateValues = {
+    applicant: "PRIVATE_APPLICANT_SENTINEL",
+    owner: "PRIVATE_OWNER_SENTINEL",
+    contractor: "PRIVATE_CONTRACTOR_SENTINEL",
+    parcel: "PRIVATE_PARCEL_SENTINEL",
+  };
+  const existingRecordTime = new Date(Date.now() - 60_000);
+  await db.insert(applicationsTable).values({
+    id: importerRecordId,
+    ownerId: privateValues.owner,
+    applicantKey: privateValues.applicant,
+    businessName: privateValues.applicant,
+    businessCategory: privateValues.contractor,
+    requestType: privateValues.contractor,
+    status: "Private",
+    assignedDepartment: privateValues.owner,
+    applicantLanguage: privateValues.applicant,
+    submittedAt: existingRecordTime,
+    description: privateValues.parcel,
+    notes: Object.values(privateValues).join(" "),
+    synthetic: true,
+    sourceUrl: privateValues.owner,
+    sourceDataset: privateValues.contractor,
+    sourceDate: existingRecordTime,
+    sourceImportedAt: existingRecordTime,
+    plan: { applicant: privateValues.applicant, owner: privateValues.owner, contractor: privateValues.contractor, parcel: privateValues.parcel },
+    createdAt: existingRecordTime,
+    updatedAt: existingRecordTime,
+  });
+  const headers = [
+    "FOLDERNUMBER", "FOLDERDESC", "gx_location", "FOLDERNAME",
+    "SUBTYPEDESCRIPTION", "WORKDESCRIPTION", "ISSUEDATE",
+    "APPLICANT", "OWNER", "CONTRACTOR", "PARCELNUMBER",
+  ];
+  const today = new Date();
+  const values = [
+    importerPermitNumber, "Commercial/Industrial", "55 Sample Way",
+    "Tenant improvement", "Restaurant", "Interior renovation",
+    `${today.getUTCMonth() + 1}/${today.getUTCDate()}/${today.getUTCFullYear()}`,
+    privateValues.applicant, privateValues.owner, privateValues.contractor, privateValues.parcel,
+  ];
+  const csv = `${headers.join(",")}\n${values.map(value => `"${value.replaceAll('"', '""')}"`).join(",")}\n`;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(csv, { status: 200 });
+  try {
+    await refreshPublicPermits();
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+
+  const [persisted] = await db.select().from(applicationsTable)
+    .where(eq(applicationsTable.id, importerRecordId));
+  assert.ok(persisted, "the CSV row should be imported");
+  assert.equal(persisted.ownerId, null);
+  assert.equal(persisted.applicantKey, null);
+  assert.equal(persisted.businessName, "Property at 55 Sample Way");
+  assert.equal(persisted.businessCategory, "Restaurant");
+  assert.equal(persisted.requestType, "Interior renovation");
+  assert.equal(persisted.status, "Issued");
+  assert.equal(persisted.assignedDepartment, "Not provided");
+  assert.equal(persisted.applicantLanguage, "Not provided");
+  assert.equal(persisted.submittedAt, null);
+  assert.equal(persisted.notes, null);
+  assert.equal(persisted.synthetic, false);
+  assert.equal(persisted.sourceUrl, "https://data.sanjoseca.gov/dataset/last-30-days-building-permits");
+  assert.equal(persisted.sourceDataset, "City of San José · Last 30 days building permits");
+  assert.equal(persisted.plan.intake.businessName, "Property at 55 Sample Way");
+  assert.equal(persisted.plan.intake.address, "55 Sample Way");
+  for (const value of Object.values(privateValues)) {
+    assert.ok(!JSON.stringify(persisted).includes(value), `sensitive value persisted: ${value}`);
+  }
+
+  const response = await request(
+    "GET",
+    `/workspace/records?mode=live&search=${encodeURIComponent(importerRecordId)}`,
+  );
+  assert.equal(response.status, 200);
+  const publicRecords = ListWorkspaceRecordsResponse.parse(response.body);
+  assert.equal(publicRecords.length, 1);
+  const [publicRecord] = publicRecords;
+  assert.deepEqual(Object.keys(publicRecord).sort(), [
+    "category", "department", "description", "freshness", "id", "language",
+    "sourceDate", "sourceImportedAt", "sourceUrl", "status", "synthetic", "updatedAt",
+  ]);
+  assert.equal(publicRecord.id, importerRecordId);
+  assert.equal(publicRecord.category, "Restaurant");
+  assert.equal(publicRecord.description, "Commercial/industrial building permit metadata");
+  assert.equal(publicRecord.synthetic, false);
+  for (const value of Object.values(privateValues)) {
+    assert.ok(!JSON.stringify(response.body).includes(value), `sensitive value returned: ${value}`);
+  }
 });
 
 test("queue and acknowledgement reject anonymous, resident, and non-queue staff", async () => {
