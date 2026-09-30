@@ -108,26 +108,24 @@ function safeDisposition(name: string, download: boolean): string {
 }
 
 router.get("/applications/:id/documents", async (req, res): Promise<void> => {
-  const params = ListApplicationDocumentsParams.safeParse(req.params);
-  if (!params.success) { res.status(400).json({ error: "Invalid application ID." }); return; }
+  const params = ListApplicationHistoryParams.safeParse(req.params);
+  if (!params.success) { res.status(400).json({ error: "Invalid document ID." }); return; }
   const access = await readableApplication(req, res, params.data.id);
   if (!access) return;
   await cleanupApplicationDocuments(access.application.id);
-  const rows = await db.select().from(applicationDocumentsTable).where(and(
-    eq(applicationDocumentsTable.applicationId, access.application.id),
-    inArray(applicationDocumentsTable.state, ["pending", "ready"]),
-  ));
+  const rows = await db.select().from(applicationsTable).where(and(...conditions))
+    .orderBy(desc(sql`coalesce(${applicationsTable.submittedAt}, ${applicationsTable.sourceDate})`)).limit(500);
   await auditDocument(access.application.id, null, access.actorId, "list", access.department);
   res.json(ListApplicationDocumentsResponse.parse(rows.map(documentView)));
 });
 
 router.post("/applications/:id/documents/upload-url", async (req, res): Promise<void> => {
-  const params = RequestApplicationDocumentUploadParams.safeParse(req.params);
-  const body = RequestApplicationDocumentUploadBody.safeParse(req.body);
+  const params = ListApplicationHistoryParams.safeParse(req.params);
+  const body = PostApplicationResponseBody.safeParse(req.body);
   if (!params.success || !body.success || !body.data.name.trim()) {
     res.status(400).json({ error: "Invalid document name, size, or content type." }); return;
   }
-  const access = await ownedDraftApplication(req, res, params.data.id);
+  const access = await readableApplication(req, res, params.data.id);
   if (!access) return;
   const documentId = crypto.randomUUID();
   const stagingObjectId = crypto.randomUUID();
@@ -164,15 +162,15 @@ router.post("/applications/:id/documents/upload-url", async (req, res): Promise<
 });
 
 router.post("/applications/:id/documents/:documentId/complete", async (req, res): Promise<void> => {
-  const params = CompleteApplicationDocumentUploadParams.safeParse(req.params);
+  const params = ListApplicationHistoryParams.safeParse(req.params);
   if (!params.success) { res.status(400).json({ error: "Invalid document ID." }); return; }
-  const access = await ownedApplication(req, res, params.data.id);
+  const access = await readableApplication(req, res, params.data.id);
   if (!access) return;
   await cleanupApplicationDocuments(access.application.id);
   const [document] = await db.select().from(applicationDocumentsTable).where(and(
     eq(applicationDocumentsTable.id, params.data.documentId),
     eq(applicationDocumentsTable.applicationId, access.application.id),
-    inArray(applicationDocumentsTable.state, ["pending", "ready"]),
+    eq(applicationDocumentsTable.state, "ready"),
   ));
   if (!document) { res.status(404).json({ error: "Document not found." }); return; }
   if (document.state === "ready") {
@@ -208,66 +206,49 @@ router.post("/applications/:id/documents/:documentId/complete", async (req, res)
   const validUpload = actual.size === document.size && actual.contentType === document.contentType &&
     documentTypes.has(actual.contentType) && hasValidSignature(actual.contentType, actual.signature);
   const result = await db.transaction(async tx => {
-    const [currentApplication] = await tx.select().from(applicationsTable)
-      .where(eq(applicationsTable.id, access.application.id)).for("update");
-    if (!currentApplication || currentApplication.ownerId !== access.userId ||
-        currentApplication.status !== "Draft" || currentApplication.submittedAt || currentApplication.sourceUrl) return "not-draft" as const;
-    const [currentDocument] = await tx.select().from(applicationDocumentsTable).where(and(
-      eq(applicationDocumentsTable.id, document.id),
-      eq(applicationDocumentsTable.applicationId, currentApplication.id),
-    )).for("update");
-    if (!currentDocument) return "missing" as const;
-    if (currentDocument.state === "deleting") {
-      return currentDocument.uploadExpiresAt <= new Date() ? "expired" as const : "missing" as const;
+    const [existing] = await tx.select().from(applicationsTable)
+      .where(eq(applicationsTable.id, params.data.id)).for("update");
+    if (!existing || !existing.submittedAt || !!existing.sourceUrl ||
+        (staff.department !== "Economic Development" &&
+          !existing.assignedDepartment.split(",").some(department => department.trim() === staff.department))) {
+      return { kind: "not-assigned" as const };
     }
-    if (currentDocument.state === "ready") return { kind: "ready" as const, document: currentDocument };
-    if (currentDocument.uploadExpiresAt <= new Date()) {
-      const [tombstone] = await tx.update(applicationDocumentsTable).set({
-        state: "deleting", stagingCleanedAt: null,
-      }).where(and(
-        eq(applicationDocumentsTable.id, currentDocument.id),
-        eq(applicationDocumentsTable.state, "pending"),
-        lte(applicationDocumentsTable.uploadExpiresAt, new Date()),
-      )).returning();
-      if (!tombstone) return "conflict" as const;
-      await tx.insert(applicationDocumentAuditTable).values(documentAuditValues(
-        currentDocument.applicationId, currentDocument.id, "system:document-cleanup", "reservation-expired",
-      ));
-      return { kind: "expired" as const, document: tombstone };
+    if (body.data.expectedUpdatedAt && existing.updatedAt.getTime() !== body.data.expectedUpdatedAt.getTime()) {
+      return { kind: "stale" as const };
     }
-    if (!validUpload) {
-      const [tombstone] = await tx.update(applicationDocumentsTable).set({
-        state: "deleting", stagingCleanedAt: null,
-      }).where(and(
-        eq(applicationDocumentsTable.id, currentDocument.id),
-        eq(applicationDocumentsTable.state, "pending"),
-      )).returning();
-      if (!tombstone) return "conflict" as const;
-      await tx.insert(applicationDocumentAuditTable).values(documentAuditValues(
-        currentDocument.applicationId, currentDocument.id, access.userId, "upload-rejected",
-      ));
-      return { kind: "invalid" as const, document: tombstone };
+    const proposed = body.data.plan;
+    const status = typeof proposed.status === "string" ? proposed.status : existing.status;
+    if (!statuses.has(status) || status === "Draft" ||
+        (completed.has(existing.status) && status !== "In Review (Re-opened)")) {
+      return { kind: "invalid-status" as const };
     }
-    const finalGeneration = await applicationDocumentStorage.promote(
-      currentDocument.stagingObjectId, currentDocument.finalObjectId, actual.generation, currentDocument.id,
-    );
-    const [ready] = await tx.update(applicationDocumentsTable).set({
-      state: "ready", finalGeneration, uploadedAt: new Date(),
-    }).where(and(
-      eq(applicationDocumentsTable.id, currentDocument.id),
-      eq(applicationDocumentsTable.state, "pending"),
-    )).returning();
-    if (!ready) {
-      const [reloaded] = await tx.select().from(applicationDocumentsTable).where(eq(
-        applicationDocumentsTable.id, currentDocument.id,
-      )).for("update");
-      if (reloaded?.state === "ready") return { kind: "ready" as const, document: reloaded };
-      return "conflict" as const;
-    }
-    await tx.insert(applicationDocumentAuditTable).values(documentAuditValues(
-      currentDocument.applicationId, currentDocument.id, access.userId, "upload-completed",
-    ));
-    return { kind: "ready" as const, document: ready };
+    const proposedNotes = {
+      ...(existing.plan.notes && typeof existing.plan.notes === "object" && !Array.isArray(existing.plan.notes) ? existing.plan.notes : {}),
+      ...(proposed.notes && typeof proposed.notes === "object" && !Array.isArray(proposed.notes) ? proposed.notes : {}),
+    } as Record<string, unknown>;
+    delete proposedNotes._staff_response;
+    const plan = { ...existing.plan, status,
+      notes: proposedNotes,
+      overrides: proposed.overrides && typeof proposed.overrides === "object" && !Array.isArray(proposed.overrides) ? proposed.overrides : existing.plan.overrides,
+      rejected: Array.isArray(proposed.rejected) && proposed.rejected.every(item => typeof item === "string") ? proposed.rejected : existing.plan.rejected,
+      completedAt: completed.has(status) ? Date.now() : null, updatedAt: Date.now(),
+    };
+    const fields = fieldsFromPlan(plan);
+    if (!fields) return { kind: "invalid-plan" as const };
+    const planWithCurrentResponse = sql<Record<string, unknown>>`
+      ${JSON.stringify(plan)}::jsonb ||
+      jsonb_build_object('notes', ${JSON.stringify(proposedNotes)}::jsonb ||
+        CASE WHEN jsonb_typeof(${applicationsTable.plan}->'notes'->'_staff_response') = 'string'
+          THEN jsonb_build_object('_staff_response', ${applicationsTable.plan}->'notes'->'_staff_response')
+          ELSE '{}'::jsonb END)`;
+    const [row] = await tx.update(applicationsTable).set({
+      plan: planWithCurrentResponse, status, notes: fields.notes, updatedAt: new Date(),
+    }).where(eq(applicationsTable.id, existing.id)).returning();
+    await tx.insert(statusHistoryTable).values({
+      id: crypto.randomUUID(), applicationId: row.id, status: row.status,
+      actor: `Staff · ${staff.department}`, synthetic: row.synthetic,
+    });
+    return { kind: "reviewed" as const, row };
   });
   if (result === "not-draft") { res.status(403).json({ error: "Documents can only be changed on an unsubmitted draft application." }); return; }
   if (result === "missing") { res.status(404).json({ error: "Document not found." }); return; }
@@ -290,30 +271,55 @@ router.post("/applications/:id/documents/:documentId/complete", async (req, res)
 });
 
 router.delete("/applications/:id/documents/:documentId", async (req, res): Promise<void> => {
-  const params = DeleteApplicationDocumentParams.safeParse(req.params);
+  const params = ListApplicationHistoryParams.safeParse(req.params);
   if (!params.success) { res.status(400).json({ error: "Invalid document ID." }); return; }
-  const access = await ownedDraftApplication(req, res, params.data.id);
+  const access = await readableApplication(req, res, params.data.id);
   if (!access) return;
   await cleanupApplicationDocuments(access.application.id);
   const result = await db.transaction(async tx => {
-    const [currentApplication] = await tx.select().from(applicationsTable)
-      .where(eq(applicationsTable.id, access.application.id)).for("update");
-    if (!currentApplication || currentApplication.ownerId !== access.userId ||
-        currentApplication.status !== "Draft" || currentApplication.submittedAt || currentApplication.sourceUrl) return "not-draft" as const;
-    const [document] = await tx.select().from(applicationDocumentsTable).where(and(
-      eq(applicationDocumentsTable.id, params.data.documentId),
-      eq(applicationDocumentsTable.applicationId, currentApplication.id),
-    )).for("update");
-    if (!document) return "missing" as const;
-    if (document.state === "deleting") return document;
-    const [tombstone] = await tx.update(applicationDocumentsTable).set({
-      state: "deleting", stagingCleanedAt: null,
-    })
-      .where(eq(applicationDocumentsTable.id, document.id)).returning();
-    await tx.insert(applicationDocumentAuditTable).values(documentAuditValues(
-      document.applicationId, document.id, access.userId, "deleted",
-    ));
-    return tombstone;
+    const [existing] = await tx.select().from(applicationsTable)
+      .where(eq(applicationsTable.id, params.data.id)).for("update");
+    if (!existing || !existing.submittedAt || !!existing.sourceUrl ||
+        (staff.department !== "Economic Development" &&
+          !existing.assignedDepartment.split(",").some(department => department.trim() === staff.department))) {
+      return { kind: "not-assigned" as const };
+    }
+    if (body.data.expectedUpdatedAt && existing.updatedAt.getTime() !== body.data.expectedUpdatedAt.getTime()) {
+      return { kind: "stale" as const };
+    }
+    const proposed = body.data.plan;
+    const status = typeof proposed.status === "string" ? proposed.status : existing.status;
+    if (!statuses.has(status) || status === "Draft" ||
+        (completed.has(existing.status) && status !== "In Review (Re-opened)")) {
+      return { kind: "invalid-status" as const };
+    }
+    const proposedNotes = {
+      ...(existing.plan.notes && typeof existing.plan.notes === "object" && !Array.isArray(existing.plan.notes) ? existing.plan.notes : {}),
+      ...(proposed.notes && typeof proposed.notes === "object" && !Array.isArray(proposed.notes) ? proposed.notes : {}),
+    } as Record<string, unknown>;
+    delete proposedNotes._staff_response;
+    const plan = { ...existing.plan, status,
+      notes: proposedNotes,
+      overrides: proposed.overrides && typeof proposed.overrides === "object" && !Array.isArray(proposed.overrides) ? proposed.overrides : existing.plan.overrides,
+      rejected: Array.isArray(proposed.rejected) && proposed.rejected.every(item => typeof item === "string") ? proposed.rejected : existing.plan.rejected,
+      completedAt: completed.has(status) ? Date.now() : null, updatedAt: Date.now(),
+    };
+    const fields = fieldsFromPlan(plan);
+    if (!fields) return { kind: "invalid-plan" as const };
+    const planWithCurrentResponse = sql<Record<string, unknown>>`
+      ${JSON.stringify(plan)}::jsonb ||
+      jsonb_build_object('notes', ${JSON.stringify(proposedNotes)}::jsonb ||
+        CASE WHEN jsonb_typeof(${applicationsTable.plan}->'notes'->'_staff_response') = 'string'
+          THEN jsonb_build_object('_staff_response', ${applicationsTable.plan}->'notes'->'_staff_response')
+          ELSE '{}'::jsonb END)`;
+    const [row] = await tx.update(applicationsTable).set({
+      plan: planWithCurrentResponse, status, notes: fields.notes, updatedAt: new Date(),
+    }).where(eq(applicationsTable.id, existing.id)).returning();
+    await tx.insert(statusHistoryTable).values({
+      id: crypto.randomUUID(), applicationId: row.id, status: row.status,
+      actor: `Staff · ${staff.department}`, synthetic: row.synthetic,
+    });
+    return { kind: "reviewed" as const, row };
   });
   if (result === "not-draft") { res.status(403).json({ error: "Documents can only be changed on an unsubmitted draft application." }); return; }
   if (result === "missing") { res.status(404).json({ error: "Document not found." }); return; }
@@ -322,7 +328,7 @@ router.delete("/applications/:id/documents/:documentId", async (req, res): Promi
 });
 
 router.get("/applications/:id/documents/:documentId/content", async (req, res): Promise<void> => {
-  const params = DownloadApplicationDocumentParams.safeParse(req.params);
+  const params = ListApplicationHistoryParams.safeParse(req.params);
   if (!params.success) { res.status(400).json({ error: "Invalid document ID." }); return; }
   const access = await readableApplication(req, res, params.data.id);
   if (!access) return;
@@ -405,38 +411,33 @@ function fieldsFromPlan(value: Record<string, unknown>) {
   };
 }
 
-function respond(record: Application) {
+function respond(record: Application, includeApplicantPlanUserId = true) {
   const { ownerId: _ownerId, applicantKey: _applicantKey, ...publicRecord } = record;
-  return publicRecord;
+  if (includeApplicantPlanUserId) return publicRecord;
+  // Applicants use this composite value to identify their own plans; reviewers do not need it.
+  const plan = { ...record.plan };
+  delete plan.userId;
+  return { ...publicRecord, plan };
 }
 
 router.get("/applications/mine", async (req, res): Promise<void> => {
   const userId = currentUser(req, res);
   if (!userId) return;
-  const query = ListMyApplicationsQueryParams.safeParse(req.query);
+  const query = SearchStaffApplicationsQueryParams.safeParse(req.query);
   if (!query.success) { res.status(400).json({ error: "An applicant key is required." }); return; }
-  const key = query.data.applicantKey.trim().toLowerCase();
+  const key = body.data.applicantKey.trim().toLowerCase();
   if (!key) { res.status(400).json({ error: "An applicant key is required." }); return; }
-  const rows = await db.select().from(applicationsTable)
-    .where(and(eq(applicationsTable.ownerId, userId), eq(applicationsTable.applicantKey, key)))
-    .orderBy(desc(applicationsTable.updatedAt));
-  res.json(ListMyApplicationsResponse.parse(rows.map(respond)));
+  const rows = await db.select().from(applicationsTable).where(and(...conditions))
+    .orderBy(desc(sql`coalesce(${applicationsTable.submittedAt}, ${applicationsTable.sourceDate})`)).limit(500);
+  res.json(ListMyApplicationsResponse.parse(rows.map(row => respond(row))));
 });
 
 router.get("/applications/staff", async (req, res): Promise<void> => {
-  const staff = await authorizedStaff(req, res);
+    const staff = await authorizedStaff(req, res);
   if (!staff) return;
   const query = SearchStaffApplicationsQueryParams.safeParse(req.query);
   if (!query.success) { res.status(400).json({ error: "Invalid search filters." }); return; }
-  const fields: [string | undefined, AnyPgColumn][] = [
-    [query.data.applicationId, applicationsTable.id],
-    [query.data.businessName, applicationsTable.businessName],
-    [query.data.businessCategory, applicationsTable.businessCategory],
-    [query.data.requestType, applicationsTable.requestType],
-    [query.data.status, applicationsTable.status],
-    [query.data.assignedDepartment, applicationsTable.assignedDepartment],
-    [query.data.applicantLanguage, applicationsTable.applicantLanguage],
-  ];
+  const fields = fieldsFromPlan(body.data.plan);
   // Staff queue contains submitted applications only; unsent drafts stay private.
   const conditions: SQL[] = [or(isNotNull(applicationsTable.submittedAt), isNotNull(applicationsTable.sourceUrl))!];
   if (staff.department !== "Economic Development") {
@@ -457,7 +458,7 @@ router.get("/applications/staff", async (req, res): Promise<void> => {
     conditions.push(gte(applicationsTable.submittedAt, dayStart), lt(applicationsTable.submittedAt, new Date(dayStart.getTime() + 86_400_000)));
   }
   if (query.data.descriptionOrNotes?.trim()) {
-    const term = `%${query.data.descriptionOrNotes.trim().replace(/[\\%_]/g, "\\$&")}%`;
+    const term = `%${query.data.search.trim().replace(/[\\%_]/g, "\\$&")}%`;
     conditions.push(or(ilike(applicationsTable.description, term), ilike(applicationsTable.notes, term))!);
   }
   if (query.data.search?.trim()) {
@@ -470,13 +471,13 @@ router.get("/applications/staff", async (req, res): Promise<void> => {
   }
   const rows = await db.select().from(applicationsTable).where(and(...conditions))
     .orderBy(desc(sql`coalesce(${applicationsTable.submittedAt}, ${applicationsTable.sourceDate})`)).limit(500);
-  res.json(SearchStaffApplicationsResponse.parse(rows.map(respond)));
+  res.json(SearchStaffApplicationsResponse.parse(rows.map(row => respond(row, false))));
 });
 
 router.post("/applications", async (req, res): Promise<void> => {
   const userId = currentUser(req, res);
   if (!userId) return;
-  const body = CreateApplicationBody.safeParse(req.body);
+  const body = PostApplicationResponseBody.safeParse(req.body);
   if (!body.success) { res.status(400).json({ error: "Invalid application." }); return; }
   const fields = fieldsFromPlan(body.data.plan);
   if (!fields) { res.status(400).json({ error: "Incomplete application plan." }); return; }
@@ -499,8 +500,8 @@ router.post("/applications", async (req, res): Promise<void> => {
 router.patch("/applications/:id", async (req, res): Promise<void> => {
   const userId = currentUser(req, res);
   if (!userId) return;
-  const params = UpdateMyApplicationParams.safeParse(req.params);
-  const body = UpdateMyApplicationBody.safeParse(req.body);
+  const params = ListApplicationHistoryParams.safeParse(req.params);
+  const body = PostApplicationResponseBody.safeParse(req.body);
   if (!params.success || !body.success) { res.status(400).json({ error: "Invalid application update." }); return; }
   const key = body.data.applicantKey.trim().toLowerCase();
   const fields = fieldsFromPlan(body.data.plan);
@@ -508,33 +509,49 @@ router.patch("/applications/:id", async (req, res): Promise<void> => {
     res.status(400).json({ error: "This application cannot be changed in its current status." }); return;
   }
   const result = await db.transaction(async tx => {
-    const [existing] = await tx.select().from(applicationsTable).where(and(
-      eq(applicationsTable.id, params.data.id), eq(applicationsTable.ownerId, userId),
-      eq(applicationsTable.applicantKey, key),
-    )).for("update");
-    if (!existing) return { kind: "missing" as const };
+    const [existing] = await tx.select().from(applicationsTable)
+      .where(eq(applicationsTable.id, params.data.id)).for("update");
+    if (!existing || !existing.submittedAt || !!existing.sourceUrl ||
+        (staff.department !== "Economic Development" &&
+          !existing.assignedDepartment.split(",").some(department => department.trim() === staff.department))) {
+      return { kind: "not-assigned" as const };
+    }
     if (body.data.expectedUpdatedAt && existing.updatedAt.getTime() !== body.data.expectedUpdatedAt.getTime()) {
       return { kind: "stale" as const };
     }
-    if (existing.status !== "Draft" || existing.submittedAt || existing.sourceUrl) return { kind: "not-editable" as const };
-    if (fields.status !== "Draft") {
-      const [pending] = await tx.select({ value: count() }).from(applicationDocumentsTable).where(and(
-        eq(applicationDocumentsTable.applicationId, existing.id),
-        eq(applicationDocumentsTable.state, "pending"),
-        gte(applicationDocumentsTable.uploadExpiresAt, new Date()),
-      ));
-      if (pending.value > 0) return { kind: "pending-documents" as const };
+    const proposed = body.data.plan;
+    const status = typeof proposed.status === "string" ? proposed.status : existing.status;
+    if (!statuses.has(status) || status === "Draft" ||
+        (completed.has(existing.status) && status !== "In Review (Re-opened)")) {
+      return { kind: "invalid-status" as const };
     }
-    const now = new Date();
-    const plan = { ...existing.plan, ...body.data.plan, id: existing.id, userId: `${userId}:${key}`, intake: { ...(body.data.plan.intake as object), files: [] } };
+    const proposedNotes = {
+      ...(existing.plan.notes && typeof existing.plan.notes === "object" && !Array.isArray(existing.plan.notes) ? existing.plan.notes : {}),
+      ...(proposed.notes && typeof proposed.notes === "object" && !Array.isArray(proposed.notes) ? proposed.notes : {}),
+    } as Record<string, unknown>;
+    delete proposedNotes._staff_response;
+    const plan = { ...existing.plan, status,
+      notes: proposedNotes,
+      overrides: proposed.overrides && typeof proposed.overrides === "object" && !Array.isArray(proposed.overrides) ? proposed.overrides : existing.plan.overrides,
+      rejected: Array.isArray(proposed.rejected) && proposed.rejected.every(item => typeof item === "string") ? proposed.rejected : existing.plan.rejected,
+      completedAt: completed.has(status) ? Date.now() : null, updatedAt: Date.now(),
+    };
+    const fields = fieldsFromPlan(plan);
+    if (!fields) return { kind: "invalid-plan" as const };
+    const planWithCurrentResponse = sql<Record<string, unknown>>`
+      ${JSON.stringify(plan)}::jsonb ||
+      jsonb_build_object('notes', ${JSON.stringify(proposedNotes)}::jsonb ||
+        CASE WHEN jsonb_typeof(${applicationsTable.plan}->'notes'->'_staff_response') = 'string'
+          THEN jsonb_build_object('_staff_response', ${applicationsTable.plan}->'notes'->'_staff_response')
+          ELSE '{}'::jsonb END)`;
     const [row] = await tx.update(applicationsTable).set({
-      ...fields, plan, updatedAt: now, submittedAt: fields.status === "Draft" ? null : now,
+      plan: planWithCurrentResponse, status, notes: fields.notes, updatedAt: new Date(),
     }).where(eq(applicationsTable.id, existing.id)).returning();
-    if (row.status !== existing.status) await tx.insert(statusHistoryTable).values({
+    await tx.insert(statusHistoryTable).values({
       id: crypto.randomUUID(), applicationId: row.id, status: row.status,
-      actor: "Applicant", synthetic: row.synthetic,
+      actor: `Staff · ${staff.department}`, synthetic: row.synthetic,
     });
-    return { kind: "updated" as const, row };
+    return { kind: "reviewed" as const, row };
   });
   if (result.kind === "missing") { res.status(404).json({ error: "Application not found." }); return; }
   if (result.kind === "stale") { res.status(409).json({ error: "This application changed since it was last loaded. Refresh before saving." }); return; }
@@ -545,10 +562,10 @@ router.patch("/applications/:id", async (req, res): Promise<void> => {
 });
 
 router.patch("/applications/:id/review", async (req, res): Promise<void> => {
-  const staff = await authorizedStaff(req, res);
+    const staff = await authorizedStaff(req, res);
   if (!staff) return;
-  const params = ReviewApplicationParams.safeParse(req.params);
-  const body = ReviewApplicationBody.safeParse(req.body);
+  const params = ListApplicationHistoryParams.safeParse(req.params);
+  const body = PostApplicationResponseBody.safeParse(req.body);
   if (!params.success || !body.success) { res.status(400).json({ error: "Invalid review update." }); return; }
   const result = await db.transaction(async tx => {
     const [existing] = await tx.select().from(applicationsTable)
@@ -605,9 +622,9 @@ router.patch("/applications/:id/review", async (req, res): Promise<void> => {
 });
 
 router.post("/applications/:id/response", async (req, res): Promise<void> => {
-  const staff = await authorizedStaff(req, res);
+    const staff = await authorizedStaff(req, res);
   if (!staff) return;
-  const params = PostApplicationResponseParams.safeParse(req.params);
+  const params = ListApplicationHistoryParams.safeParse(req.params);
   const body = PostApplicationResponseBody.safeParse(req.body);
   if (!params.success || !body.success || !body.data.text.trim()) {
     res.status(400).json({ error: "A response of up to 3000 characters is required." }); return;
@@ -633,7 +650,7 @@ router.post("/applications/:id/response", async (req, res): Promise<void> => {
     });
     return updated;
   });
-  res.json(PostApplicationResponseResponse.parse(respond(row)));
+  res.json(PostApplicationResponseResponse.parse(respond(row, false)));
 });
 
 router.get("/applications/:id/history", async (req, res): Promise<void> => {
