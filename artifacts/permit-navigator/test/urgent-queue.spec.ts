@@ -397,6 +397,88 @@ test('staff queue stays usable through a failed refresh and updates after recove
   await expect(page.getByTestId(`catalog-record-${applicationId}`)).toContainText('Approved');
 });
 
+test('applicant saved plans stay usable through a failed refresh and update after recovery', async ({ page }) => {
+  const applicantId = 'SAVED-PLAN-REFRESH-01';
+  const currentApplicantId = 'test-browser-user:test-applicant@example.com';
+  const makeApplication = (id: string, businessName: string): ApplicationRecord => ({
+    id,
+    businessName,
+    businessCategory: 'restaurant',
+    requestType: 'Building Permit',
+    status: 'Draft — Requires Review',
+    assignedDepartment: 'Building',
+    applicantLanguage: 'English',
+    submittedAt: new Date('2026-09-15T12:00:00.000Z'),
+    description: 'Interior renovation for a neighborhood cafe.',
+    synthetic: true,
+    plan: {
+      id,
+      userId: currentApplicantId,
+      departments: ['Building'],
+      departmentAssignees: {},
+      intake: {
+        businessName,
+        businessType: 'restaurant',
+        businessOther: '',
+        address: '123 Test Street',
+        zip: '95112',
+        description: 'Interior renovation for a neighborhood cafe.',
+        modifications: ['walls'],
+        modificationOther: '',
+        files: [],
+      },
+      language: 'en',
+      customLanguage: '',
+      simplified: false,
+      createdAt: Date.parse('2026-09-15T11:00:00.000Z'),
+      updatedAt: Date.parse('2026-09-15T12:00:00.000Z'),
+      submittedAt: Date.parse('2026-09-15T12:00:00.000Z'),
+      status: 'Draft — Requires Review',
+      notes: {},
+      overrides: {},
+      rejected: [],
+      matched: ['building-permits'],
+    },
+    createdAt: new Date('2026-09-15T11:00:00.000Z'),
+    updatedAt: new Date('2026-09-15T12:00:00.000Z'),
+  });
+  let application = makeApplication(applicantId, 'Last Known Saved Cafe');
+  let reads = 0;
+
+  await page.clock.install();
+  await page.route('**/api/**', async route => {
+    const { pathname } = new URL(route.request().url());
+    if (pathname === '/api/applications/mine' && route.request().method() === 'GET') {
+      reads++;
+      if (reads === 2) return route.fulfill({ status: 503, json: { error: 'Temporary outage' } });
+      return route.fulfill({ json: [application] });
+    }
+    throw new Error(`Unexpected request: ${route.request().method()} ${pathname}`);
+  });
+
+  await page.goto('/test/harness.html?applicant=records');
+  const savedPlan = page.getByTestId(`dashboard-plan-card-${applicantId}`);
+  await expect(savedPlan).toContainText('Last Known Saved Cafe');
+  await expect(page.getByTestId('records-refresh-warning')).toHaveCount(0);
+
+  const readsBeforeFailure = reads;
+  await page.clock.fastForward(15_000);
+  await expect.poll(() => reads).toBeGreaterThan(readsBeforeFailure);
+  await expect(page.getByTestId('records-refresh-warning')).toContainText('may be out of date');
+  await expect(savedPlan).toContainText('Last Known Saved Cafe');
+  await savedPlan.getByRole('button', { name: 'Open Plan' }).click();
+  await expect(page.getByTestId('applicant-plan-detail')).toContainText('Last Known Saved Cafe');
+  await page.getByRole('button', { name: 'Back to saved plans' }).click();
+
+  application = makeApplication('SAVED-PLAN-CURRENT-02', 'Current Saved Bakery');
+  const readsBeforeRecovery = reads;
+  await page.clock.fastForward(15_000);
+  await expect.poll(() => reads).toBeGreaterThan(readsBeforeRecovery);
+  await expect(page.getByTestId('records-refresh-warning')).toHaveCount(0);
+  await expect(page.getByTestId('dashboard-plan-card-SAVED-PLAN-CURRENT-02')).toContainText('Current Saved Bakery');
+  await expect(savedPlan).toHaveCount(0);
+});
+
 test('resident safety and non-dispatch warning survives leaving and returning to the workspace', async ({ page }) => {
   let messages: Array<{ id: string; role: 'user' | 'assistant'; content: string; createdAt: string }> = [];
   await page.route('**/api/**', async route => {

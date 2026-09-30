@@ -455,6 +455,14 @@ function PortalWorkspace({ persona, userId, onLogout }: { persona: Persona; user
         </div>
       )}
 
+      {persona.kind === 'applicant' && recordsRefreshWarning && (
+        <div className="plan-shell">
+          <div className="verification-notice" role="status" data-testid="records-refresh-warning">
+            {recordsRefreshWarning}
+          </div>
+        </div>
+      )}
+
       {persona.kind === 'staff' ? (
         <StaffPortal 
           desk={persona.desk}

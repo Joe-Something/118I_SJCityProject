@@ -25,9 +25,11 @@ export function useApplicationRecords(persona: Persona, filters: StaffApplicatio
 
   const reportLoadError = useCallback((error: unknown) => {
     const accessDenied = error && typeof error === 'object' && 'status' in error && error.status === 403;
-    if (persona.kind === 'staff' && hasSuccessfulLoad.current && !accessDenied) {
+    if (hasSuccessfulLoad.current && !accessDenied) {
       setRecordsError('');
-      setRecordsRefreshWarning('Could not refresh the staff queue. Showing the last successfully loaded review state.');
+      setRecordsRefreshWarning(persona.kind === 'applicant'
+        ? 'Could not refresh your saved plans. Showing the last successfully loaded data, which may be out of date.'
+        : 'Could not refresh the staff queue. Showing the last successfully loaded review state.');
       return;
     }
 
