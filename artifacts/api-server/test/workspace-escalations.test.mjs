@@ -36,6 +36,7 @@ const originalTime = new Date("2024-01-02T03:04:05.000Z");
 const auditFailureOriginalTime = new Date("2024-02-03T04:05:06.000Z");
 const importedAt = new Date();
 const outdatedImportedAt = new Date(importedAt.getTime() - 48 * 60 * 60 * 1000);
+const errorLogs = [];
 let outputDir;
 let server;
 let baseUrl;
@@ -136,7 +137,14 @@ before(async () => {
     },
   ]);
   const app = express();
-  app.use((req, _res, next) => { req.log = { info() {}, warn() {} }; next(); });
+  app.use((req, _res, next) => {
+    req.log = {
+      info() {},
+      warn() {},
+      error(fields, message) { errorLogs.push({ fields, message }); },
+    };
+    next();
+  });
   app.use(express.json());
   app.use("/api", router);
   app.use((error, _req, res, _next) => {
@@ -273,7 +281,13 @@ test("an audit-write failure rolls back the urgent ticket acknowledgement", asyn
 
     const response = await ack("fire", auditFailureTicketId);
     assert.equal(response.status, 500, "the request must not report a successful acknowledgement");
+    assert.deepEqual(response.body, { error: "Internal server error." });
+    assert.doesNotMatch(JSON.stringify(response.body), /controlled audit write failure|workspace_acknowledgements/);
     assert.notEqual(response.body.status, "Acknowledged in prototype queue");
+    const failureLog = errorLogs.at(-1);
+    assert.equal(failureLog.fields.ticketId, auditFailureTicketId);
+    assert.match(failureLog.fields.err.message, /Failed query: insert into "workspace_acknowledgements"/);
+    assert.equal(failureLog.message, "Failed to save urgent ticket acknowledgement");
 
     const [persisted] = await db.select().from(workspaceMessagesTable)
       .where(eq(workspaceMessagesTable.id, auditFailureTicketId));

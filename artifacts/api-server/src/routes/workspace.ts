@@ -126,23 +126,34 @@ router.post("/workspace/escalations/:id/acknowledge", async (req, res): Promise<
   const params = AcknowledgeWorkspaceEscalationParams.safeParse(req.params);
   if (!params.success) { res.status(400).json({ error: "Invalid ticket." }); return; }
   const acknowledgedAt = new Date();
-  const result = await db.transaction(async tx => {
-    const [updated] = await tx.update(workspaceMessagesTable)
-      .set({ status: "high-urgency-acknowledged", updatedAt: acknowledgedAt })
-      .where(and(eq(workspaceMessagesTable.id, params.data.id), eq(workspaceMessagesTable.status, "high-urgency")))
-      .returning();
-    if (updated) {
-      const [event] = await tx.insert(workspaceAcknowledgementsTable).values({
-        ticketId: updated.id, staffUserId: staff.id, staffDepartment: staff.department, acknowledgedAt,
-      }).returning();
-      return { message: updated, event, created: true };
-    }
-    const [existing] = await tx.select({ message: workspaceMessagesTable, event: workspaceAcknowledgementsTable })
-      .from(workspaceMessagesTable)
-      .leftJoin(workspaceAcknowledgementsTable, eq(workspaceMessagesTable.id, workspaceAcknowledgementsTable.ticketId))
-      .where(and(eq(workspaceMessagesTable.id, params.data.id), eq(workspaceMessagesTable.status, "high-urgency-acknowledged")));
-    return existing ? { ...existing, created: false } : null;
-  });
+  let result: {
+    message: typeof workspaceMessagesTable.$inferSelect;
+    event: typeof workspaceAcknowledgementsTable.$inferSelect | null;
+    created: boolean;
+  } | null;
+  try {
+    result = await db.transaction(async tx => {
+      const [updated] = await tx.update(workspaceMessagesTable)
+        .set({ status: "high-urgency-acknowledged", updatedAt: acknowledgedAt })
+        .where(and(eq(workspaceMessagesTable.id, params.data.id), eq(workspaceMessagesTable.status, "high-urgency")))
+        .returning();
+      if (updated) {
+        const [event] = await tx.insert(workspaceAcknowledgementsTable).values({
+          ticketId: updated.id, staffUserId: staff.id, staffDepartment: staff.department, acknowledgedAt,
+        }).returning();
+        return { message: updated, event, created: true };
+      }
+      const [existing] = await tx.select({ message: workspaceMessagesTable, event: workspaceAcknowledgementsTable })
+        .from(workspaceMessagesTable)
+        .leftJoin(workspaceAcknowledgementsTable, eq(workspaceMessagesTable.id, workspaceAcknowledgementsTable.ticketId))
+        .where(and(eq(workspaceMessagesTable.id, params.data.id), eq(workspaceMessagesTable.status, "high-urgency-acknowledged")));
+      return existing ? { ...existing, created: false } : null;
+    });
+  } catch (error) {
+    req.log.error({ err: error, ticketId: params.data.id }, "Failed to save urgent ticket acknowledgement");
+    res.status(500).json({ error: "Internal server error." });
+    return;
+  }
   if (!result) {
     res.status(404).json({ error: "Urgent ticket not found." });
     return;
