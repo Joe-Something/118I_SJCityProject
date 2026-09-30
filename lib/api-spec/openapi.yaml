@@ -232,6 +232,15 @@ paths:
               schema:
                 type: array
                 items: { $ref: "#/components/schemas/ApplicationRecord" }
+        "503":
+          description: Application storage is temporarily unavailable
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [error]
+                properties:
+                  error: { type: string }
   /applications/staff:
     get:
       operationId: searchStaffApplications
@@ -249,13 +258,53 @@ paths:
         - { in: query, name: descriptionOrNotes, schema: { type: string } }
       responses:
         "200":
-          description: Matching submitted prototype records
+          description: "Matching submitted prototype records; sample fallback rows are marked inside plan with _dataSource: sample-fallback"
           content:
             application/json:
               schema:
                 type: array
                 items: { $ref: "#/components/schemas/ApplicationRecord" }
+        "503":
+          description: Application database is unavailable and no sample applications match these filters
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [error]
+                properties:
+                  error: { type: string }
   /applications:
+    get:
+      operationId: listStaffApplications
+      tags: [applications]
+      parameters:
+        - { in: query, name: search, schema: { type: string } }
+        - { in: query, name: applicationId, schema: { type: string } }
+        - { in: query, name: businessName, schema: { type: string } }
+        - { in: query, name: businessCategory, schema: { type: string } }
+        - { in: query, name: requestType, schema: { type: string } }
+        - { in: query, name: status, schema: { type: string } }
+        - { in: query, name: assignedDepartment, schema: { type: string } }
+        - { in: query, name: applicantLanguage, schema: { type: string } }
+        - { in: query, name: submissionDate, schema: { type: string, format: date } }
+        - { in: query, name: descriptionOrNotes, schema: { type: string } }
+      responses:
+        "200":
+          description: "Matching submitted prototype records; sample fallback rows are marked inside plan with _dataSource: sample-fallback"
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/ApplicationRecord" }
+        "503":
+          description: Application database is unavailable and no sample applications match these filters
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [error]
+                properties:
+                  error: { type: string }
     post:
       operationId: createApplication
       tags: [applications]
@@ -436,7 +485,7 @@ components:
         description: { type: string }
         notes: { type: ["string", "null"] }
         synthetic: { type: boolean }
-        plan: { type: object, additionalProperties: true }
+        plan: { type: object, additionalProperties: true, description: "Application-specific plan data; sample fallback staff results include _dataSource: sample-fallback inside this object" }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
     ApplicationDocument:

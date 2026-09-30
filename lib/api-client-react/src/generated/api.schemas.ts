@@ -156,6 +156,9 @@ export interface StatusEvent {
   updatedAt: string;
 }
 
+/**
+ * Application-specific plan data; sample fallback staff results include _dataSource: sample-fallback inside this object
+ */
 export type ApplicationRecordPlan = { [key: string]: unknown };
 
 export interface ApplicationRecord {
@@ -180,6 +183,7 @@ export interface ApplicationRecord {
   /** @nullable */
   notes?: string | null;
   synthetic: boolean;
+  /** Application-specific plan data; sample fallback staff results include _dataSource: sample-fallback inside this object */
   plan: ApplicationRecordPlan;
   createdAt: string;
   updatedAt: string;
@@ -300,6 +304,10 @@ export type ListMyApplicationsParams = {
 applicantKey: string;
 };
 
+export type ListMyApplications503 = {
+  error: string;
+};
+
 export type SearchStaffApplicationsParams = {
 search?: string;
 applicationId?: string;
@@ -311,5 +319,26 @@ assignedDepartment?: string;
 applicantLanguage?: string;
 submissionDate?: string;
 descriptionOrNotes?: string;
+};
+
+export type SearchStaffApplications503 = {
+  error: string;
+};
+
+export type ListStaffApplicationsParams = {
+search?: string;
+applicationId?: string;
+businessName?: string;
+businessCategory?: string;
+requestType?: string;
+status?: string;
+assignedDepartment?: string;
+applicantLanguage?: string;
+submissionDate?: string;
+descriptionOrNotes?: string;
+};
+
+export type ListStaffApplications503 = {
+  error: string;
 };
 

@@ -2,11 +2,13 @@ import { useState, type ReactNode } from 'react';
 import { Search, History, MapPin, Building2, CheckCircle2, Clock3, Pencil } from 'lucide-react';
 import { ActivePlan } from '../types';
 import { deriveDepartments } from '../utils/helpers';
+import { isDemoSeedApplicationId } from '../utils/applicationResilience';
 
-export function ReviewCatalog({ records, onReopen, renderDetail }: {
+export function ReviewCatalog({ records, onReopen, renderDetail, readOnly = false }: {
   records: ActivePlan[];
   onReopen: (id: string) => Promise<boolean>;
   renderDetail: (record: ActivePlan) => ReactNode;
+  readOnly?: boolean;
 }) {
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<'All' | 'Approved' | 'Rejected' | 'Modified via Staff Override'>('All');
@@ -130,7 +132,7 @@ export function ReviewCatalog({ records, onReopen, renderDetail }: {
                   >
                     {expandedId === record.id ? 'Hide details' : 'View full application'}
                   </button>
-                  <button
+                  {!readOnly && !isDemoSeedApplicationId(record.id) && <button
                     className="button-secondary"
                     onClick={() => void handleReopen(record.id)}
                     disabled={reopeningIds.has(record.id)}
@@ -138,7 +140,7 @@ export function ReviewCatalog({ records, onReopen, renderDetail }: {
                     style={{ padding: '6px 12px', fontSize: '12px' }}
                   >
                     <Pencil size={13}/> {reopeningIds.has(record.id) ? 'Saving…' : reopenErrors[record.id] ? 'Retry Re-open for Review' : 'Re-open for Review'}
-                  </button>
+                  </button>}
                 </div>
               </div>
               {reopenErrors[record.id] && (

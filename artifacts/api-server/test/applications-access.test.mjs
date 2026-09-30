@@ -8,9 +8,12 @@ import esbuild from "esbuild";
 import express from "express";
 import { eq, inArray } from "drizzle-orm";
 import {
-  db, pool, applicationsTable, statusHistoryTable,
+  db, pool, applicationsTable, statusHistoryTable, initializePermitApplicationSchema,
+  resetPermitApplicationSchemaReadiness,
 } from "@workspace/db";
+import { initializeAndSeedApplications } from "../src/lib/databaseResilience.ts";
 import { apiErrorHandler } from "../src/middlewares/apiErrorHandler.ts";
+import { isDatabaseUnavailable } from "../src/lib/databaseResilience.ts";
 
 if (process.env.NODE_ENV !== "test" || !process.env.DATABASE_URL) {
   throw new Error("This suite requires NODE_ENV=test and a development test DATABASE_URL.");
@@ -78,7 +81,12 @@ async function request(method, route, actor = "anonymous", body) {
   } catch {
     // Preserve Express error responses as text for failure assertions.
   }
-  return { status: response.status, body: parsedBody };
+  return {
+    status: response.status,
+    body: parsedBody,
+    retryAfter: response.headers.get("retry-after"),
+    dataSource: response.headers.get("x-application-data-source"),
+  };
 }
 
 function saveApplication(id, ownerId, applicantKey, status, department, submittedAt) {
@@ -101,6 +109,32 @@ function saveApplication(id, ownerId, applicantKey, status, department, submitte
 }
 
 before(async () => {
+  resetPermitApplicationSchemaReadiness();
+  const originalConnect = pool.connect;
+  let rejectInitialConnection = true;
+  pool.connect = function (...args) {
+    if (rejectInitialConnection) {
+      rejectInitialConnection = false;
+      const error = new Error("injected first initialization connection failure");
+      error.code = "ECONNRESET";
+      return Promise.reject(error);
+    }
+    return originalConnect.apply(this, args);
+  };
+  try {
+    await assert.rejects(initializePermitApplicationSchema(), /injected first initialization connection failure/);
+    await initializePermitApplicationSchema();
+  } finally {
+    pool.connect = originalConnect;
+  }
+
+  await initializeAndSeedApplications();
+  await initializeAndSeedApplications();
+  const seeded = await db.select().from(applicationsTable).where(inArray(applicationsTable.id, [
+    "DEMO-D2-0001", "DEMO-D2-0024",
+  ]));
+  assert.deepEqual(new Set(seeded.map(row => row.id)), new Set(["DEMO-D2-0001", "DEMO-D2-0024"]));
+
   outputDir = await mkdtemp(new URL("./.applications-route-", import.meta.url).pathname);
   const outfile = path.join(outputDir, "applications.mjs");
   await esbuild.build({
@@ -232,6 +266,139 @@ test("reviewer list is department-scoped and omits applicant identity fields", a
     const denied = await request("GET", `/applications/staff?applicationId=${buildingId}`, actor);
     assert.equal(denied.status, 403);
     assert.doesNotMatch(JSON.stringify(denied.body), new RegExp(privateValues.plan));
+  }
+});
+
+test("staff queue falls back only for transient database failures and recovers on the next request", async () => {
+  const originalQuery = pool.query;
+  let transientFailures = 0;
+  pool.query = function (query, ...args) {
+    const text = typeof query === "string" ? query : query?.text;
+    if (/select[\s\S]*from\s+"?permit_applications"?/i.test(text ?? "") && transientFailures < 2) {
+      transientFailures += 1;
+      const error = new Error("temporary database connection interruption");
+      error.code = "ECONNRESET";
+      return Promise.reject(error);
+    }
+    return originalQuery.call(this, query, ...args);
+  };
+  try {
+    const unavailable = await request("GET", "/applications?businessCategory=Bakery", "building");
+    assert.equal(transientFailures, 2, "the query is retried once before the sample fallback");
+    assert.equal(unavailable.status, 200);
+    assert.equal(unavailable.body.length, 1);
+    assert.match(unavailable.body[0].id, /^DEMO-D2-/);
+    assert.equal(unavailable.body[0].plan._dataSource, "sample-fallback");
+    assert.equal(unavailable.body[0].plan.intake.applicantEmail, "sample-applicant-2@example.invalid");
+    assert.equal(unavailable.body[0].assignedDepartment, "Building");
+    const fakeWrite = await request("POST", `/applications/${unavailable.body[0].id}/response`, "building", {
+      text: "Must never be acknowledged as a saved response",
+    });
+    assert.equal(fakeWrite.status, 409);
+
+    const signedOut = await request("GET", "/applications", "anonymous");
+    assert.equal(signedOut.status, 401);
+    assert.deepEqual(signedOut.body, { error: "Sign in to continue." });
+    const unassigned = await request("GET", "/applications", "unassigned");
+    assert.equal(unassigned.status, 403);
+    assert.doesNotMatch(JSON.stringify(unassigned.body), /DEMO-D2-/);
+  } finally {
+    pool.query = originalQuery;
+  }
+
+  const recovered = await request("GET", `/applications?applicationId=${buildingId}`, "building");
+  assert.equal(recovered.status, 200);
+  assert.deepEqual(recovered.body.map(row => row.id), [buildingId]);
+  assert.equal(recovered.body[0].plan._dataSource, undefined);
+});
+
+test("known PostgreSQL and pg-pool timeout shapes are classified as database outages", () => {
+  const timeouts = [
+    Object.assign(new Error("timeout exceeded when trying to connect"), {}),
+    Object.assign(new Error("Connection terminated due to connection timeout"), {}),
+    Object.assign(new Error("Query read timeout"), {}),
+    Object.assign(new Error("canceling statement due to statement timeout"), { code: "57014" }),
+    new Error("request failed", {
+      cause: Object.assign(new Error("Query read timeout"), {}),
+    }),
+  ];
+  for (const error of timeouts) assert.equal(isDatabaseUnavailable(error), true, error.message);
+
+  assert.equal(isDatabaseUnavailable(Object.assign(
+    new Error("canceling statement due to user request"),
+    { code: "57014" },
+  )), false);
+  assert.equal(isDatabaseUnavailable(new TypeError("Cannot read properties of undefined")), false);
+  assert.equal(isDatabaseUnavailable(new Error("a plugin timed out while serializing the response")), false);
+});
+
+test("unexpected staff list programming errors and unrelated cancellation return 500", async () => {
+  const originalQuery = pool.query;
+  const failures = [
+    new TypeError("injected programming failure"),
+    Object.assign(new Error("canceling statement due to user request"), { code: "57014" }),
+  ];
+  try {
+    for (const failure of failures) {
+      pool.query = function (query, ...args) {
+        const text = typeof query === "string" ? query : query?.text;
+        if (/select[\s\S]*from\s+"?permit_applications"?/i.test(text ?? "")) {
+          return Promise.reject(failure);
+        }
+        return originalQuery.call(this, query, ...args);
+      };
+      const response = await request("GET", "/applications", "building");
+      assert.equal(response.status, 500);
+      assert.deepEqual(response.body, { error: "Could not load applications." });
+    }
+  } finally {
+    pool.query = originalQuery;
+  }
+});
+
+test("applicant list exposes a retryable 503 during a database outage without sample data", async () => {
+  const originalQuery = pool.query;
+  let failures = 0;
+  pool.query = function (query, ...args) {
+    const text = typeof query === "string" ? query : query?.text;
+    if (/select[\s\S]*from\s+"?permit_applications"?/i.test(text ?? "") && failures < 2) {
+      failures += 1;
+      const error = new Error("temporary database connection interruption");
+      error.code = "ECONNRESET";
+      return Promise.reject(error);
+    }
+    return originalQuery.call(this, query, ...args);
+  };
+  try {
+    const response = await request("GET", `/applications/mine?applicantKey=${applicantKeyA}`, ownerA);
+    assert.equal(response.status, 503);
+    assert.equal(response.retryAfter, "30");
+    assert.doesNotMatch(JSON.stringify(response.body), /DEMO-D2-/);
+  } finally {
+    pool.query = originalQuery;
+  }
+});
+
+test("staff list returns 503 when database fallback has no records matching filters", async () => {
+  const originalQuery = pool.query;
+  let failures = 0;
+  pool.query = function (query, ...args) {
+    const text = typeof query === "string" ? query : query?.text;
+    if (/select[\s\S]*from\s+"?permit_applications"?/i.test(text ?? "") && failures < 2) {
+      failures += 1;
+      const error = new Error("temporary database connection interruption");
+      error.code = "ECONNRESET";
+      return Promise.reject(error);
+    }
+    return originalQuery.call(this, query, ...args);
+  };
+  try {
+    const response = await request("GET", "/applications?businessCategory=NoSuchExampleCategory", "building");
+    assert.equal(response.status, 503);
+    assert.equal(response.retryAfter, "30");
+    assert.equal(response.dataSource, null);
+  } finally {
+    pool.query = originalQuery;
   }
 });
 

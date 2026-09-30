@@ -1,7 +1,7 @@
 import app from "./app";
 import { logger } from "./lib/logger";
 import { schedulePublicPermitRefresh } from "./lib/public-permits";
-import { seedDemoApplications } from "./lib/seed-demo";
+import { scheduleDatabaseRecovery } from "./lib/databaseResilience";
 
 const rawPort = process.env["PORT"];
 
@@ -24,6 +24,6 @@ app.listen(port, (err) => {
   }
 
   logger.info({ port }, "Server listening");
-  void seedDemoApplications().catch(err => logger.error({ err }, "Failed to seed demo records"));
+  scheduleDatabaseRecovery();
   schedulePublicPermitRefresh();
 });

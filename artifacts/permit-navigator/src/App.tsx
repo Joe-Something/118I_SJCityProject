@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ClerkProvider, Show, useUser, useClerk } from '@clerk/react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
 import { publishableKeyFromHost } from '@clerk/react/internal';
 import { shadcn } from '@clerk/themes';
 import { Switch, Route, useLocation, Router as WouterRouter, Redirect, Link } from 'wouter';
@@ -29,6 +29,7 @@ import { applicantId, readPersona, personaKey, PENDING_PERSONA_KEY, readPlans, P
 import { createApplication, getListApplicationHistoryQueryKey, postApplicationResponse, reviewApplication, updateMyApplication } from '@workspace/api-client-react';
 import { saveAndRefresh, useApplicationRecords } from './hooks/useApplicationRecords';
 import { isStaleWrite } from './utils/writeErrors';
+import { isDemoSeedApplicationId } from './utils/applicationResilience';
 
 const clerkPubKey = publishableKeyFromHost(
   window.location.hostname,
@@ -115,13 +116,31 @@ function LoadingPlan({ language }: { language: Language }) {
 function PortalWorkspace({ persona, userId, onLogout }: { persona: Persona; userId: string; onLogout: () => void }) {
   const { signOut } = useClerk();
   const { toast } = useToast();
+  const applicationQueryClient = useQueryClient();
+  const [staffDepartment, setStaffDepartment] = useState<'Planning' | 'Building' | 'Fire' | 'Economic Development'>(() => persona.kind === 'staff' && persona.desk === 'Building Code Reviewer' ? 'Building' : persona.kind === 'staff' && persona.desk === 'Fire Prevention' ? 'Fire' : 'Economic Development');
+
+  useEffect(() => () => {
+    applicationQueryClient.removeQueries({
+      predicate: query => typeof query.queryKey[0] === 'string'
+        && query.queryKey[0].startsWith('/api/applications/'),
+    });
+  }, [applicationQueryClient, userId, persona, staffDepartment]);
 
   const [filters, setFilters] = useState<StaffApplicationFilters>({
     search: '', applicationId: '', businessName: '', businessCategory: '',
     requestType: '', status: '', assignedDepartment: '', applicantLanguage: '',
     submissionDate: '', descriptionOrNotes: '',
   });
-  const { records, recordsLoading, recordsError, recordsRefreshWarning, refreshRows, acceptRecord } = useApplicationRecords(persona, filters);
+  const {
+    records,
+    recordsLoading,
+    recordsError,
+    recordsRefreshWarning,
+    recordsReadOnly,
+    recordsLastConfirmedAt,
+    refreshRows,
+    acceptRecord,
+  } = useApplicationRecords(persona, filters, `${userId}:${persona.kind === 'staff' ? staffDepartment : ''}`);
 
   const plans: ActivePlan[] = records.map(record => ({
     ...(record.plan as unknown as ActivePlan),
@@ -155,7 +174,6 @@ function PortalWorkspace({ persona, userId, onLogout }: { persona: Persona; user
   const onDocumentStatus = useCallback((next: DocumentStatus) => {
     setDocumentStatus(current => current?.id === next.id && current.busy === next.busy && current.pending === next.pending && current.ready === next.ready ? current : next);
   }, []);
-  const [staffDepartment, setStaffDepartment] = useState<'Planning' | 'Building' | 'Fire' | 'Economic Development'>(() => persona.kind === 'staff' && persona.desk === 'Building Code Reviewer' ? 'Building' : persona.kind === 'staff' && persona.desk === 'Fire Prevention' ? 'Fire' : 'Economic Development');
   const [simulateAdmin, setSimulateAdmin] = useState(false);
 
   const t = copy[language === 'other' ? 'en' : language];
@@ -363,6 +381,7 @@ function PortalWorkspace({ persona, userId, onLogout }: { persona: Persona; user
   };
 
   const saveStaffReview = async (planId: string, updates: Partial<ActivePlan>, showErrorToast = true) => {
+    if (recordsReadOnly || isDemoSeedApplicationId(planId)) return { saved: false, refreshed: false };
     const current = plans.find(plan => plan.id === planId);
     if (!current) return { saved: false, refreshed: false };
     try {
@@ -386,6 +405,7 @@ function PortalWorkspace({ persona, userId, onLogout }: { persona: Persona; user
   };
 
   const postStaffResponse = async (planId: string, text: string): Promise<boolean> => {
+    if (recordsReadOnly || isDemoSeedApplicationId(planId)) return false;
     try {
       const saved = await postApplicationResponse(planId, { text });
       acceptRecord(saved);
@@ -527,6 +547,8 @@ function PortalWorkspace({ persona, userId, onLogout }: { persona: Persona; user
           recordsLoading={recordsLoading}
           recordsError={recordsError}
           recordsRefreshWarning={recordsRefreshWarning}
+          recordsReadOnly={recordsReadOnly}
+          recordsLastConfirmedAt={recordsLastConfirmedAt}
            onRefreshRecords={refreshRows}
           onCompleteReview={handleStaffComplete} 
           onUpdateActivePlan={async (id, updates) => (await saveStaffReview(id, updates)).saved}

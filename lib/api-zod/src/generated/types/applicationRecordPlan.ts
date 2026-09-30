@@ -6,4 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 
+/**
+ * Application-specific plan data; sample fallback staff results include _dataSource: sample-fallback inside this object
+ */
 export type ApplicationRecordPlan = { [key: string]: unknown };

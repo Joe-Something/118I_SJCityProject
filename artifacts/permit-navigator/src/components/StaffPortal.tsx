@@ -11,15 +11,18 @@ import { StaffDesk } from '../prototypeStore';
 import { StaffSearchFilters, type StaffApplicationFilters } from './StaffSearchFilters';
 import { getListWorkspaceEscalationsQueryKey, useAcknowledgeWorkspaceEscalation, useListWorkspaceEscalations, type ApplicationRecord } from '@workspace/api-client-react';
 import { StaffApplicationDetail } from './StaffApplicationDetail';
+import { isDemoSeedApplicationId } from '../utils/applicationResilience';
 
 function StaffPlanReview({ 
   plan, 
   onUpdate, 
-  onComplete 
+  onComplete,
+  readOnly,
 }: { 
   plan: ActivePlan; 
   onUpdate: (updates: Partial<ActivePlan>) => Promise<boolean>;
   onComplete: (status: ActivePlan['status']) => void;
+  readOnly: boolean;
 }) {
   const [noteFor, setNoteFor] = useState<RequirementId | null>(null);
   const [noteText, setNoteText] = useState('');
@@ -40,6 +43,10 @@ function StaffPlanReview({
     else if (Object.keys(plan.overrides).length > 0) status = 'Modified via Staff Override';
     onComplete(status);
   };
+
+  if (readOnly) {
+    return <p className="verification-notice" role="status">Recommendation controls are read-only while the live staff queue is unavailable.</p>;
+  }
 
   const updateNotes = (reqId: string, val: string) => {
     return persist({ notes: { ...plan.notes, [reqId]: val } });
@@ -156,6 +163,8 @@ export function StaffPortal({
   recordsLoading,
   recordsError,
   recordsRefreshWarning,
+  recordsReadOnly,
+  recordsLastConfirmedAt,
   onRefreshRecords,
   onCompleteReview, 
   onUpdateActivePlan,
@@ -173,6 +182,8 @@ export function StaffPortal({
   recordsLoading: boolean;
   recordsError: string;
   recordsRefreshWarning: string;
+  recordsReadOnly: boolean;
+  recordsLastConfirmedAt: number | null;
   onRefreshRecords: () => Promise<void>;
   onCompleteReview: (planId: string, finalStatus: ActivePlan['status']) => void;
   onUpdateActivePlan: (planId: string, updates: Partial<ActivePlan>) => Promise<boolean>;
@@ -229,6 +240,7 @@ export function StaffPortal({
   const publicPermits = records.filter(record => record.sourceUrl && !record.synthetic);
 
   const handleReopen = async (id: string) => {
+    if (recordsReadOnly) return false;
     const reopened = await onReopenReview(id);
     if (!reopened) return false;
 
@@ -281,7 +293,7 @@ export function StaffPortal({
                 {!item.acknowledgedAt && <button
                   className="button-secondary"
                   style={{ marginLeft: 12 }}
-                  disabled={acknowledge.isPending}
+                  disabled={acknowledge.isPending || recordsReadOnly}
                   onClick={async () => {
                     setAckError('');
                     try {
@@ -306,7 +318,13 @@ export function StaffPortal({
       {recordsLoading && <p role="status">Searching database records…</p>}
       {recordsError && <div className="verification-notice" role="alert">{recordsError}</div>}
       {recordsRefreshWarning && <div className="verification-notice" role="status" data-testid="records-refresh-warning">{recordsRefreshWarning}</div>}
+      {recordsReadOnly && records.length > 0 && <p className="verification-notice" role="status" data-testid="staff-records-read-only">
+        Read-only staff data. {recordsLastConfirmedAt
+          ? `Last confirmed live at ${new Date(recordsLastConfirmedAt).toLocaleString()}.`
+          : 'No live database response has been confirmed for these sample records.'}
+      </p>}
       {(recordsError || recordsRefreshWarning) && <button className="button-secondary" type="button" onClick={() => void onRefreshRecords().catch(() => undefined)} data-testid="button-refresh-staff-cases">Refresh cases</button>}
+      {recordsReadOnly && !recordsError && !recordsRefreshWarning && <button className="button-secondary" type="button" onClick={() => void onRefreshRecords().catch(() => undefined)} data-testid="button-refresh-staff-cases">Refresh cases</button>}
 
       <div className="staff-tabs" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12, paddingBottom: 12, marginBottom: 24, borderBottom: '1px solid hsl(var(--border))' }}>
         <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
@@ -344,7 +362,9 @@ export function StaffPortal({
         )}
       </div>
 
-      {recordsError || recordsLoading ? null : staffTab === 'public' ? (
+      {recordsError ? null : recordsLoading ? (
+        <p role="status">Loading records for the current search…</p>
+      ) : staffTab === 'public' ? (
         <section aria-label="City open-data permit records">
           <p style={{ marginBottom: 16, color: 'hsl(var(--muted-foreground))' }}>
             Commercial/industrial building permits from the City of San José open-data portal. These are issued public records, not submissions to this workspace and not items for review here. Business name, applicant language, submission date, and assigned reviewer are not supplied by this dataset.
@@ -375,11 +395,13 @@ export function StaffPortal({
           <ReviewCatalog
             records={visibleCatalog}
             onReopen={handleReopen}
+            readOnly={recordsReadOnly}
             renderDetail={plan => (
               <StaffApplicationDetail
                 plan={plan}
                 record={records.find(item => item.id === plan.id)}
                 onPostResponse={text => onPostResponse(plan.id, text)}
+                readOnly={recordsReadOnly || isDemoSeedApplicationId(plan.id)}
               />
             )}
           />
@@ -394,6 +416,9 @@ export function StaffPortal({
           {filteredQueue.map(plan => {
             const deps = plan.departments || deriveDepartments(plan.intake, plan.matched);
             const record = records.find(item => item.id === plan.id);
+            const recordReadOnly = recordsReadOnly
+              || isDemoSeedApplicationId(plan.id)
+              || record?.plan._dataSource === 'sample-fallback';
             return (
               <div key={plan.id} className="active-plan-card" style={{ background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: '12px', overflow: 'hidden' }} data-testid={`active-plan-${plan.id}`}>
                 <div
@@ -411,6 +436,8 @@ export function StaffPortal({
                     <div style={{ fontWeight: 600, fontSize: '16px', marginBottom: '4px' }}>{record?.businessName || plan.intake.businessName || plan.intake.address}</div>
                     <div style={{ fontSize: 12, color: 'hsl(var(--muted-foreground))', marginBottom: 5 }}>
                       ID: {plan.id} · {record?.businessCategory || plan.intake.businessType} · {record?.requestType || 'Permit review'} · {record?.applicantLanguage || plan.language}
+                       {record?.plan._dataSource === 'sample-fallback' && <strong> · Database fallback sample (read-only; not an application)</strong>}
+                       {isDemoSeedApplicationId(plan.id) && <strong> · Seeded demonstration record (read-only)</strong>}
                        {record?.synthetic && <strong> · Synthetic example (not a City record)</strong>}
                     </div>
                     {record && <div style={{ fontSize: 12, color: 'hsl(var(--muted-foreground))', marginBottom: 5 }}>
@@ -452,10 +479,12 @@ export function StaffPortal({
                       plan={plan}
                       record={record}
                       onPostResponse={text => onPostResponse(plan.id, text)}
+                        readOnly={recordReadOnly}
                        onSaveWorkflow={(workflow, text) => onUpdateActivePlan(plan.id, { notes: { ...plan.notes, [`_workflow_${workflow}`]: text } })}
                     >
                       <StaffPlanReview
                         plan={plan}
+                        readOnly={recordReadOnly}
                         onUpdate={(updates) => onUpdateActivePlan(plan.id, updates)}
                         onComplete={(status) => onCompleteReview(plan.id, status)}
                       />

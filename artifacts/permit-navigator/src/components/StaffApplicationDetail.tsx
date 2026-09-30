@@ -1,11 +1,12 @@
 import { useState, type ReactNode } from 'react';
 import { Clipboard } from 'lucide-react';
-import { useListApplicationHistory, type ApplicationRecord } from '@workspace/api-client-react';
+import { getListApplicationHistoryQueryKey, useListApplicationHistory, type ApplicationRecord } from '@workspace/api-client-react';
 import type { ActivePlan } from '../types';
 import type { BusinessType, Modification, RequirementId } from '../requirements';
 import { requirementsConfig } from '../requirements';
 import { copy } from '../copy';
 import { ApplicationDocuments } from './ApplicationDocuments';
+import { isDemoSeedApplicationId } from '../utils/applicationResilience';
 import './StaffApplicationDetail.css';
 
 type Workflow = 'clarification' | 'internal' | 'hearing' | 'permit-decision' | 'escalation' | 'next-steps';
@@ -72,15 +73,22 @@ export function StaffApplicationDetail({
   record,
   onPostResponse,
   onSaveWorkflow,
+  readOnly = false,
   children,
 }: {
   plan: ActivePlan;
   record?: ApplicationRecord;
   onPostResponse: (text: string) => Promise<boolean>;
   onSaveWorkflow?: (workflow: string, text: string) => Promise<boolean>;
+  readOnly?: boolean;
   children?: ReactNode;
 }) {
-  const history = useListApplicationHistory(plan.id);
+  const sampleFallback = record?.plan._dataSource === 'sample-fallback';
+  const historyUnavailable = readOnly || sampleFallback || isDemoSeedApplicationId(plan.id);
+  const history = useListApplicationHistory(plan.id, { query: {
+    enabled: !historyUnavailable,
+    queryKey: getListApplicationHistoryQueryKey(plan.id),
+  } });
   const [draftState, setDraftState] = useState<DraftState | null>(null);
   const [copyState, setCopyState] = useState<CopyState | null>(null);
   const [postState, setPostState] = useState<{ planId: string; message: string; busy: boolean } | null>(null);
@@ -153,6 +161,7 @@ export function StaffApplicationDetail({
       <p className="staff-application-detail__notice" data-testid={`notice-detail-prototype-${plan.id}`}>
          <strong>Preliminary review only.</strong> Local recommendations are not an official permit determination, zoning clearance, or legal City decision. A person must verify each item with the appropriate agency.
          {record?.synthetic && ' This entry uses synthetic example data, not verified City facts.'}
+         {sampleFallback && ' This is a database-outage sample for browsing only, not a submitted application; its documents and history were not requested.'}
       </p>
 
       <section className="staff-application-detail__section" aria-labelledby={`detail-intake-${plan.id}`}>
@@ -188,12 +197,18 @@ export function StaffApplicationDetail({
               </dl>
             </div>
             <div className="staff-application-detail__panel">
-               <ApplicationDocuments id={plan.id} />
+               {historyUnavailable
+                 ? <p className="staff-application-detail__muted" role="status" data-testid={`unavailable-detail-documents-${plan.id}`}>Documents are unavailable while the staff queue is read-only. Sample records do not have real application documents.</p>
+                 : <ApplicationDocuments id={plan.id} />}
             </div>
           </div>
           <aside className="staff-application-detail__panel" aria-labelledby={`detail-history-${plan.id}`}>
             <h4 id={`detail-history-${plan.id}`}>Activity & status history</h4>
-            {history.isLoading ? (
+            {historyUnavailable ? (
+              <p className="staff-application-detail__muted" role="status" data-testid={`unavailable-detail-history-${plan.id}`}>
+                {sampleFallback ? 'Sample records have no real application history; no history request was made.' : 'History is unavailable while the staff queue is read-only.'}
+              </p>
+            ) : history.isLoading ? (
               <div role="status" aria-label="Loading status history" data-testid={`loading-detail-history-${plan.id}`}>
                 <div className="staff-application-detail__skeleton" /><div className="staff-application-detail__skeleton" /><div className="staff-application-detail__skeleton" />
               </div>
@@ -265,7 +280,12 @@ export function StaffApplicationDetail({
           <h3 id={`detail-next-${plan.id}`}>Next steps & draft response</h3>
           <span className="staff-application-detail__section-hint">Local draft · not sent</span>
         </div>
-        <div className="staff-application-detail__grid">
+        {historyUnavailable ? (
+          <p className="staff-application-detail__muted" role="status" data-testid={`unavailable-detail-workflow-${plan.id}`}>
+            Draft workflows and applicant responses are disabled until a live, authorized staff queue is available.
+            {plan.notes?._staff_response && <> Previously saved response: {plan.notes._staff_response}</>}
+          </p>
+        ) : <div className="staff-application-detail__grid">
           <div className="staff-application-detail__panel">
             <h4>Suggested review path</h4>
             <ol className="staff-application-detail__guidance">
@@ -324,7 +344,7 @@ export function StaffApplicationDetail({
               </div>
             )}
           </div>
-        </div>
+        </div>}
       </section>
     </article>
   );

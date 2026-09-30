@@ -3,3 +3,4 @@
 - [Applicant response writes](applicant-response-writes.md) — keep in-app responses separate from review decisions so completed cases can receive them safely.
 - [Review trust boundaries](review-trust-boundaries.md) — removing test branding must not imply City authority or let UI role switches grant server access.
 - [Private document integrity](private-document-integrity.md) — accepting an upload does not revoke its signed PUT URL; accepted bytes need immutable storage.
+- [Application outage behavior](application-outage-behavior.md) — outage samples are read-only, not replacement applicant data; preserve confirmed empty queues.

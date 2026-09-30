@@ -29,6 +29,7 @@ export interface ApplicationRecord {
   /** @nullable */
   notes?: string | null;
   synthetic: boolean;
+  /** Application-specific plan data; sample fallback staff results include _dataSource: sample-fallback inside this object */
   plan: ApplicationRecordPlan;
   createdAt: Date;
   updatedAt: Date;

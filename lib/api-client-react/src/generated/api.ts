@@ -29,8 +29,12 @@ import type {
   ApplicationReview,
   DownloadApplicationDocumentParams,
   HealthStatus,
+  ListMyApplications503,
   ListMyApplicationsParams,
+  ListStaffApplications503,
+  ListStaffApplicationsParams,
   ListWorkspaceRecordsParams,
+  SearchStaffApplications503,
   SearchStaffApplicationsParams,
   StatusEvent,
   WorkspaceConversation,
@@ -1238,7 +1242,7 @@ export const getListMyApplicationsQueryKey = (params?: ListMyApplicationsParams,
     }
 
 
-export const getListMyApplicationsQueryOptions = <TData = Awaited<ReturnType<typeof listMyApplications>>, TError = ErrorType<unknown>>(params: ListMyApplicationsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listMyApplications>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+export const getListMyApplicationsQueryOptions = <TData = Awaited<ReturnType<typeof listMyApplications>>, TError = ErrorType<ListMyApplications503>>(params: ListMyApplicationsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listMyApplications>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
@@ -1257,11 +1261,11 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 }
 
 export type ListMyApplicationsQueryResult = NonNullable<Awaited<ReturnType<typeof listMyApplications>>>
-export type ListMyApplicationsQueryError = ErrorType<unknown>
+export type ListMyApplicationsQueryError = ErrorType<ListMyApplications503>
 
 
 
-export function useListMyApplications<TData = Awaited<ReturnType<typeof listMyApplications>>, TError = ErrorType<unknown>>(
+export function useListMyApplications<TData = Awaited<ReturnType<typeof listMyApplications>>, TError = ErrorType<ListMyApplications503>>(
  params: ListMyApplicationsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listMyApplications>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
@@ -1316,7 +1320,7 @@ export const getSearchStaffApplicationsQueryKey = (params?: SearchStaffApplicati
     }
 
 
-export const getSearchStaffApplicationsQueryOptions = <TData = Awaited<ReturnType<typeof searchStaffApplications>>, TError = ErrorType<unknown>>(params?: SearchStaffApplicationsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof searchStaffApplications>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+export const getSearchStaffApplicationsQueryOptions = <TData = Awaited<ReturnType<typeof searchStaffApplications>>, TError = ErrorType<SearchStaffApplications503>>(params?: SearchStaffApplicationsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof searchStaffApplications>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
@@ -1335,16 +1339,94 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 }
 
 export type SearchStaffApplicationsQueryResult = NonNullable<Awaited<ReturnType<typeof searchStaffApplications>>>
-export type SearchStaffApplicationsQueryError = ErrorType<unknown>
+export type SearchStaffApplicationsQueryError = ErrorType<SearchStaffApplications503>
 
 
 
-export function useSearchStaffApplications<TData = Awaited<ReturnType<typeof searchStaffApplications>>, TError = ErrorType<unknown>>(
+export function useSearchStaffApplications<TData = Awaited<ReturnType<typeof searchStaffApplications>>, TError = ErrorType<SearchStaffApplications503>>(
  params?: SearchStaffApplicationsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof searchStaffApplications>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getSearchStaffApplicationsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getListStaffApplicationsUrl = (params?: ListStaffApplicationsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/applications?${stringifiedParams}` : `/api/applications`
+}
+
+export const listStaffApplications = async (params?: ListStaffApplicationsParams, options?: Parameters<typeof customFetch>[1]): Promise<ApplicationRecord[]> => {
+
+  return customFetch<ApplicationRecord[]>(getListStaffApplicationsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListStaffApplicationsQueryKey = (params?: ListStaffApplicationsParams,) => {
+    return [
+    `/api/applications`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListStaffApplicationsQueryOptions = <TData = Awaited<ReturnType<typeof listStaffApplications>>, TError = ErrorType<ListStaffApplications503>>(params?: ListStaffApplicationsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listStaffApplications>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListStaffApplicationsQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listStaffApplications>>> = ({ signal }) => listStaffApplications(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listStaffApplications>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListStaffApplicationsQueryResult = NonNullable<Awaited<ReturnType<typeof listStaffApplications>>>
+export type ListStaffApplicationsQueryError = ErrorType<ListStaffApplications503>
+
+
+
+export function useListStaffApplications<TData = Awaited<ReturnType<typeof listStaffApplications>>, TError = ErrorType<ListStaffApplications503>>(
+ params?: ListStaffApplicationsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listStaffApplications>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListStaffApplicationsQueryOptions(params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

@@ -282,7 +282,7 @@ export const PostApplicationResponseResponse = zod.object({
   "description": zod.string(),
   "notes": zod.string().nullish(),
   "synthetic": zod.boolean(),
-  "plan": zod.record(zod.string(), zod.unknown()),
+  "plan": zod.record(zod.string(), zod.unknown()).describe('Application-specific plan data; sample fallback staff results include _dataSource: sample-fallback inside this object'),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
 })
@@ -311,7 +311,7 @@ export const ListMyApplicationsResponseItem = zod.object({
   "description": zod.string(),
   "notes": zod.string().nullish(),
   "synthetic": zod.boolean(),
-  "plan": zod.record(zod.string(), zod.unknown()),
+  "plan": zod.record(zod.string(), zod.unknown()).describe('Application-specific plan data; sample fallback staff results include _dataSource: sample-fallback inside this object'),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
 })
@@ -347,11 +347,47 @@ export const SearchStaffApplicationsResponseItem = zod.object({
   "description": zod.string(),
   "notes": zod.string().nullish(),
   "synthetic": zod.boolean(),
-  "plan": zod.record(zod.string(), zod.unknown()),
+  "plan": zod.record(zod.string(), zod.unknown()).describe('Application-specific plan data; sample fallback staff results include _dataSource: sample-fallback inside this object'),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
 })
 export const SearchStaffApplicationsResponse = zod.array(SearchStaffApplicationsResponseItem)
+
+
+export const ListStaffApplicationsQueryParams = zod.object({
+  "search": zod.coerce.string().optional(),
+  "applicationId": zod.coerce.string().optional(),
+  "businessName": zod.coerce.string().optional(),
+  "businessCategory": zod.coerce.string().optional(),
+  "requestType": zod.coerce.string().optional(),
+  "status": zod.coerce.string().optional(),
+  "assignedDepartment": zod.coerce.string().optional(),
+  "applicantLanguage": zod.coerce.string().optional(),
+  "submissionDate": zod.date().optional(),
+  "descriptionOrNotes": zod.coerce.string().optional()
+})
+
+export const ListStaffApplicationsResponseItem = zod.object({
+  "id": zod.string(),
+  "businessName": zod.string(),
+  "businessCategory": zod.string(),
+  "requestType": zod.string(),
+  "status": zod.string(),
+  "assignedDepartment": zod.string(),
+  "applicantLanguage": zod.string(),
+  "submittedAt": zod.coerce.date().nullish(),
+  "sourceUrl": zod.string().nullish(),
+  "sourceDataset": zod.string().nullish(),
+  "sourceDate": zod.coerce.date().nullish(),
+  "sourceImportedAt": zod.coerce.date().nullish(),
+  "description": zod.string(),
+  "notes": zod.string().nullish(),
+  "synthetic": zod.boolean(),
+  "plan": zod.record(zod.string(), zod.unknown()).describe('Application-specific plan data; sample fallback staff results include _dataSource: sample-fallback inside this object'),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+export const ListStaffApplicationsResponse = zod.array(ListStaffApplicationsResponseItem)
 
 
 export const createApplicationBodyApplicantKeyMax = 200;
@@ -380,7 +416,7 @@ export const CreateApplicationResponse = zod.object({
   "description": zod.string(),
   "notes": zod.string().nullish(),
   "synthetic": zod.boolean(),
-  "plan": zod.record(zod.string(), zod.unknown()),
+  "plan": zod.record(zod.string(), zod.unknown()).describe('Application-specific plan data; sample fallback staff results include _dataSource: sample-fallback inside this object'),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
 })
@@ -416,7 +452,7 @@ export const UpdateMyApplicationResponse = zod.object({
   "description": zod.string(),
   "notes": zod.string().nullish(),
   "synthetic": zod.boolean(),
-  "plan": zod.record(zod.string(), zod.unknown()),
+  "plan": zod.record(zod.string(), zod.unknown()).describe('Application-specific plan data; sample fallback staff results include _dataSource: sample-fallback inside this object'),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
 })
@@ -447,7 +483,7 @@ export const ReviewApplicationResponse = zod.object({
   "description": zod.string(),
   "notes": zod.string().nullish(),
   "synthetic": zod.boolean(),
-  "plan": zod.record(zod.string(), zod.unknown()),
+  "plan": zod.record(zod.string(), zod.unknown()).describe('Application-specific plan data; sample fallback staff results include _dataSource: sample-fallback inside this object'),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
 })
