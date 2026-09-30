@@ -2,7 +2,7 @@ import { Router, type IRouter } from "express";
 import { and, desc, eq, ilike, inArray, or } from "drizzle-orm";
 import OpenAI from "openai";
 import {
-  db, applicationsTable, workspaceConversationsTable, workspaceMessagesTable,
+  db, applicationsTable, workspaceConversationsTable, workspaceMessagesTable, workspaceAcknowledgementsTable,
 } from "@workspace/db";
 import {
   ListWorkspaceRecordsQueryParams, ListWorkspaceRecordsResponse,
@@ -24,7 +24,10 @@ const urgentInput = /\b(?:chemical spill|hazmat|toxic leak|gas leak|active fire|
 const vagueInput = /^(?:hi|hello|help|permit|what do i need|ayuda|hola|i need help)[?.! ]*$/i;
 const testRecipient = process.env.NODE_ENV === "production" ? null : process.env.URGENT_TEST_EMAIL?.trim() || null;
 
-function escalationRecord(row: typeof workspaceMessagesTable.$inferSelect) {
+function escalationRecord(
+  row: typeof workspaceMessagesTable.$inferSelect,
+  event: typeof workspaceAcknowledgementsTable.$inferSelect | null,
+) {
   return {
     ticketId: row.id,
     status: row.status === "high-urgency-acknowledged" ? "Acknowledged in prototype queue" : "Awaiting prototype staff acknowledgement",
@@ -33,7 +36,10 @@ function escalationRecord(row: typeof workspaceMessagesTable.$inferSelect) {
     deliveryStatus: "Email delivery not verified; no automatic dispatch or retries",
     summary: "Potential safety hazard flagged by the workspace. No resident contact details are included in the email draft.",
     createdAt: row.createdAt,
-    acknowledgedAt: row.status === "high-urgency-acknowledged" ? row.updatedAt : null,
+    // Older acknowledged tickets predate audit events; do not invent their actor.
+    acknowledgedAt: event?.acknowledgedAt ?? (row.status === "high-urgency-acknowledged" ? row.updatedAt : null),
+    acknowledgedBy: event?.staffUserId ?? null,
+    acknowledgedDepartment: event?.staffDepartment ?? null,
   };
 }
 
@@ -106,29 +112,43 @@ router.get("/workspace/prototype-sources", async (_req, res): Promise<void> => {
 
 router.get("/workspace/escalations", async (req, res): Promise<void> => {
   if (!await escalationStaff(req, res)) return;
-  const rows = await db.select().from(workspaceMessagesTable)
+  const rows = await db.select({ message: workspaceMessagesTable, event: workspaceAcknowledgementsTable })
+    .from(workspaceMessagesTable)
+    .leftJoin(workspaceAcknowledgementsTable, eq(workspaceMessagesTable.id, workspaceAcknowledgementsTable.ticketId))
     .where(inArray(workspaceMessagesTable.status, ["high-urgency", "high-urgency-acknowledged"]))
     .orderBy(desc(workspaceMessagesTable.createdAt)).limit(100);
-  res.json(ListWorkspaceEscalationsResponse.parse(rows.map(escalationRecord)));
+  res.json(ListWorkspaceEscalationsResponse.parse(rows.map(({ message, event }) => escalationRecord(message, event))));
 });
 
 router.post("/workspace/escalations/:id/acknowledge", async (req, res): Promise<void> => {
-  if (!await escalationStaff(req, res)) return;
+  const staff = await escalationStaff(req, res);
+  if (!staff) return;
   const params = AcknowledgeWorkspaceEscalationParams.safeParse(req.params);
   if (!params.success) { res.status(400).json({ error: "Invalid ticket." }); return; }
-  const [updated] = await db.update(workspaceMessagesTable)
-    .set({ status: "high-urgency-acknowledged", updatedAt: new Date() })
-    .where(and(eq(workspaceMessagesTable.id, params.data.id), eq(workspaceMessagesTable.status, "high-urgency")))
-    .returning();
-  if (!updated) {
-    const [existing] = await db.select().from(workspaceMessagesTable)
+  const acknowledgedAt = new Date();
+  const result = await db.transaction(async tx => {
+    const [updated] = await tx.update(workspaceMessagesTable)
+      .set({ status: "high-urgency-acknowledged", updatedAt: acknowledgedAt })
+      .where(and(eq(workspaceMessagesTable.id, params.data.id), eq(workspaceMessagesTable.status, "high-urgency")))
+      .returning();
+    if (updated) {
+      const [event] = await tx.insert(workspaceAcknowledgementsTable).values({
+        ticketId: updated.id, staffUserId: staff.id, staffDepartment: staff.department, acknowledgedAt,
+      }).returning();
+      return { message: updated, event, created: true };
+    }
+    const [existing] = await tx.select({ message: workspaceMessagesTable, event: workspaceAcknowledgementsTable })
+      .from(workspaceMessagesTable)
+      .leftJoin(workspaceAcknowledgementsTable, eq(workspaceMessagesTable.id, workspaceAcknowledgementsTable.ticketId))
       .where(and(eq(workspaceMessagesTable.id, params.data.id), eq(workspaceMessagesTable.status, "high-urgency-acknowledged")));
-    if (!existing) { res.status(404).json({ error: "Urgent ticket not found." }); return; }
-    res.json(AcknowledgeWorkspaceEscalationResponse.parse(escalationRecord(existing)));
+    return existing ? { ...existing, created: false } : null;
+  });
+  if (!result) {
+    res.status(404).json({ error: "Urgent ticket not found." });
     return;
   }
-  req.log.info({ ticketId: updated.id }, "Prototype urgent ticket acknowledged by authorized staff");
-  res.json(AcknowledgeWorkspaceEscalationResponse.parse(escalationRecord(updated)));
+  if (result.created) req.log.info({ ticketId: result.message.id }, "Prototype urgent ticket acknowledged by authorized staff");
+  res.json(AcknowledgeWorkspaceEscalationResponse.parse(escalationRecord(result.message, result.event)));
 });
 
 router.get("/workspace/conversations", async (req, res): Promise<void> => {

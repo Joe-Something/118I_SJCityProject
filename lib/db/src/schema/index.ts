@@ -20,3 +20,4 @@
 export * from "./applications";
 export * from "./status-history";
 export * from "./workspace";
+export * from "./workspace-acknowledgements";

@@ -242,7 +242,7 @@ components:
   schemas:
     WorkspaceEscalation:
       type: object
-      required: [ticketId, status, departmentInbox, summary, createdAt, acknowledgedAt, deliveryStatus, testRecipient]
+      required: [ticketId, status, departmentInbox, summary, createdAt, acknowledgedAt, acknowledgedBy, acknowledgedDepartment, deliveryStatus, testRecipient]
       properties:
         ticketId: { type: string }
         status: { type: string }
@@ -250,6 +250,8 @@ components:
         summary: { type: string }
         createdAt: { type: string, format: date-time }
         acknowledgedAt: { type: ["string", "null"], format: date-time }
+        acknowledgedBy: { type: ["string", "null"], description: Clerk ID of the authorized staff member who first acknowledged the ticket }
+        acknowledgedDepartment: { type: ["string", "null"], description: Staff department at the time of acknowledgement }
         deliveryStatus: { type: string }
         testRecipient: { type: ["string", "null"] }
     WorkspaceRecord:

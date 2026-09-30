@@ -14,6 +14,16 @@ export interface WorkspaceEscalation {
   createdAt: Date;
   /** @nullable */
   acknowledgedAt: Date | null;
+  /**
+     * Clerk ID of the authorized staff member who first acknowledged the ticket
+     * @nullable
+     */
+  acknowledgedBy: string | null;
+  /**
+     * Staff department at the time of acknowledgement
+     * @nullable
+     */
+  acknowledgedDepartment: string | null;
   deliveryStatus: string;
   /** @nullable */
   testRecipient: string | null;

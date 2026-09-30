@@ -258,7 +258,11 @@ export function StaffPortal({
             {escalations.data?.map(item => (
               <div key={item.ticketId} style={{ marginTop: 12 }}>
                 <strong>High-urgency flag</strong> · Ticket {item.ticketId} · {new Date(item.createdAt).toLocaleString()}
-                <p>{item.status}{item.acknowledgedAt ? ` · ${new Date(item.acknowledgedAt).toLocaleString()}` : ''}</p>
+                <p>{item.status}{item.acknowledgedAt ? ` · ${new Date(item.acknowledgedAt).toLocaleString()}` : ''}
+                  {item.acknowledgedBy && item.acknowledgedDepartment
+                    ? ` · Acknowledged by ${item.acknowledgedBy} (${item.acknowledgedDepartment})`
+                    : item.acknowledgedAt ? ' · Acknowledging staff not recorded (older ticket)' : ''}
+                </p>
                 <p>{item.departmentInbox} · {item.deliveryStatus}</p>
                 {item.testRecipient && <a
                   href={`mailto:${encodeURIComponent(item.testRecipient)}?subject=${encodeURIComponent(`TEST ONLY - Permit Navigator urgent ticket ${item.ticketId}`)}&body=${encodeURIComponent(`TEST ONLY - Not City dispatch. A safety concern was flagged in the Permit Navigator prototype. Ticket: ${item.ticketId}. No resident details are included. Email sending and receipt are not tracked by this prototype.`)}`}

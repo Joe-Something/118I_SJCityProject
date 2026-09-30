@@ -55,6 +55,8 @@ export const ListWorkspaceEscalationsResponseItem = zod.object({
   "summary": zod.string(),
   "createdAt": zod.coerce.date(),
   "acknowledgedAt": zod.coerce.date().nullable(),
+  "acknowledgedBy": zod.string().nullable().describe('Clerk ID of the authorized staff member who first acknowledged the ticket'),
+  "acknowledgedDepartment": zod.string().nullable().describe('Staff department at the time of acknowledgement'),
   "deliveryStatus": zod.string(),
   "testRecipient": zod.string().nullable()
 })
@@ -72,6 +74,8 @@ export const AcknowledgeWorkspaceEscalationResponse = zod.object({
   "summary": zod.string(),
   "createdAt": zod.coerce.date(),
   "acknowledgedAt": zod.coerce.date().nullable(),
+  "acknowledgedBy": zod.string().nullable().describe('Clerk ID of the authorized staff member who first acknowledged the ticket'),
+  "acknowledgedDepartment": zod.string().nullable().describe('Staff department at the time of acknowledgement'),
   "deliveryStatus": zod.string(),
   "testRecipient": zod.string().nullable()
 })
