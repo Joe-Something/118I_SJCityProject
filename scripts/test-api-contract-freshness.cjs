@@ -120,6 +120,16 @@ exit 0
   );
 
   assertFreshnessFailure(
+    "changed-tracked-zod-output",
+    ({ fixture, schemaFile }) =>
+      fs.writeFileSync(
+        path.join(fixture, schemaFile),
+        "export const schemaVersion = 2;\n",
+      ),
+    "lib/api-zod/src/generated/schema.ts",
+  );
+
+  assertFreshnessFailure(
     "deleted-tracked-output",
     ({ fixture, schemaFile }) => fs.unlinkSync(path.join(fixture, schemaFile)),
     "lib/api-zod/src/generated/schema.ts",
@@ -137,6 +147,19 @@ exit 0
     "lib/api-client-react/src/generated/new-client.ts",
   );
 
+  assertFreshnessFailure(
+    "new-untracked-zod-output",
+    ({ fixture }) => {
+      const file = path.join(
+        fixture,
+        "lib/api-zod/src/generated/types/newSchema.ts",
+      );
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.writeFileSync(file, "export const newSchema = true;\n");
+    },
+    "lib/api-zod/src/generated/types/newSchema.ts",
+  );
+
   const cleanFixture = createFixture("clean-output");
   const cleanResult = runTypecheck(cleanFixture.fixture);
   assert.equal(
@@ -152,7 +175,7 @@ exit 0
   ]);
 
   console.log(
-    "API contract freshness regression checks passed (changed, deleted, untracked, and clean output).",
+    "API contract freshness regression checks passed (changed, deleted, untracked, and clean client/Zod output).",
   );
 } finally {
   fs.rmSync(tempRoot, { recursive: true, force: true });
