@@ -1,6 +1,7 @@
 import { db, applicationsTable } from "@workspace/db";
 import { sql } from "drizzle-orm";
 import { logger } from "./logger";
+import { parsePublishedIssueDate } from "./public-permit-dates";
 
 // City of San José Open Data: Last 30 days building permits (updated daily).
 // Never import the CSV's applicant, owner, contractor or parcel-number columns.
@@ -33,13 +34,6 @@ function parseCsv(input: string): string[][] {
   return rows;
 }
 
-function issueDate(value: string): Date | null {
-  const match = /^(\d{1,2})\/(\d{1,2})\/(\d{4})/.exec(value);
-  if (!match) return null;
-  const date = new Date(Date.UTC(Number(match[3]), Number(match[1]) - 1, Number(match[2]), 12));
-  return Number.isNaN(date.getTime()) ? null : date;
-}
-
 export async function refreshPublicPermits() {
   const response = await fetch(PUBLIC_PERMITS_CSV, { signal: AbortSignal.timeout(30_000) });
   if (!response.ok) throw new Error(`City permit dataset responded ${response.status}`);
@@ -56,7 +50,7 @@ export async function refreshPublicPermits() {
     .map(row => {
       const permitNumber = field(row, "FOLDERNUMBER");
       const address = field(row, "gx_location").replace(/\s+/g, " ").trim();
-      const date = issueDate(field(row, "ISSUEDATE"));
+      const date = parsePublishedIssueDate(field(row, "ISSUEDATE"), importedAt);
       if (!/^\d{4}-[\d-]+-CI$/.test(permitNumber) || !address || !date) return null;
       const id = `SJ-OPEN-${permitNumber}`;
       const businessName = `Property at ${address}`;

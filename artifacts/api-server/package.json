@@ -7,6 +7,7 @@
     "dev": "export NODE_ENV=development && pnpm run build && pnpm run start",
     "build": "node ./build.mjs",
     "start": "node --enable-source-maps ./dist/index.mjs",
+    "test:public-permits": "node --import tsx --test test/public-permit-dates.test.mjs",
     "test:workspace": "NODE_ENV=test node --import tsx --test test/workspace-escalations.test.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
