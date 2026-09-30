@@ -37,6 +37,11 @@ const auditFailureTriggerSuffix = randomUUID().replaceAll("-", "");
 const currentPublicRecordId = `REF-CURRENT-${fixture}`;
 const outdatedPublicRecordId = `REF-OUTDATED-${fixture}`;
 const syntheticRecordId = `DEMO-D2-${fixture}`;
+const staleCachedCityRecordId = `SJ-OPEN-2026-${randomUUID().replaceAll("-", "")}-CI`;
+const futureCachedCityRecordId = `SJ-OPEN-2026-${randomUUID().replaceAll("-", "")}-CI`;
+const currentCachedCityRecordId = `SJ-OPEN-2026-${randomUUID().replaceAll("-", "")}-CI`;
+const nonCityCachedRecordId = `SJ-OPEN-2026-${randomUUID().replaceAll("-", "")}-CI`;
+const applicantCreatedRecordId = `SJ-OPEN-APPLICANT-${randomUUID()}`;
 const originalTime = new Date("2024-01-02T03:04:05.000Z");
 const legacyAcknowledgedTime = new Date("2024-03-04T05:06:07.000Z");
 const auditFailureOriginalTime = new Date("2024-02-03T04:05:06.000Z");
@@ -177,7 +182,11 @@ after(async () => {
   await db.delete(workspaceMessagesTable).where(eq(workspaceMessagesTable.conversationId, conversationId));
   await db.delete(workspaceConversationsTable).where(eq(workspaceConversationsTable.id, conversationId));
   await db.delete(applicationsTable)
-    .where(inArray(applicationsTable.id, [currentPublicRecordId, outdatedPublicRecordId, syntheticRecordId, importerRecordId]));
+    .where(inArray(applicationsTable.id, [
+      currentPublicRecordId, outdatedPublicRecordId, syntheticRecordId, importerRecordId,
+      staleCachedCityRecordId, futureCachedCityRecordId, currentCachedCityRecordId,
+      nonCityCachedRecordId, applicantCreatedRecordId,
+    ]));
   if (outputDir) await rm(outputDir, { recursive: true, force: true });
   await pool.end();
 });
@@ -337,6 +346,90 @@ test("City permit import persists and returns only allowlisted public metadata",
   for (const value of Object.values(privateValues)) {
     assert.ok(!JSON.stringify(response.body).includes(value), `sensitive value returned: ${value}`);
   }
+});
+
+test("successful City refresh removes previously cached stale and future-dated records only", async () => {
+  const recentImport = new Date(Date.now() - 60_000);
+  const issueToday = new Date();
+  issueToday.setUTCHours(12, 0, 0, 0);
+  const staleIssueDate = new Date(issueToday);
+  staleIssueDate.setUTCDate(staleIssueDate.getUTCDate() - 31);
+  const futureIssueDate = new Date(issueToday);
+  futureIssueDate.setUTCDate(futureIssueDate.getUTCDate() + 1);
+  const cityDataset = "City of San José · Last 30 days building permits";
+  const base = {
+    ownerId: null,
+    applicantKey: null,
+    businessName: "Property at 55 Sample Way",
+    businessCategory: "Commercial",
+    requestType: "Building permit",
+    status: "Issued",
+    assignedDepartment: "Not provided",
+    applicantLanguage: "Not provided",
+    submittedAt: null,
+    description: "Cached public permit reference",
+    notes: null,
+    synthetic: false,
+    sourceUrl: "https://data.sanjoseca.gov/dataset/last-30-days-building-permits",
+    sourceDataset: cityDataset,
+    sourceImportedAt: recentImport,
+    plan: {},
+    createdAt: recentImport,
+    updatedAt: recentImport,
+  };
+  await db.insert(applicationsTable).values([
+    { ...base, id: staleCachedCityRecordId, sourceDate: staleIssueDate },
+    { ...base, id: futureCachedCityRecordId, sourceDate: futureIssueDate },
+    { ...base, id: currentCachedCityRecordId, sourceDate: issueToday },
+    {
+      ...base, id: nonCityCachedRecordId, sourceDataset: "Another permit source",
+      sourceDate: futureIssueDate,
+    },
+    {
+      ...base, id: applicantCreatedRecordId, ownerId: "applicant-owner",
+      applicantKey: "applicant-key", synthetic: true, sourceDate: futureIssueDate,
+    },
+  ]);
+
+  const headers = [
+    "FOLDERNUMBER", "FOLDERDESC", "gx_location", "FOLDERNAME",
+    "SUBTYPEDESCRIPTION", "WORKDESCRIPTION", "ISSUEDATE",
+  ];
+  const today = new Date();
+  const row = [
+    importerPermitNumber, "Commercial/Industrial", "55 Sample Way",
+    "Tenant improvement", "Restaurant", "Interior renovation",
+    `${today.getUTCMonth() + 1}/${today.getUTCDate()}/${today.getUTCFullYear()}`,
+  ];
+  const csv = `${headers.join(",")}\n${row.map(value => `"${value.replaceAll('"', '""')}"`).join(",")}\n`;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(csv, { status: 200 });
+  try {
+    await refreshPublicPermits();
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+
+  const retained = await db.select().from(applicationsTable)
+    .where(inArray(applicationsTable.id, [
+      staleCachedCityRecordId, futureCachedCityRecordId, currentCachedCityRecordId,
+      nonCityCachedRecordId, applicantCreatedRecordId,
+    ]));
+  const retainedIds = new Set(retained.map(record => record.id));
+  assert.ok(!retainedIds.has(staleCachedCityRecordId), "stale City reference should be deleted");
+  assert.ok(!retainedIds.has(futureCachedCityRecordId), "future-dated City reference should be deleted");
+  assert.ok(retainedIds.has(currentCachedCityRecordId), "in-window City reference should remain");
+  assert.ok(retainedIds.has(nonCityCachedRecordId), "non-City reference should remain");
+  assert.ok(retainedIds.has(applicantCreatedRecordId), "applicant-created record should remain");
+
+  for (const id of [staleCachedCityRecordId, futureCachedCityRecordId]) {
+    const response = await request("GET", `/workspace/records?mode=live&search=${encodeURIComponent(id)}`);
+    assert.deepEqual(ListWorkspaceRecordsResponse.parse(response.body), []);
+  }
+  const currentResponse = await request(
+    "GET", `/workspace/records?mode=live&search=${encodeURIComponent(currentCachedCityRecordId)}`,
+  );
+  assert.equal(ListWorkspaceRecordsResponse.parse(currentResponse.body).length, 1);
 });
 
 test("queue and acknowledgement reject anonymous, resident, and non-queue staff", async () => {

@@ -1,11 +1,12 @@
 import { db, applicationsTable } from "@workspace/db";
-import { sql } from "drizzle-orm";
+import { and, eq, gte, isNull, like, lt, or, sql } from "drizzle-orm";
 import { logger } from "./logger";
-import { parsePublishedIssueDate } from "./public-permit-dates";
+import { getPublishedIssueDateWindow, parsePublishedIssueDate } from "./public-permit-dates";
 
 // City of San José Open Data: Last 30 days building permits (updated daily).
 // Never import the CSV's applicant, owner, contractor or parcel-number columns.
 export const PUBLIC_PERMITS_DATASET = "https://data.sanjoseca.gov/dataset/last-30-days-building-permits";
+const PUBLIC_PERMITS_SOURCE_DATASET = "City of San José · Last 30 days building permits";
 const PUBLIC_PERMITS_CSV = "https://data.sanjoseca.gov/dataset/2723cdec-a639-4b63-bded-175338c45473/resource/045b3678-e923-4002-b696-300955bc6d06/download/buildingpermits30.csv";
 
 function parseCsv(input: string): string[][] {
@@ -62,7 +63,7 @@ export async function refreshPublicPermits() {
         businessName, businessCategory: category, requestType: work,
         status: "Issued", assignedDepartment: "Not provided", applicantLanguage: "Not provided",
         submittedAt: null, description, notes: null, synthetic: false,
-        sourceUrl: PUBLIC_PERMITS_DATASET, sourceDataset: "City of San José · Last 30 days building permits",
+        sourceUrl: PUBLIC_PERMITS_DATASET, sourceDataset: PUBLIC_PERMITS_SOURCE_DATASET,
         sourceDate: date, sourceImportedAt: importedAt,
         plan: {
           id, intake: { businessName, businessType: "other", businessOther: category, address,
@@ -78,9 +79,22 @@ export async function refreshPublicPermits() {
     .sort((a, b) => b.sourceDate.getTime() - a.sourceDate.getTime())
     .slice(0, 60);
   if (!rows.length) throw new Error("City permit dataset contains no usable commercial records");
-  // Preserve the last known import if the City download or parsing fails.
-  // Historical rows remain labeled with their original import timestamp.
+  const publishedWindow = getPublishedIssueDateWindow(importedAt);
+  // Preserve prior records if the City download or parsing fails. Once a valid
+  // refresh is ready, remove only invalid records owned by this City importer.
   await db.transaction(async tx => {
+    await tx.delete(applicationsTable).where(and(
+      eq(applicationsTable.sourceDataset, PUBLIC_PERMITS_SOURCE_DATASET),
+      eq(applicationsTable.synthetic, false),
+      isNull(applicationsTable.ownerId),
+      isNull(applicationsTable.applicantKey),
+      like(applicationsTable.id, "SJ-OPEN-%"),
+      or(
+        isNull(applicationsTable.sourceDate),
+        lt(applicationsTable.sourceDate, publishedWindow.start),
+        gte(applicationsTable.sourceDate, publishedWindow.endExclusive),
+      ),
+    ));
     await tx.insert(applicationsTable).values(rows).onConflictDoUpdate({
       target: applicationsTable.id,
       set: {

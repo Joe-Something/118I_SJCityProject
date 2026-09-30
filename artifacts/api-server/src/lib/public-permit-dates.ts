@@ -1,5 +1,16 @@
-const DAY_IN_MS = 24 * 60 * 60 * 1000;
 const PUBLISHED_WINDOW_DAYS = 30;
+
+export function getPublishedIssueDateWindow(now: Date): { start: Date; endExclusive: Date } {
+  const start = new Date(now);
+  start.setUTCHours(0, 0, 0, 0);
+  start.setUTCDate(start.getUTCDate() - PUBLISHED_WINDOW_DAYS);
+
+  const endExclusive = new Date(now);
+  endExclusive.setUTCHours(0, 0, 0, 0);
+  endExclusive.setUTCDate(endExclusive.getUTCDate() + 1);
+
+  return { start, endExclusive };
+}
 
 export function parsePublishedIssueDate(value: string, now: Date): Date | null {
   const match = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(value.trim());
@@ -22,12 +33,8 @@ export function parsePublishedIssueDate(value: string, now: Date): Date | null {
     return null;
   }
 
-  const today = new Date(now);
-  today.setUTCHours(0, 0, 0, 0);
-  const todayStart = today.getTime();
-  const issueDay = date.getTime() - 12 * 60 * 60 * 1000;
-  const earliestPublishedDay = todayStart - PUBLISHED_WINDOW_DAYS * DAY_IN_MS;
-  if (issueDay < earliestPublishedDay || issueDay > todayStart) return null;
+  const { start, endExclusive } = getPublishedIssueDateWindow(now);
+  if (date < start || date >= endExclusive) return null;
 
   return date;
 }

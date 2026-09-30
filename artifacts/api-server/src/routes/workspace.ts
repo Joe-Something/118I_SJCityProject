@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { and, desc, eq, ilike, inArray, or } from "drizzle-orm";
+import { and, desc, eq, gte, ilike, inArray, lt, or } from "drizzle-orm";
 import OpenAI from "openai";
 import {
   db, applicationsTable, workspaceConversationsTable, workspaceMessagesTable, workspaceAcknowledgementsTable,
@@ -16,6 +16,7 @@ import {
 } from "@workspace/api-zod";
 import { authorizedStaff, signedInUser } from "../lib/access";
 import { prototypeSources } from "../lib/prototype-sources";
+import { getPublishedIssueDateWindow } from "../lib/public-permit-dates";
 
 const router: IRouter = Router();
 const recentRequests = new Map<string, number[]>();
@@ -80,9 +81,15 @@ function publicRecord(row: typeof applicationsTable.$inferSelect) {
 
 async function records(mode: string, search?: string) {
   const seed = mode === "research";
+  const publishedWindow = getPublishedIssueDateWindow(new Date());
   const conditions = seed
     ? [ilike(applicationsTable.id, "DEMO-D2-%")]
-    : [eq(applicationsTable.synthetic, false), eq(applicationsTable.sourceDataset, "City of San José · Last 30 days building permits")];
+    : [
+      eq(applicationsTable.synthetic, false),
+      eq(applicationsTable.sourceDataset, "City of San José · Last 30 days building permits"),
+      gte(applicationsTable.sourceDate, publishedWindow.start),
+      lt(applicationsTable.sourceDate, publishedWindow.endExclusive),
+    ];
   if (search?.trim()) {
     const term = `%${search.trim().replace(/[\\%_]/g, "\\$&")}%`;
     conditions.push(or(ilike(applicationsTable.id, term), ilike(applicationsTable.businessCategory, term), ilike(applicationsTable.status, term))!);
