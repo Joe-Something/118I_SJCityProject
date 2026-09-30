@@ -22,7 +22,10 @@ const fixture = randomUUID();
 const conversationId = fixture;
 const ticketId = randomUUID();
 const ordinaryId = randomUUID();
+const auditFailureTicketId = randomUUID();
+const auditFailureTriggerSuffix = randomUUID().replaceAll("-", "");
 const originalTime = new Date("2024-01-02T03:04:05.000Z");
+const auditFailureOriginalTime = new Date("2024-02-03T04:05:06.000Z");
 let outputDir;
 let server;
 let baseUrl;
@@ -34,7 +37,14 @@ async function request(method, route, actor = "anonymous", body) {
     headers: { "x-test-actor": actor, ...(body ? { "content-type": "application/json" } : {}) },
     ...(body ? { body: JSON.stringify(body) } : {}),
   });
-  return { status: response.status, body: await response.json() };
+  const text = await response.text();
+  let parsedBody = text;
+  try {
+    parsedBody = JSON.parse(text);
+  } catch {
+    // Express's default error response is HTML; preserve it for failure assertions.
+  }
+  return { status: response.status, body: parsedBody };
 }
 
 const queue = actor => request("GET", "/workspace/escalations", actor);
@@ -89,6 +99,9 @@ before(async () => {
   app.use((req, _res, next) => { req.log = { info() {}, warn() {} }; next(); });
   app.use(express.json());
   app.use("/api", router);
+  app.use((error, _req, res, _next) => {
+    res.status(500).json({ error: "Internal server error." });
+  });
   server = app.listen(0);
   await new Promise(resolve => server.once("listening", resolve));
   baseUrl = `http://127.0.0.1:${server.address().port}`;
@@ -96,7 +109,8 @@ before(async () => {
 
 after(async () => {
   if (server) await new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
-  await db.delete(workspaceAcknowledgementsTable).where(inArray(workspaceAcknowledgementsTable.ticketId, [ticketId, ...residentTicketIds]));
+  await db.delete(workspaceAcknowledgementsTable)
+    .where(inArray(workspaceAcknowledgementsTable.ticketId, [ticketId, auditFailureTicketId, ...residentTicketIds]));
   await db.delete(workspaceMessagesTable).where(eq(workspaceMessagesTable.conversationId, conversationId));
   await db.delete(workspaceConversationsTable).where(eq(workspaceConversationsTable.id, conversationId));
   if (outputDir) await rm(outputDir, { recursive: true, force: true });
@@ -128,6 +142,61 @@ test("authorized queue lists only urgent tickets without resident details or dis
   assert.equal((await ack("fire", ordinaryId)).status, 404);
   assert.equal((await ack("fire", randomUUID())).status, 404);
   assert.equal((await ack("fire", "bad-id")).status, 400);
+});
+
+test("an audit-write failure rolls back the urgent ticket acknowledgement", async () => {
+  const triggerName = `reject_ack_audit_${auditFailureTriggerSuffix}`;
+  const functionName = `reject_ack_audit_${auditFailureTriggerSuffix}`;
+  await db.insert(workspaceMessagesTable).values({
+    id: auditFailureTicketId,
+    conversationId,
+    role: "assistant",
+    content: "Prototype safety warning for audit failure test",
+    status: "high-urgency",
+    updatedAt: auditFailureOriginalTime,
+  });
+
+  let functionCreated = false;
+  let triggerCreated = false;
+  try {
+    await pool.query(`
+      CREATE FUNCTION public.${functionName}() RETURNS trigger
+      LANGUAGE plpgsql AS $$
+      BEGIN
+        RAISE EXCEPTION 'controlled audit write failure';
+      END;
+      $$;
+    `);
+    functionCreated = true;
+    await pool.query(`
+      CREATE TRIGGER ${triggerName}
+      BEFORE INSERT ON public.workspace_acknowledgements
+      FOR EACH ROW
+      WHEN (NEW.ticket_id = '${auditFailureTicketId}')
+      EXECUTE FUNCTION public.${functionName}();
+    `);
+    triggerCreated = true;
+
+    const response = await ack("fire", auditFailureTicketId);
+    assert.equal(response.status, 500, "the request must not report a successful acknowledgement");
+    assert.notEqual(response.body.status, "Acknowledged in prototype queue");
+
+    const [persisted] = await db.select().from(workspaceMessagesTable)
+      .where(eq(workspaceMessagesTable.id, auditFailureTicketId));
+    assert.equal(persisted.status, "high-urgency");
+    assert.equal(persisted.updatedAt.toISOString(), auditFailureOriginalTime.toISOString());
+
+    const auditRows = await db.select().from(workspaceAcknowledgementsTable)
+      .where(eq(workspaceAcknowledgementsTable.ticketId, auditFailureTicketId));
+    assert.equal(auditRows.length, 0, "a failed audit write must not commit an audit row");
+  } finally {
+    if (triggerCreated) {
+      await pool.query(`DROP TRIGGER ${triggerName} ON public.workspace_acknowledgements`);
+    }
+    if (functionCreated) {
+      await pool.query(`DROP FUNCTION public.${functionName}()`);
+    }
+  }
 });
 
 test("simultaneous reviewers share the first acknowledgement and create one audit event", async () => {
