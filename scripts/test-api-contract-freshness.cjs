@@ -74,6 +74,30 @@ function runTypecheck(fixture, { failApiGeneration = false } = {}) {
   };
 }
 
+function runBuild(fixture) {
+  const workspaceBuildLog = path.join(tempRoot, "workspace-builds.log");
+  fs.writeFileSync(callLog, "");
+  fs.rmSync(workspaceBuildLog, { force: true });
+  const result = run("sh", ["-c", rootPackage.scripts.build], {
+    cwd: fixture,
+    env: {
+      ...process.env,
+      PATH: `${shimDirectory}${path.delimiter}${process.env.PATH}`,
+      API_CONTRACT_SCRIPT: rootPackage.scripts["check:api-contract"],
+      ROOT_TYPECHECK_SCRIPT: rootPackage.scripts.typecheck,
+      PNPM_CALL_LOG: callLog,
+      PNPM_WORKSPACE_BUILD_LOG: workspaceBuildLog,
+    },
+  });
+  return {
+    ...result,
+    calls: fs.readFileSync(callLog, "utf8").trim().split("\n").filter(Boolean),
+    workspaceBuilds: fs.existsSync(workspaceBuildLog)
+      ? fs.readFileSync(workspaceBuildLog, "utf8").trim()
+      : "",
+  };
+}
+
 function assertFreshnessFailure(name, mutate, expectedPath) {
   const fixture = createFixture(name);
   mutate(fixture);
@@ -89,6 +113,36 @@ function assertFreshnessFailure(name, mutate, expectedPath) {
     result.calls,
     ["run check:api-contract", "--filter @workspace/api-spec run generate"],
     `${name} must stop before library or artifact typechecks`,
+  );
+}
+
+function assertBuildStopsOnStaleOutput() {
+  const fixture = createFixture("stale-build-output");
+  fs.writeFileSync(
+    path.join(fixture.fixture, fixture.clientFile),
+    "export const clientVersion = 2;\n",
+  );
+  const result = runBuild(fixture.fixture);
+  const output = `${result.stdout}${result.stderr}`;
+
+  assert.notEqual(result.status, 0, "root build should fail for stale API output");
+  assert.ok(
+    output.includes(fixture.clientFile),
+    `root build should identify stale output ${fixture.clientFile}:\n${output}`,
+  );
+  assert.deepEqual(
+    result.calls,
+    [
+      "run typecheck",
+      "run check:api-contract",
+      "--filter @workspace/api-spec run generate",
+    ],
+    "root build must stop after API freshness fails",
+  );
+  assert.equal(
+    result.workspaceBuilds,
+    "",
+    "workspace package build scripts must not run after API freshness fails",
   );
 }
 
@@ -119,6 +173,10 @@ try {
     pnpmShim,
     `#!/bin/sh
 printf '%s\\n' "$*" >> "$PNPM_CALL_LOG"
+if [ "$1" = "run" ] && [ "$2" = "typecheck" ]; then
+  sh -c "$ROOT_TYPECHECK_SCRIPT"
+  exit $?
+fi
 if [ "$1" = "run" ] && [ "$2" = "check:api-contract" ]; then
   sh -c "$API_CONTRACT_SCRIPT"
   exit $?
@@ -130,10 +188,16 @@ if [ "$1" = "--filter" ] && [ "$2" = "@workspace/api-spec" ] && [ "$3" = "run" ]
   fi
   exit 0
 fi
+if [ "$1" = "-r" ] && [ "$2" = "--if-present" ] && [ "$3" = "run" ] && [ "$4" = "build" ]; then
+  printf '%s\\n' "workspace build scripts ran" >> "$PNPM_WORKSPACE_BUILD_LOG"
+  exit 0
+fi
 exit 0
 `,
   );
   fs.chmodSync(pnpmShim, 0o755);
+
+  assertBuildStopsOnStaleOutput();
 
   assertFreshnessFailure(
     "changed-tracked-output",
@@ -203,7 +267,7 @@ exit 0
   ]);
 
   console.log(
-    "API contract checks passed (changed, deleted, untracked, clean output, and failed generation).",
+    "API contract checks passed (stale root build, changed, deleted, untracked, clean output, and failed generation).",
   );
 } finally {
   fs.rmSync(tempRoot, { recursive: true, force: true });
