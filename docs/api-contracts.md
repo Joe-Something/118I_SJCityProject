@@ -2,15 +2,15 @@
 
 `lib/api-spec/openapi.yaml` is the source of truth for the API contract.
 
-Run the generated React client freshness check with:
+Run the generated API output freshness check with:
 
 ```bash
 pnpm run check:api-contract
 ```
 
-The command regenerates the client and fails if generated files differ from the committed versions, including newly created files. The root `pnpm run typecheck` runs this check before artifact typechecks. When changing the OpenAPI spec, include the regenerated files under `lib/api-client-react/src/generated/` in the same commit.
+The command regenerates both the React Query client and the server's Zod validation schemas. It fails if generated files differ from the committed versions, including deleted or newly created files, under `lib/api-client-react/src/generated/` or `lib/api-zod/src/generated/`. The root `pnpm run typecheck` runs this check before artifact typechecks. When changing the OpenAPI spec, include the regenerated files from both directories in the same commit.
 
-To regenerate the client and validate library types during development, run:
+To regenerate both outputs and validate library types during development, run:
 
 ```bash
 pnpm --filter @workspace/api-spec run codegen

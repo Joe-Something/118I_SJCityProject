@@ -6,7 +6,7 @@
     "preinstall": "sh -c 'rm -f package-lock.json yarn.lock; case \"$npm_config_user_agent\" in pnpm/*) ;; *) echo \"Use pnpm instead\" >&2; exit 1 ;; esac'",
     "build": "pnpm run typecheck && pnpm -r --if-present run build",
     "typecheck:libs": "tsc --build",
-    "check:api-contract": "pnpm --filter @workspace/api-spec run generate && git diff --exit-code HEAD -- lib/api-client-react/src/generated && { untracked=$(git ls-files --others --exclude-standard -- lib/api-client-react/src/generated); if [ -n \"$untracked\" ]; then printf 'Untracked generated API client files:\\n%s\\n' \"$untracked\" >&2; exit 1; fi; }",
+    "check:api-contract": "pnpm --filter @workspace/api-spec run generate && git diff --exit-code HEAD -- lib/api-client-react/src/generated lib/api-zod/src/generated && { untracked=$(git ls-files --others --exclude-standard -- lib/api-client-react/src/generated lib/api-zod/src/generated); if [ -n \"$untracked\" ]; then printf 'Untracked generated API files:\\n%s\\n' \"$untracked\" >&2; exit 1; fi; }",
     "typecheck": "pnpm run check:api-contract && pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck"
   },
   "private": true,
