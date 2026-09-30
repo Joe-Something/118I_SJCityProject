@@ -7,6 +7,21 @@ import {
 import type { Persona } from '../prototypeStore';
 import type { StaffApplicationFilters } from '../components/StaffSearchFilters';
 
+export async function saveAndRefresh(
+  save: () => Promise<unknown>,
+  refresh: () => Promise<unknown>,
+): Promise<boolean> {
+  await save();
+  try {
+    await refresh();
+    return true;
+  } catch {
+    // The refresh hook has already recorded a stale-data warning. Its failure
+    // must not change the result of a save that the server accepted.
+    return false;
+  }
+}
+
 export function useApplicationRecords(persona: Persona, filters: StaffApplicationFilters) {
   const [records, setRecords] = useState<ApplicationRecord[]>([]);
   const [recordsLoading, setRecordsLoading] = useState(true);

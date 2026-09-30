@@ -6,6 +6,51 @@ const conversationId = '87654321-4321-4321-8321-abcdefabcdef';
 const createdAt = '2026-09-01T12:00:00.000Z';
 const urgentAnswer = `Flagged in prototype review queue · ${createdAt} · Ticket ${ticketId} · No email delivery or City dispatch confirmed\n\nThis may be an immediate safety hazard. Leave the area and contact emergency services or the appropriate City department now. This prototype has not notified emergency responders or City staff. A human-review item is marked in this workspace only.`;
 
+function staffQueueApplication(applicationId: string): ApplicationRecord {
+  return {
+    id: applicationId,
+    businessName: 'Review Save Test Cafe',
+    businessCategory: 'restaurant',
+    requestType: 'Building Permit',
+    status: 'Draft — Requires Review',
+    assignedDepartment: 'Building',
+    applicantLanguage: 'English',
+    submittedAt: '2026-09-15T12:00:00.000Z',
+    description: 'Interior renovation for a neighborhood cafe.',
+    synthetic: true,
+    plan: {
+      id: applicationId,
+      userId: 'test-applicant',
+      departments: ['Building'],
+      departmentAssignees: { Building: 'Marcus Johnson (Building)' },
+      intake: {
+        businessName: 'Review Save Test Cafe',
+        businessType: 'restaurant',
+        businessOther: '',
+        address: '123 Test Street',
+        zip: '95112',
+        description: 'Interior renovation for a neighborhood cafe.',
+        modifications: ['walls'],
+        modificationOther: '',
+        files: [],
+      },
+      language: 'en',
+      customLanguage: '',
+      simplified: false,
+      createdAt: Date.parse('2026-09-15T11:00:00.000Z'),
+      updatedAt: Date.parse('2026-09-15T12:00:00.000Z'),
+      submittedAt: Date.parse('2026-09-15T12:00:00.000Z'),
+      status: 'Draft — Requires Review',
+      notes: {},
+      overrides: {},
+      rejected: [],
+      matched: ['building-permits'],
+    },
+    createdAt: '2026-09-15T11:00:00.000Z',
+    updatedAt: '2026-09-15T12:00:00.000Z',
+  };
+}
+
 function queueItem(acknowledged: boolean, acknowledgedBy: string | null = null) {
   return {
     ticketId, createdAt,
@@ -395,6 +440,71 @@ test('staff queue stays usable through a failed refresh and updates after recove
   await expect(page.getByTestId('records-refresh-warning')).toHaveCount(0);
   await page.getByTestId('tab-staff-catalog').click();
   await expect(page.getByTestId(`catalog-record-${applicationId}`)).toContainText('Approved');
+});
+
+test('review save confirmation is separate from a failed queue refresh and update failures stay clear', async ({ page }) => {
+  const applicationId = 'REVIEW-SAVE-REFRESH-01';
+  let application = staffQueueApplication(applicationId);
+  let queueReads = 0;
+  let reviewUpdates = 0;
+  let failNextQueueRead = false;
+
+  await page.clock.install();
+  await page.route('**/api/**', async route => {
+    const { pathname } = new URL(route.request().url());
+    const method = route.request().method();
+    if (pathname === '/api/applications/staff' && method === 'GET') {
+      queueReads++;
+      if (failNextQueueRead) {
+        failNextQueueRead = false;
+        return route.fulfill({ status: 503, json: { error: 'Temporary outage' } });
+      }
+      return route.fulfill({ json: [application] });
+    }
+    if (pathname === `/api/applications/${applicationId}/review` && method === 'PATCH') {
+      reviewUpdates++;
+      if (reviewUpdates === 1) {
+        return route.fulfill({ status: 503, json: { error: 'Review could not be saved' } });
+      }
+      const body = route.request().postDataJSON() as { plan: Record<string, unknown> };
+      const status = String(body.plan.status);
+      application = {
+        ...application,
+        status,
+        plan: { ...application.plan, ...body.plan },
+        updatedAt: '2026-09-15T12:10:00.000Z',
+      };
+      return route.fulfill({ json: application });
+    }
+    if (pathname === `/api/applications/${applicationId}/history` && method === 'GET') {
+      return route.fulfill({ json: [] });
+    }
+    throw new Error(`Unexpected request: ${method} ${pathname}`);
+  });
+
+  await page.goto('/test/harness.html?queue=staff');
+  await page.getByTestId('tab-staff-queue').click();
+  const reviewCard = page.getByTestId(`active-plan-${applicationId}`);
+  await expect(reviewCard).toContainText('Draft — Requires Review');
+  await reviewCard.getByRole('button', { name: 'Review Plan' }).click();
+  await expect(page.getByTestId(`panel-staff-review-${applicationId}`)).toBeVisible();
+
+  await page.getByRole('button', { name: 'Complete Review' }).click();
+  await expect(page.getByText('Review not saved')).toBeVisible();
+  expect(reviewUpdates).toBe(1);
+
+  failNextQueueRead = true;
+  await page.getByRole('button', { name: 'Complete Review' }).click();
+  await expect.poll(() => reviewUpdates).toBe(2);
+  await expect.poll(() => queueReads).toBe(2);
+  await expect(page.getByText('Review saved', { exact: true })).toBeVisible();
+  await expect(page.getByText(
+    'Your change was saved, but the staff queue could not be refreshed. The warning on this page explains that the displayed data may be out of date.',
+    { exact: true },
+  )).toBeVisible();
+  await expect(page.getByTestId('records-refresh-warning'))
+    .toContainText('last successfully loaded review state');
+  await expect(reviewCard).toContainText('Draft — Requires Review');
 });
 
 test('applicant saved plans stay usable through a failed refresh and update after recovery', async ({ page }) => {

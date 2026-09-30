@@ -25,7 +25,7 @@ import { AIWorkspace, PublicWorkspace } from './components/AIWorkspace';
 import { StaffApplicationFilters } from './components/StaffSearchFilters';
 import { applicantId, readPersona, personaKey, PENDING_PERSONA_KEY, readPlans, Persona } from './prototypeStore';
 import { createApplication, getListApplicationHistoryQueryKey, postApplicationResponse, reviewApplication, updateMyApplication } from '@workspace/api-client-react';
-import { useApplicationRecords } from './hooks/useApplicationRecords';
+import { saveAndRefresh, useApplicationRecords } from './hooks/useApplicationRecords';
 
 const clerkPubKey = publishableKeyFromHost(
   window.location.hostname,
@@ -328,16 +328,24 @@ function PortalWorkspace({ persona, userId, onLogout }: { persona: Persona; user
 
   const saveStaffReview = async (planId: string, updates: Partial<ActivePlan>, showErrorToast = true) => {
     const current = plans.find(plan => plan.id === planId);
-    if (!current) return false;
+    if (!current) return { saved: false, refreshed: false };
     try {
-      await reviewApplication(planId, { plan: JSON.parse(JSON.stringify({ ...current, ...updates })) });
-      await refreshRows();
-      return true;
+      const refreshed = await saveAndRefresh(
+        () => reviewApplication(planId, { plan: JSON.parse(JSON.stringify({ ...current, ...updates })) }),
+        refreshRows,
+      );
+      if (!refreshed) {
+        toast({
+          title: 'Review saved',
+          description: 'Your change was saved, but the staff queue could not be refreshed. The warning on this page explains that the displayed data may be out of date.',
+        });
+      }
+      return { saved: true, refreshed };
     } catch {
       if (showErrorToast) {
         toast({ title: 'Review not saved', description: 'Please retry your change.', variant: 'destructive' });
       }
-      return false;
+      return { saved: false, refreshed: false };
     }
   };
 
@@ -358,13 +366,13 @@ function PortalWorkspace({ persona, userId, onLogout }: { persona: Persona; user
   };
 
   const handleStaffComplete = (planId: string, status: PlanStatus) => {
-    void saveStaffReview(planId, { status, completedAt: Date.now(), updatedAt: Date.now() }).then(saved => {
-      if (saved) toast({ title: 'Review Completed', description: `Plan has been marked as ${status}.` });
+    void saveStaffReview(planId, { status, completedAt: Date.now(), updatedAt: Date.now() }).then(({ saved, refreshed }) => {
+      if (saved && refreshed) toast({ title: 'Review Completed', description: `Plan has been marked as ${status}.` });
     });
   };
 
-  const handleStaffReopen = (planId: string) =>
-    saveStaffReview(planId, { status: 'In Review (Re-opened)', updatedAt: Date.now() }, false);
+  const handleStaffReopen = async (planId: string) =>
+    (await saveStaffReview(planId, { status: 'In Review (Re-opened)', updatedAt: Date.now() }, false)).saved;
 
   const currentDraft = currentPlanId ? myPlans.find(p => p.id === currentPlanId && p.status === 'Draft') : null;
   const activePlan = currentPlanId ? myPlans.find(p => p.id === currentPlanId) : null;
@@ -475,7 +483,7 @@ function PortalWorkspace({ persona, userId, onLogout }: { persona: Persona; user
           recordsError={recordsError}
           recordsRefreshWarning={recordsRefreshWarning}
           onCompleteReview={handleStaffComplete} 
-          onUpdateActivePlan={(id, updates) => saveStaffReview(id, updates)}
+          onUpdateActivePlan={async (id, updates) => (await saveStaffReview(id, updates)).saved}
           onPostResponse={postStaffResponse}
           onReopenReview={handleStaffReopen}
         />

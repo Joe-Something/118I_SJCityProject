@@ -8,9 +8,11 @@ import { StaffPortal } from '../src/components/StaffPortal';
 import type { ActivePlan, PlanStatus } from '../src/types';
 import type { Intake } from '../src/requirements';
 import { reviewApplication } from '@workspace/api-client-react';
-import { useApplicationRecords } from '../src/hooks/useApplicationRecords';
+import { saveAndRefresh, useApplicationRecords } from '../src/hooks/useApplicationRecords';
 import { applicantId, type StaffDesk, type Persona } from '../src/prototypeStore';
 import type { StaffApplicationFilters } from '../src/components/StaffSearchFilters';
+import { useToast } from '../src/hooks/use-toast';
+import { Toaster } from '../src/components/ui/toaster';
 import '../src/index.css';
 import '../src/workspace.css';
 
@@ -33,6 +35,7 @@ const testApplicantPersona: Persona = { kind: 'applicant', key: testApplicantKey
 
 function StaffQueueHarness() {
   const [filters, setFilters] = useState(emptyFilters);
+  const { toast } = useToast();
   const { records, recordsLoading, recordsError, recordsRefreshWarning, refreshRows } = useApplicationRecords(testStaffPersona, filters);
 
   const plans: ActivePlan[] = records.map(record => ({
@@ -49,31 +52,47 @@ function StaffQueueHarness() {
 
   const saveReview = async (planId: string, updates: Partial<ActivePlan>) => {
     const current = plans.find(plan => plan.id === planId);
-    if (!current) return false;
+    if (!current) return { saved: false, refreshed: false };
     try {
-      await reviewApplication(planId, { plan: JSON.parse(JSON.stringify({ ...current, ...updates })) });
-      await refreshRows();
-      return true;
+      const refreshed = await saveAndRefresh(
+        () => reviewApplication(planId, { plan: JSON.parse(JSON.stringify({ ...current, ...updates })) }),
+        refreshRows,
+      );
+      if (!refreshed) {
+        toast({
+          title: 'Review saved',
+          description: 'Your change was saved, but the staff queue could not be refreshed. The warning on this page explains that the displayed data may be out of date.',
+        });
+      }
+      return { saved: true, refreshed };
     } catch {
-      return false;
+      toast({ title: 'Review not saved', description: 'Please retry your change.', variant: 'destructive' });
+      return { saved: false, refreshed: false };
     }
   };
 
   return (
-    <StaffPortal
-      desk="Building Code Reviewer"
-      activeQueue={activeQueue}
-      catalog={catalog}
-      records={records}
-      filters={filters}
-      onFiltersChange={setFilters}
-      recordsLoading={recordsLoading}
-      recordsError={recordsError}
-      recordsRefreshWarning={recordsRefreshWarning}
-      onCompleteReview={(id, status) => { void saveReview(id, { status, completedAt: Date.now(), updatedAt: Date.now() }); }}
-      onUpdateActivePlan={(id, updates) => { void saveReview(id, updates); }}
-      onReopenReview={id => saveReview(id, { status: 'In Review (Re-opened)', updatedAt: Date.now() })}
-    />
+    <>
+      <StaffPortal
+        desk="Building Code Reviewer"
+        activeQueue={activeQueue}
+        catalog={catalog}
+        records={records}
+        filters={filters}
+        onFiltersChange={setFilters}
+        recordsLoading={recordsLoading}
+        recordsError={recordsError}
+        recordsRefreshWarning={recordsRefreshWarning}
+        onCompleteReview={(id, status) => {
+          void saveReview(id, { status, completedAt: Date.now(), updatedAt: Date.now() }).then(({ saved, refreshed }) => {
+            if (saved && refreshed) toast({ title: 'Review Completed', description: `Plan has been marked as ${status}.` });
+          });
+        }}
+        onUpdateActivePlan={async (id, updates) => (await saveReview(id, updates)).saved}
+        onReopenReview={async id => (await saveReview(id, { status: 'In Review (Re-opened)', updatedAt: Date.now() })).saved}
+      />
+      <Toaster />
+    </>
   );
 }
 
