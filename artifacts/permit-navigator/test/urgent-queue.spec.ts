@@ -20,6 +20,7 @@ for (const desk of ['Fire Prevention', 'Economic Development'] as const) {
   test(`${desk}: queue loading, error, retry, acknowledgement and refreshed state`, async ({ page }) => {
     let queueReads = 0;
     let acknowledged = false;
+    let acknowledgementAttempts = 0;
     let releaseFirst!: () => void;
     const firstRead = new Promise<void>(resolve => { releaseFirst = resolve; });
 
@@ -34,6 +35,10 @@ for (const desk of ['Fire Prevention', 'Economic Development'] as const) {
         return route.fulfill({ json: [queueItem(acknowledged)] });
       }
       if (pathname === `/api/workspace/escalations/${ticketId}/acknowledge` && route.request().method() === 'POST') {
+        acknowledgementAttempts++;
+        if (acknowledgementAttempts === 1) {
+          return route.fulfill({ status: 503, json: { error: 'Acknowledgement unavailable' } });
+        }
         acknowledged = true;
         return route.fulfill({ json: queueItem(true) });
       }
@@ -49,6 +54,10 @@ for (const desk of ['Fire Prevention', 'Economic Development'] as const) {
     await queue.getByRole('button', { name: 'Retry' }).click();
     await expect(queue.getByText(`Ticket ${ticketId}`, { exact: false })).toBeVisible();
     await queue.getByRole('button', { name: 'Acknowledge in prototype queue' }).click();
+    await expect(queue.getByRole('alert')).toContainText('Acknowledgement could not be saved');
+    await expect(queue.getByRole('button', { name: 'Acknowledge in prototype queue' })).toBeVisible();
+    await queue.getByRole('button', { name: 'Acknowledge in prototype queue' }).click();
+    await expect.poll(() => acknowledgementAttempts).toBe(2);
     await expect.poll(() => queueReads).toBeGreaterThanOrEqual(3); // invalidation refetched the GET
     await expect(queue.getByText('Acknowledged in prototype queue')).toBeVisible();
     await expect(queue.getByRole('button', { name: 'Acknowledge in prototype queue' })).toHaveCount(0);
