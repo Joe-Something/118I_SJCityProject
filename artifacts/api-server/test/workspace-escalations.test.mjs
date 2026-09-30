@@ -6,8 +6,10 @@ import { pathToFileURL } from "node:url";
 import path from "node:path";
 import esbuild from "esbuild";
 import express from "express";
-import { and, eq } from "drizzle-orm";
-import { db, pool, workspaceConversationsTable, workspaceMessagesTable } from "@workspace/db";
+import { and, eq, inArray } from "drizzle-orm";
+import {
+  db, pool, workspaceAcknowledgementsTable, workspaceConversationsTable, workspaceMessagesTable,
+} from "@workspace/db";
 
 // Exercise the real route, access checks, response schemas, and PostgreSQL.
 // Replace only Clerk's network boundary; never allow a client-provided role
@@ -24,6 +26,7 @@ const originalTime = new Date("2024-01-02T03:04:05.000Z");
 let outputDir;
 let server;
 let baseUrl;
+const residentTicketIds = [];
 
 async function request(method, route, actor = "anonymous", body) {
   const response = await fetch(`${baseUrl}/api${route}`, {
@@ -93,6 +96,7 @@ before(async () => {
 
 after(async () => {
   if (server) await new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+  await db.delete(workspaceAcknowledgementsTable).where(inArray(workspaceAcknowledgementsTable.ticketId, [ticketId, ...residentTicketIds]));
   await db.delete(workspaceMessagesTable).where(eq(workspaceMessagesTable.conversationId, conversationId));
   await db.delete(workspaceConversationsTable).where(eq(workspaceConversationsTable.id, conversationId));
   if (outputDir) await rm(outputDir, { recursive: true, force: true });
@@ -126,33 +130,76 @@ test("authorized queue lists only urgent tickets without resident details or dis
   assert.equal((await ack("fire", "bad-id")).status, 400);
 });
 
-test("simultaneous staff acknowledgements make one durable state transition", async () => {
-  const results = await Promise.all(Array.from({ length: 8 }, (_, index) =>
-    ack(index % 2 ? "fire" : "economic")));
+test("simultaneous reviewers share the first acknowledgement and create one audit event", async () => {
+  const results = await Promise.all([ack("fire"), ack("economic")]);
   assert.ok(results.every(result => result.status === 200), JSON.stringify(results));
   const timestamps = results.map(result => result.body.acknowledgedAt);
   assert.ok(timestamps[0]);
-  assert.equal(new Set(timestamps).size, 1, "all requests return the original winning acknowledgement");
+  assert.equal(new Set(timestamps).size, 1, "both requests return the original winning timestamp");
   assert.ok(new Date(timestamps[0]) > originalTime);
   assert.ok(results.every(result => result.body.status === "Acknowledged in prototype queue"));
 
-  const repeated = await ack("fire");
+  const auditRowsBeforeRetry = await db.select().from(workspaceAcknowledgementsTable)
+    .where(eq(workspaceAcknowledgementsTable.ticketId, ticketId));
+  assert.equal(auditRowsBeforeRetry.length, 1, "the ticket has exactly one audit event");
+  const [auditBeforeRetry] = auditRowsBeforeRetry;
+  assert.ok(["fire", "economic"].includes(auditBeforeRetry.staffUserId));
+  assert.equal(auditBeforeRetry.staffDepartment, auditBeforeRetry.staffUserId === "fire" ? "Fire" : "Economic Development");
+  assert.equal(auditBeforeRetry.acknowledgedAt.toISOString(), timestamps[0]);
+  for (const result of results) {
+    assert.equal(result.body.acknowledgedBy, auditBeforeRetry.staffUserId);
+    assert.equal(result.body.acknowledgedDepartment, auditBeforeRetry.staffDepartment);
+    assert.equal(result.body.acknowledgedAt, auditBeforeRetry.acknowledgedAt.toISOString());
+  }
+
+  const otherReviewer = auditBeforeRetry.staffUserId === "fire" ? "economic" : "fire";
+  const repeated = await ack(otherReviewer);
   assert.equal(repeated.status, 200);
   assert.equal(repeated.body.acknowledgedAt, timestamps[0]);
+  assert.equal(repeated.body.acknowledgedBy, auditBeforeRetry.staffUserId);
+  assert.equal(repeated.body.acknowledgedDepartment, auditBeforeRetry.staffDepartment);
+  const auditRowsAfterRetry = await db.select().from(workspaceAcknowledgementsTable)
+    .where(eq(workspaceAcknowledgementsTable.ticketId, ticketId));
+  assert.equal(auditRowsAfterRetry.length, 1, "a repeat request does not add an audit event");
+  assert.deepEqual(auditRowsAfterRetry[0], auditBeforeRetry, "a repeat request does not modify the winning audit event");
+
   const [persisted] = await db.select().from(workspaceMessagesTable)
     .where(and(eq(workspaceMessagesTable.id, ticketId), eq(workspaceMessagesTable.status, "high-urgency-acknowledged")));
   assert.ok(persisted);
-  assert.equal(persisted.updatedAt.toISOString(), timestamps[0]);
+  assert.equal(persisted.updatedAt.toISOString(), auditBeforeRetry.acknowledgedAt.toISOString());
   const reloaded = await queue("economic");
-  assert.equal(reloaded.body.find(row => row.ticketId === ticketId).acknowledgedAt, timestamps[0]);
+  const queueTicket = reloaded.body.find(row => row.ticketId === ticketId);
+  assert.equal(queueTicket.acknowledgedAt, timestamps[0]);
+  assert.equal(queueTicket.acknowledgedBy, auditBeforeRetry.staffUserId);
+  assert.equal(queueTicket.acknowledgedDepartment, auditBeforeRetry.staffDepartment);
   assert.equal((await ack("resident")).status, 403, "resident cannot change an acknowledged ticket");
 });
+
+const staffIdentityFields = new Set(["acknowledgedBy", "acknowledgedDepartment", "staffUserId", "staffDepartment"]);
+
+function assertNoStaffIdentity(value) {
+  if (Array.isArray(value)) {
+    value.forEach(assertNoStaffIdentity);
+  } else if (value && typeof value === "object") {
+    for (const [key, nested] of Object.entries(value)) {
+      assert.equal(staffIdentityFields.has(key), false, `resident response must not expose ${key}`);
+      assertNoStaffIdentity(nested);
+    }
+  }
+}
+
+function assertResidentMessageShape(message) {
+  assert.deepEqual(Object.keys(message).sort(), ["content", "createdAt", "id", "role"]);
+}
 
 test("hazardous resident message creates a ticket but never claims delivery or staff action", async () => {
   const sent = await request("POST", `/workspace/conversations/${conversationId}/messages`, "resident", {
     content: "There is a gas leak near my shop",
   });
   assert.equal(sent.status, 201);
+  residentTicketIds.push(sent.body.message.id);
+  assertNoStaffIdentity(sent.body);
+  assertResidentMessageShape(sent.body.message);
   const [saved] = await db.select().from(workspaceMessagesTable).where(eq(workspaceMessagesTable.id, sent.body.message.id));
   assert.equal(saved.status, "high-urgency");
   assert.match(sent.body.message.content, /leave the area and contact emergency services/i);
@@ -166,11 +213,16 @@ test("hazardous resident message creates a ticket but never claims delivery or s
 
   const messages = await request("GET", `/workspace/conversations/${conversationId}/messages`, "resident");
   assert.equal(messages.status, 200);
+  assertNoStaffIdentity(messages.body);
   const residentAnswer = messages.body.find(row => row.id === newTicket);
+  assertResidentMessageShape(residentAnswer);
   assert.equal(residentAnswer.content, sent.body.message.content);
   assert.equal((await ack("economic", newTicket)).status, 200);
   const reloaded = await request("GET", `/workspace/conversations/${conversationId}/messages`, "resident");
-  assert.equal(reloaded.body.find(row => row.id === newTicket).content, residentAnswer.content,
+  assertNoStaffIdentity(reloaded.body);
+  const reloadedResidentAnswer = reloaded.body.find(row => row.id === newTicket);
+  assertResidentMessageShape(reloadedResidentAnswer);
+  assert.equal(reloadedResidentAnswer.content, residentAnswer.content,
     "internal acknowledgement does not silently alter the resident-facing warning");
   assert.equal((await request("GET", `/workspace/conversations/${conversationId}/messages`, "fire")).status, 404);
 });
