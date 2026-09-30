@@ -102,6 +102,11 @@ function StaffPlanReview({
                     <button className="button-primary" style={{ width: 'auto', marginTop: 0 }} onClick={() => { updateNotes(reqId, noteText); setNoteFor(null); }} data-testid={`button-save-note-${plan.id}-${reqId}`}>Save note</button>
                   </div>
                 )}
+                {!noteFor && plan.notes[reqId] && (
+                  <div className="modified-notice" style={{ marginTop: '10px' }} data-testid={`text-staff-note-${plan.id}-${reqId}`}>
+                    Staff note: {plan.notes[reqId]}
+                  </div>
+                )}
 
                 {overrideFor === reqId && (
                   <div style={{ marginTop: '12px' }}>

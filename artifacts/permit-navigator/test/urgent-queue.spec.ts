@@ -120,7 +120,7 @@ test('urgent queue refreshes when another reviewer acknowledges a ticket', async
   }
 });
 
-test('submitted review status refreshes in another open staff queue', async ({ browser }) => {
+test('reviewer decisions survive completion, reopening, another session refresh, and reload', async ({ browser }) => {
   const applicationId = 'SUBMITTED-BUILDING-REVIEW-01';
   const submittedAt = '2026-09-15T12:00:00.000Z';
   const createdAt = '2026-09-15T11:00:00.000Z';
@@ -229,8 +229,20 @@ test('submitted review status refreshes in another open staff queue', async ({ b
     expect(secondQueueReads).toBeGreaterThan(0);
 
     await firstQueue.getByRole('button', { name: 'Review Plan' }).click();
-    await firstQueue.getByRole('button', { name: 'Complete Review' }).click();
+    await firstQueue.getByTestId(`button-note-${applicationId}-building-permits`).click();
+    await firstQueue.getByTestId(`input-note-${applicationId}-building-permits`).fill('Confirm the accessible entrance clearance.');
+    await firstQueue.getByTestId(`button-save-note-${applicationId}-building-permits`).click();
     await expect.poll(() => reviewerUpdates).toBe(1);
+
+    await firstQueue.getByTestId(`button-override-${applicationId}-business-registration`).click();
+    await firstQueue.getByTestId(`textarea-override-${applicationId}-business-registration`).fill('Use the updated neighborhood business registration checklist.');
+    await firstQueue.getByTestId(`button-save-override-${applicationId}-business-registration`).click();
+    await expect.poll(() => reviewerUpdates).toBe(2);
+
+    await firstQueue.getByTestId(`button-reject-${applicationId}-zoning-clearance`).click();
+    await expect.poll(() => reviewerUpdates).toBe(3);
+    await firstQueue.getByRole('button', { name: 'Complete Review' }).click();
+    await expect.poll(() => reviewerUpdates).toBe(4);
     await expect(firstReviewer.getByText('Queue Empty')).toBeVisible();
 
     // The other session remains unchanged until its production polling interval runs.
@@ -241,10 +253,18 @@ test('submitted review status refreshes in another open staff queue', async ({ b
 
     await expect(secondReviewer.getByText('Queue Empty')).toBeVisible();
     await secondReviewer.getByTestId('tab-staff-catalog').click();
-    await expect(secondReviewer.getByTestId(`catalog-record-${applicationId}`)).toContainText('Approved');
+    const catalogRecord = secondReviewer.getByTestId(`catalog-record-${applicationId}`);
+    await expect(catalogRecord).toContainText('Rejected');
+    await expect(catalogRecord).toContainText('Confirm the accessible entrance clearance.');
+    await expect(catalogRecord).toContainText('Use the updated neighborhood business registration checklist.');
+    await expect(catalogRecord).toContainText('zoning-clearance: Rejected');
     await secondReviewer.getByTestId(`button-reopen-${applicationId}`).click();
-    await expect.poll(() => reviewerUpdates).toBe(2);
-    await expect(secondReviewer.getByTestId(`active-plan-${applicationId}`)).toContainText('In Review (Re-opened)');
+    await expect.poll(() => reviewerUpdates).toBe(5);
+    const reopenedInSecondSession = secondReviewer.getByTestId(`active-plan-${applicationId}`);
+    await expect(reopenedInSecondSession).toContainText('In Review (Re-opened)');
+    await expect(secondReviewer.getByTestId(`text-staff-note-${applicationId}-building-permits`)).toContainText('Confirm the accessible entrance clearance.');
+    await expect(reopenedInSecondSession).toContainText('Use the updated neighborhood business registration checklist.');
+    await expect(secondReviewer.getByTestId(`button-reapprove-${applicationId}-zoning-clearance`)).toBeVisible();
 
     // Reopening in the catalog returns the plan to the other session's queue on its regular poll.
     await expect(firstReviewer.getByText('Queue Empty')).toBeVisible();
@@ -252,7 +272,19 @@ test('submitted review status refreshes in another open staff queue', async ({ b
     await firstReviewer.clock.fastForward(15_000);
     await expect.poll(() => firstQueueReads).toBeGreaterThan(firstReadsBeforeReopenPolling);
     await expect(firstQueue).toContainText('In Review (Re-opened)');
-    expect(firstDocumentLoads).toBe(1);
+    await expect(firstReviewer.getByTestId(`text-staff-note-${applicationId}-building-permits`)).toContainText('Confirm the accessible entrance clearance.');
+    await expect(firstQueue).toContainText('Use the updated neighborhood business registration checklist.');
+    await expect(firstReviewer.getByTestId(`button-reapprove-${applicationId}-zoning-clearance`)).toBeVisible();
+
+    await firstReviewer.reload();
+    await firstReviewer.getByTestId('tab-staff-queue').click();
+    const refreshedQueue = firstReviewer.getByTestId(`active-plan-${applicationId}`);
+    await expect(refreshedQueue).toContainText('In Review (Re-opened)');
+    await refreshedQueue.getByRole('button', { name: 'Review Plan' }).click();
+    await expect(firstReviewer.getByTestId(`text-staff-note-${applicationId}-building-permits`)).toContainText('Confirm the accessible entrance clearance.');
+    await expect(refreshedQueue).toContainText('Use the updated neighborhood business registration checklist.');
+    await expect(firstReviewer.getByTestId(`button-reapprove-${applicationId}-zoning-clearance`)).toBeVisible();
+    expect(firstDocumentLoads).toBe(2);
     expect(secondDocumentLoads).toBe(1);
   } finally {
     await Promise.all([firstSession.close(), secondSession.close()]);
