@@ -27,7 +27,8 @@ const applicantKeyB = `case-b-${fixture}`;
 const draftId = `PRIVACY-DRAFT-${fixture}`;
 const buildingId = `PRIVACY-BUILDING-${fixture}`;
 const fireId = `PRIVACY-FIRE-${fixture}`;
-const ids = [draftId, buildingId, fireId];
+const reviewId = `REVIEW-PERSISTENCE-${fixture}`;
+const ids = [draftId, buildingId, fireId, reviewId];
 const privateValues = {
   owner: `PRIVATE_OWNER_${fixture}`,
   applicant: `PRIVATE_APPLICANT_${fixture}`,
@@ -203,6 +204,7 @@ before(async () => {
     saveApplication(draftId, ownerA, applicantKeyA, "Draft", "Building", null),
     saveApplication(buildingId, ownerA, applicantKeyA, "Draft — Requires Review", "Building", submittedAt),
     saveApplication(fireId, ownerB, applicantKeyB, "Draft — Requires Review", "Fire", submittedAt),
+    saveApplication(reviewId, ownerB, applicantKeyB, "Draft — Requires Review", "Building", submittedAt),
   ]);
   await db.insert(statusHistoryTable).values(ids.map((applicationId, index) => ({
     id: `PRIVACY-HISTORY-${fixture}-${index}`,
@@ -457,6 +459,53 @@ test("approved reviewers can persist server administrator access, then restore a
   assert.equal(deniedDocumentsAfterDisable.status, 404);
   const deniedHistoryAfterDisable = await request("GET", `/applications/${fireId}/history`, "building");
   assert.equal(deniedHistoryAfterDisable.status, 403);
+});
+
+test("reviewer notes, overrides, and rejections persist through completion and reopening", async () => {
+  const reviewerNote = "Confirm the accessible entrance clearance.";
+  const override = "Use the updated neighborhood business registration checklist.";
+  const rejectedItem = "zoning-clearance";
+
+  const savedDecision = await request("PATCH", `/applications/${reviewId}/review`, "building", {
+    plan: {
+      status: "Draft — Requires Review",
+      notes: { "building-permits": reviewerNote },
+      overrides: { "business-registration": override },
+      rejected: [rejectedItem],
+    },
+  });
+  assert.equal(savedDecision.status, 200);
+  assert.equal(savedDecision.body.plan.notes["building-permits"], reviewerNote);
+  assert.equal(savedDecision.body.plan.overrides["business-registration"], override);
+  assert.deepEqual(savedDecision.body.plan.rejected, [rejectedItem]);
+
+  const completed = await request("PATCH", `/applications/${reviewId}/review`, "building", {
+    plan: { status: "Rejected" },
+  });
+  assert.equal(completed.status, 200);
+  assert.equal(completed.body.status, "Rejected");
+  assert.equal(typeof completed.body.plan.completedAt, "number");
+
+  const reopened = await request("PATCH", `/applications/${reviewId}/review`, "building", {
+    plan: { status: "In Review (Re-opened)" },
+  });
+  assert.equal(reopened.status, 200);
+  assert.equal(reopened.body.status, "In Review (Re-opened)");
+  assert.equal(reopened.body.plan.completedAt, null);
+
+  const reloaded = await request("GET", `/applications/staff?applicationId=${reviewId}`, "building");
+  assert.equal(reloaded.status, 200);
+  assert.equal(reloaded.body.length, 1);
+  assert.equal(reloaded.body[0].status, "In Review (Re-opened)");
+  assert.equal(reloaded.body[0].plan.notes["building-permits"], reviewerNote);
+  assert.equal(reloaded.body[0].plan.overrides["business-registration"], override);
+  assert.deepEqual(reloaded.body[0].plan.rejected, [rejectedItem]);
+
+  const [stored] = await db.select().from(applicationsTable).where(eq(applicationsTable.id, reviewId));
+  assert.equal(stored.status, "In Review (Re-opened)");
+  assert.equal(stored.plan.notes["building-permits"], reviewerNote);
+  assert.equal(stored.plan.overrides["business-registration"], override);
+  assert.deepEqual(stored.plan.rejected, [rejectedItem]);
 });
 
 test("staff queue falls back only for transient database failures and recovers on the next request", async () => {
