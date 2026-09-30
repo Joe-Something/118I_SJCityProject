@@ -10,7 +10,7 @@ export function signedInUser(req: Request, res: Response): string | null {
   return id;
 }
 
-/** Private Clerk user metadata is only assignable by an administrator, never the browser. */
+/** Staff eligibility is server-managed; every approved staff reviewer has administrator access. */
 export type AuthorizedStaff = {
   id: string;
   department: string;
@@ -37,5 +37,5 @@ export async function authorizedStaff(req: Request, res: Response): Promise<Auth
     res.status(403).json({ error: "Staff access requires an administrator-assigned Clerk staff role." });
     return null;
   }
-  return { id, department, administratorEnabled: user.privateMetadata?.staffAdministratorEnabled === true };
+  return { id, department, administratorEnabled: true };
 }

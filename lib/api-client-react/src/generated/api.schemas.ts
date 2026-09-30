@@ -26,13 +26,10 @@ export const StaffAccessAccessibleDepartmentsItem = {
 } as const;
 
 export interface StaffAccess {
+  /** Always true for a server-approved City Staff account. */
   administratorEnabled: boolean;
   assignedDepartment: StaffAccessAssignedDepartment;
   accessibleDepartments: StaffAccessAccessibleDepartmentsItem[];
-}
-
-export interface StaffAccessUpdate {
-  administratorEnabled: boolean;
 }
 
 export interface WorkspaceEscalation {

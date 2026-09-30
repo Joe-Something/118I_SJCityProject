@@ -15,36 +15,13 @@ paths:
     get:
       operationId: getStaffAccess
       tags: [staff]
-      summary: Read administrator access for the signed-in staff reviewer
+      summary: Read automatic administrator access for the signed-in staff reviewer
       responses:
         "200":
           description: Reviewer department and effective department access
           content:
             application/json:
               schema: { $ref: "#/components/schemas/StaffAccess" }
-        "401":
-          description: Sign in required
-        "403":
-          description: Only administrator-assigned staff reviewers may use this endpoint
-        "503":
-          description: Staff access service is temporarily unavailable
-    put:
-      operationId: updateStaffAccess
-      tags: [staff]
-      summary: Enable or disable cross-department administrator access for the signed-in reviewer
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: "#/components/schemas/StaffAccessUpdate" }
-      responses:
-        "200":
-          description: Updated reviewer department and effective department access
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/StaffAccess" }
-        "400":
-          description: Invalid access update
         "401":
           description: Sign in required
         "403":
@@ -419,17 +396,13 @@ components:
       additionalProperties: false
       required: [administratorEnabled, assignedDepartment, accessibleDepartments]
       properties:
-        administratorEnabled: { type: boolean }
+        administratorEnabled:
+          type: boolean
+          description: Always true for a server-approved City Staff account.
         assignedDepartment: { type: string, enum: [Planning, Building, Fire, Economic Development] }
         accessibleDepartments:
           type: array
           items: { type: string, enum: [Planning, Building, Fire, Economic Development] }
-    StaffAccessUpdate:
-      type: object
-      additionalProperties: false
-      required: [administratorEnabled]
-      properties:
-        administratorEnabled: { type: boolean }
     WorkspaceEscalation:
       type: object
       required: [ticketId, status, departmentInbox, summary, createdAt, acknowledgedAt, acknowledgedBy, acknowledgedDepartment, deliveryStatus, testRecipient]

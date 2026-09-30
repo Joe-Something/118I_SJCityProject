@@ -37,6 +37,7 @@ const fixtureRecordIds = fixturePermitNumbers.map(number => `SJ-OPEN-${number}`)
 const importerPermitNumber = fixturePermitNumbers[0];
 const importerRecordId = `SJ-OPEN-${importerPermitNumber}`;
 const ticketId = randomUUID();
+const administratorAcknowledgementTicketId = randomUUID();
 const ordinaryId = randomUUID();
 const legacyAcknowledgedTicketId = randomUUID();
 const auditFailureTicketId = randomUUID();
@@ -142,6 +143,7 @@ before(async () => {
   });
   await db.insert(workspaceMessagesTable).values([
     { id: ticketId, conversationId, role: "assistant", content: "Prototype safety warning", status: "high-urgency", updatedAt: originalTime },
+    { id: administratorAcknowledgementTicketId, conversationId, role: "assistant", content: "City Staff administrator acknowledgement test", status: "high-urgency", updatedAt: originalTime },
     { id: ordinaryId, conversationId, role: "assistant", content: "Regular guidance", status: "complete" },
     {
       id: legacyAcknowledgedTicketId,
@@ -205,7 +207,10 @@ before(async () => {
 after(async () => {
   if (server) await new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
   await db.delete(workspaceAcknowledgementsTable)
-    .where(inArray(workspaceAcknowledgementsTable.ticketId, [ticketId, legacyAcknowledgedTicketId, auditFailureTicketId, ...residentTicketIds]));
+    .where(inArray(workspaceAcknowledgementsTable.ticketId, [
+      ticketId, administratorAcknowledgementTicketId, legacyAcknowledgedTicketId, auditFailureTicketId,
+      ...residentTicketIds,
+    ]));
   await db.delete(workspaceMessagesTable).where(eq(workspaceMessagesTable.conversationId, conversationId));
   await db.delete(workspaceConversationsTable).where(eq(workspaceConversationsTable.id, conversationId));
   await db.delete(applicationsTable)
@@ -575,18 +580,24 @@ test("successful City refresh removes previously cached stale and future-dated r
   assert.equal(ListWorkspaceRecordsResponse.parse(currentResponse.body).length, 1);
 });
 
-test("queue and acknowledgement reject anonymous, resident, and non-queue staff", async () => {
-  for (const [actor, expected] of [["anonymous", 401], ["resident", 403], ["unassigned", 403], ["building", 403]]) {
+test("queue and acknowledgement reject anonymous, resident, and unassigned accounts", async () => {
+  for (const [actor, expected] of [["anonymous", 401], ["resident", 403], ["unassigned", 403]]) {
     assert.equal((await queue(actor)).status, expected, `${actor} queue`);
     assert.equal((await ack(actor)).status, expected, `${actor} acknowledgement`);
   }
+  assert.equal((await queue("building")).status, 200, "every approved City Staff reviewer can access the queue");
+  assert.equal(
+    (await ack("building", administratorAcknowledgementTicketId)).status,
+    200,
+    "every approved City Staff reviewer can acknowledge tickets",
+  );
   const [row] = await db.select().from(workspaceMessagesTable).where(eq(workspaceMessagesTable.id, ticketId));
   assert.equal(row.status, "high-urgency");
   assert.equal(row.updatedAt.toISOString(), originalTime.toISOString());
 });
 
 test("authorized queue lists only urgent tickets without resident details or dispatch promises", async () => {
-  for (const actor of ["fire", "economic"]) {
+  for (const actor of ["fire", "economic", "building"]) {
     const response = await queue(actor);
     assert.equal(response.status, 200);
     const item = response.body.find(row => row.ticketId === ticketId);
@@ -715,8 +726,12 @@ test("simultaneous reviewers share the first acknowledgement and create one audi
     .where(eq(workspaceAcknowledgementsTable.ticketId, ticketId));
   assert.equal(auditRowsBeforeRetry.length, 1, "the ticket has exactly one audit event");
   const [auditBeforeRetry] = auditRowsBeforeRetry;
-  assert.ok(["fire", "economic"].includes(auditBeforeRetry.staffUserId));
-  assert.equal(auditBeforeRetry.staffDepartment, auditBeforeRetry.staffUserId === "fire" ? "Fire" : "Economic Development");
+  assert.ok(["fire", "economic", "building"].includes(auditBeforeRetry.staffUserId));
+  assert.equal(auditBeforeRetry.staffDepartment, {
+    fire: "Fire",
+    economic: "Economic Development",
+    building: "Building",
+  }[auditBeforeRetry.staffUserId]);
   assert.equal(auditBeforeRetry.acknowledgedAt.toISOString(), timestamps[0]);
   for (const result of results) {
     assert.equal(result.body.acknowledgedBy, auditBeforeRetry.staffUserId);

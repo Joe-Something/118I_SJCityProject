@@ -32,7 +32,6 @@ export * from './searchStaffApplicationsParams';
 export * from './staffAccess';
 export * from './staffAccessAccessibleDepartmentsItem';
 export * from './staffAccessAssignedDepartment';
-export * from './staffAccessUpdate';
 export * from './statusEvent';
 export * from './workspaceConversation';
 export * from './workspaceConversationInput';

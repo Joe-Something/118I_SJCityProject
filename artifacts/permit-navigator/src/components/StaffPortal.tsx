@@ -270,7 +270,7 @@ export function StaffPortal({
         </div>
         <span className="catalog-badge" data-testid="staff-desk-label">{desk} desk</span>
       </div>
-      {administratorEnabled && <p className="verification-notice" role="status" data-testid="administrator-access-notice">Administrator access is enabled for this account on the server. The account’s assigned department is {assignedDepartment}; the current queue view is {staffRole === 'Master City Queue' ? 'all departments' : staffRole}.</p>}
+      {administratorEnabled && <p className="verification-notice" role="status" data-testid="administrator-access-notice">City Staff accounts have administrator access across all departments. The account’s assigned department is {assignedDepartment}; the current queue view is {staffRole === 'Master City Queue' ? 'all departments' : staffRole}.</p>}
       {(administratorEnabled || staffRole === 'Fire' || staffRole === 'Economic Development') && (
         <section className="verification-notice" aria-label="High-urgency review queue">
           <AlertCircle size={18} />

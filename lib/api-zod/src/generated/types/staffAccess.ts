@@ -9,6 +9,7 @@ import type { StaffAccessAccessibleDepartmentsItem } from './staffAccessAccessib
 import type { StaffAccessAssignedDepartment } from './staffAccessAssignedDepartment';
 
 export interface StaffAccess {
+  /** Always true for a server-approved City Staff account. */
   administratorEnabled: boolean;
   assignedDepartment: StaffAccessAssignedDepartment;
   accessibleDepartments: StaffAccessAccessibleDepartmentsItem[];

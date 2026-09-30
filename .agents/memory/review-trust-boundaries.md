@@ -9,8 +9,8 @@ Removing prototype or demo branding does not remove the need to identify synthet
 
 **How to apply:** Keep sample-data and non-official-decision disclosures even when improving enterprise-facing language. Use administrator-managed Clerk private-metadata eligibility for private staff operations. Describe in-app messages separately from external delivery.
 
-The user explicitly chose to let all server-approved staff reviewers activate cross-department administrator mode, not just separately designated administrators. Applicants and unapproved accounts remain ineligible. Turning mode off restores the account's assigned-department rules.
+All server-approved City Staff reviewers have automatic cross-department administrator access. There is no Administrator Role toggle. Applicants and unapproved accounts remain ineligible.
 
-**Why:** The user requested an operational Administrator Role toggle and chose all approved reviewers when asked who should be eligible. This replaces the earlier UI-only simulation policy, without permitting arbitrary signed-in accounts to elevate themselves.
+**Why:** The user replaced the opt-in administrator policy with automatic full access for City Staff and explicitly requested removal of the button. This does not make a browser-selected persona an authorization credential.
 
-**How to apply:** Verify reviewer eligibility server-side on every request, persist activation server-side, preserve the assigned department, and have the browser reflect confirmed permissions rather than grant them itself.
+**How to apply:** Verify staff eligibility server-side on every request, grant eligible staff access to all departments without checking a legacy administrator-mode setting, preserve the assigned department for attribution, and have the browser reflect confirmed permissions.

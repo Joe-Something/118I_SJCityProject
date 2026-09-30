@@ -26,7 +26,7 @@ import { RequirementCard } from './components/RequirementCard';
 import { AIWorkspace, PublicWorkspace } from './components/AIWorkspace';
 import { StaffApplicationFilters } from './components/StaffSearchFilters';
 import { applicantId, readPersona, personaKey, PENDING_PERSONA_KEY, readPlans, Persona } from './prototypeStore';
-import { createApplication, getListApplicationHistoryQueryKey, getStaffAccess, postApplicationResponse, reviewApplication, updateMyApplication, updateStaffAccess, type StaffAccess as StaffAccessProfile } from '@workspace/api-client-react';
+import { createApplication, getListApplicationHistoryQueryKey, getStaffAccess, postApplicationResponse, reviewApplication, updateMyApplication, type StaffAccess as StaffAccessProfile } from '@workspace/api-client-react';
 import { saveAndRefresh, useApplicationRecords } from './hooks/useApplicationRecords';
 import { isStaleWrite } from './utils/writeErrors';
 import { isDemoSeedApplicationId } from './utils/applicationResilience';
@@ -131,14 +131,12 @@ function PortalWorkspace({ persona, userId, onLogout }: { persona: Persona; user
   const { signOut } = useClerk();
   const { toast } = useToast();
   const applicationQueryClient = useQueryClient();
-  const [staffDepartment, setStaffDepartment] = useState<StaffDepartmentView>(() => persona.kind === 'staff' && persona.desk === 'Building Code Reviewer' ? 'Building' : persona.kind === 'staff' && persona.desk === 'Fire Prevention' ? 'Fire' : 'Economic Development');
+  const [staffDepartment, setStaffDepartment] = useState<StaffDepartmentView>('Master City Queue');
   const [staffAccess, setStaffAccess] = useState<StaffAccess | null>(null);
   const [staffAccessLoading, setStaffAccessLoading] = useState(persona.kind === 'staff');
-  const [staffAccessSaving, setStaffAccessSaving] = useState(false);
   const [staffAccessError, setStaffAccessError] = useState('');
   const accessRequestId = useRef(0);
   const staffAccessController = useRef<AbortController | null>(null);
-  const staffAccessMutationInProgress = useRef(false);
   const staffAccessSnapshot = useRef<StaffAccess | null>(null);
 
   const clearStaffScopedQueries = useCallback(() => {
@@ -150,14 +148,7 @@ function PortalWorkspace({ persona, userId, onLogout }: { persona: Persona; user
     void applicationQueryClient.invalidateQueries({ predicate: isStaffScopedQuery });
   }, [applicationQueryClient]);
 
-  const cancelPendingStaffAccessRead = useCallback(() => {
-    const pending = staffAccessController.current;
-    if (pending) pending.abort();
-    staffAccessController.current = null;
-  }, []);
-
   const loadStaffAccess = useCallback(async (signal?: AbortSignal) => {
-    if (staffAccessMutationInProgress.current) return;
     staffAccessController.current?.abort();
     const controller = new AbortController();
     staffAccessController.current = controller;
@@ -167,7 +158,7 @@ function PortalWorkspace({ persona, userId, onLogout }: { persona: Persona; user
     try {
       const value: unknown = await getStaffAccess({ signal: controller.signal });
       if (!isStaffAccess(value)) throw new Error('The server returned an invalid staff access profile.');
-      if (!shouldApplyStaffAccessResponse(requestId, accessRequestId.current, staffAccessMutationInProgress.current, controller.signal.aborted)) return;
+      if (!shouldApplyStaffAccessResponse(requestId, accessRequestId.current, false, controller.signal.aborted)) return;
       if (staffPermissionsChanged(staffAccessSnapshot.current, value)) clearStaffScopedQueries();
       staffAccessSnapshot.current = value;
       setStaffAccess(value);
@@ -179,21 +170,21 @@ function PortalWorkspace({ persona, userId, onLogout }: { persona: Persona; user
       ));
       setStaffAccessError('');
     } catch (error) {
-      if (!shouldApplyStaffAccessResponse(requestId, accessRequestId.current, staffAccessMutationInProgress.current, controller.signal.aborted)) return;
+      if (!shouldApplyStaffAccessResponse(requestId, accessRequestId.current, false, controller.signal.aborted)) return;
       staffAccessSnapshot.current = null;
       setStaffAccess(null);
       const status = error && typeof error === 'object' && 'status' in error ? error.status : undefined;
       setStaffAccessError(status === 403
         ? 'Staff access requires an administrator-approved reviewer account.'
         : status === 401 ? 'Your sign-in has expired. Sign in again.'
-          : status === 503 ? 'The server could not verify your permissions. The staff workspace is temporarily unavailable; retry before changing access.'
+          : status === 503 ? 'The server could not verify your permissions. The staff workspace is temporarily unavailable; retry to reconnect.'
             : error instanceof Error ? error.message : 'Could not verify your staff permissions. Try again.');
       clearStaffScopedQueries();
     } finally {
       if (staffAccessController.current === controller) staffAccessController.current = null;
       if (!controller.signal.aborted && requestId === accessRequestId.current) setStaffAccessLoading(false);
     }
-  }, [cancelPendingStaffAccessRead, clearStaffScopedQueries]);
+  }, [clearStaffScopedQueries]);
 
   useEffect(() => {
     if (persona.kind !== 'staff') {
@@ -213,46 +204,6 @@ function PortalWorkspace({ persona, userId, onLogout }: { persona: Persona; user
       window.removeEventListener('focus', refreshOnFocus);
     };
   }, [loadStaffAccess, persona.kind, userId]);
-
-  const updateAdministratorMode = async () => {
-    if (!staffAccess || staffAccessLoading || staffAccessSaving) return;
-    let refreshPermissionState = false;
-    staffAccessMutationInProgress.current = true;
-    setStaffAccessSaving(true);
-    setStaffAccessError('');
-    cancelPendingStaffAccessRead();
-    accessRequestId.current += 1;
-    try {
-      const value: unknown = await updateStaffAccess({ administratorEnabled: !staffAccess.administratorEnabled });
-      if (!isStaffAccess(value)) throw new Error('The server returned an invalid staff access profile.');
-      accessRequestId.current += 1;
-      cancelPendingStaffAccessRead();
-      staffAccessSnapshot.current = value;
-      setStaffAccess(value);
-      setStaffDepartment(value.administratorEnabled
-        ? (staffDepartment === 'Master City Queue' || value.accessibleDepartments.includes(staffDepartment) ? staffDepartment : value.assignedDepartment)
-        : value.assignedDepartment);
-      setFilters(current => ({ ...current, assignedDepartment: '' }));
-      clearStaffScopedQueries();
-      toast({
-        title: value.administratorEnabled ? 'Administrator access enabled' : 'Administrator access disabled',
-        description: value.administratorEnabled
-          ? 'The server now authorizes your account to review across all departments.'
-          : `Administrator mode is off. Standard ${value.assignedDepartment} reviewer access is restored.`,
-      });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Administrator access could not be updated.';
-      setStaffAccessError(message);
-      toast({ title: 'Permission update failed', description: message, variant: 'destructive' });
-      refreshPermissionState = true;
-    } finally {
-      staffAccessMutationInProgress.current = false;
-      accessRequestId.current += 1;
-      cancelPendingStaffAccessRead();
-      setStaffAccessSaving(false);
-      if (refreshPermissionState) void loadStaffAccess();
-    }
-  };
 
   useEffect(() => () => {
     applicationQueryClient.removeQueries({
@@ -620,19 +571,6 @@ function PortalWorkspace({ persona, userId, onLogout }: { persona: Persona; user
             {persona.kind === 'applicant' ? `Applicant · ${persona.key}` : `City Staff · ${persona.desk}`}
           </div>
            {persona.kind === 'staff' && <div className="staff-context-controls">
-             <button
-               type="button"
-               className="button-tertiary"
-               aria-pressed={staffAccess?.administratorEnabled ?? false}
-               disabled={staffAccessLoading || staffAccessSaving || !staffAccess}
-               title={staffAccess?.administratorEnabled
-                 ? 'Turn off server-authorized access to all departments.'
-                 : 'Turn on server-authorized access to all departments.'}
-               onClick={() => void updateAdministratorMode()}
-               data-testid="button-administrator-role"
-             >
-               {staffAccessLoading ? 'Checking permissions…' : staffAccessSaving ? 'Updating access…' : `Administrator Role · ${staffAccess?.administratorEnabled ? 'On' : 'Off'}`}
-             </button>
              <label htmlFor="staff-department">Department <select
                id="staff-department"
                value={staffDepartment}

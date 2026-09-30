@@ -9,24 +9,10 @@ import * as zod from 'zod';
 
 
 /**
- * @summary Read administrator access for the signed-in staff reviewer
+ * @summary Read automatic administrator access for the signed-in staff reviewer
  */
 export const GetStaffAccessResponse = zod.object({
-  "administratorEnabled": zod.boolean(),
-  "assignedDepartment": zod.enum(['Planning', 'Building', 'Fire', 'Economic Development']),
-  "accessibleDepartments": zod.array(zod.enum(['Planning', 'Building', 'Fire', 'Economic Development']))
-})
-
-
-/**
- * @summary Enable or disable cross-department administrator access for the signed-in reviewer
- */
-export const UpdateStaffAccessBody = zod.object({
-  "administratorEnabled": zod.boolean()
-})
-
-export const UpdateStaffAccessResponse = zod.object({
-  "administratorEnabled": zod.boolean(),
+  "administratorEnabled": zod.boolean().describe('Always true for a server-approved City Staff account.'),
   "assignedDepartment": zod.enum(['Planning', 'Building', 'Fire', 'Economic Development']),
   "accessibleDepartments": zod.array(zod.enum(['Planning', 'Building', 'Fire', 'Economic Development']))
 })

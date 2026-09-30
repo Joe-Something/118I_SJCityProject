@@ -155,7 +155,7 @@ before(async () => {
           contents: `
             const testStaff = {
               building: { staffRole: "reviewer", staffDepartment: "Building", staffAdministratorEnabled: false },
-              fire: { staffRole: "reviewer", staffDepartment: "Fire", staffAdministratorEnabled: false },
+              fire: { staffRole: "reviewer", staffDepartment: "Fire" },
               economic: { staffRole: "reviewer", staffDepartment: "Economic Development", staffAdministratorEnabled: false },
               unassigned: { staffRole: "reviewer" },
               resident: {},
@@ -240,7 +240,7 @@ test("applicant list returns only rows owned by that user and applicant key", as
   assert.deepEqual(differentApplicantKey.body, []);
 });
 
-test("history detail is limited to the owner and an authorized reviewer", async () => {
+test("history detail is limited to the owner and an authorized staff reviewer", async () => {
   const ownerDetail = await request("GET", `/applications/${buildingId}/history`, ownerA);
   assert.equal(ownerDetail.status, 200);
   assert.equal(ownerDetail.body.length, 1);
@@ -255,11 +255,11 @@ test("history detail is limited to the owner and an authorized reviewer", async 
 
   const assignedReviewer = await request("GET", `/applications/${buildingId}/history`, "building");
   assert.equal(assignedReviewer.status, 200);
-  const unassignedReviewer = await request("GET", `/applications/${buildingId}/history`, "fire");
-  assert.equal(unassignedReviewer.status, 403);
+  const crossDepartmentReviewer = await request("GET", `/applications/${buildingId}/history`, "fire");
+  assert.equal(crossDepartmentReviewer.status, 200);
 });
 
-test("reviewer list is department-scoped and omits applicant identity fields", async () => {
+test("all approved staff reviewers can access every department and applicant identity stays private", async () => {
   const buildingReviewer = await request("GET", `/applications/staff?applicationId=${buildingId}`, "building");
   assert.equal(buildingReviewer.status, 200);
   assert.equal(buildingReviewer.body.length, 1);
@@ -275,7 +275,7 @@ test("reviewer list is department-scoped and omits applicant identity fields", a
 
   const wrongDepartment = await request("GET", `/applications/staff?applicationId=${buildingId}`, "fire");
   assert.equal(wrongDepartment.status, 200);
-  assert.deepEqual(wrongDepartment.body, []);
+  assert.deepEqual(wrongDepartment.body.map(row => row.id), [buildingId]);
 
   const fireRecord = await request("GET", `/applications/staff?applicationId=${fireId}`, "fire");
   assert.equal(fireRecord.status, 200);
@@ -292,13 +292,13 @@ test("reviewer list is department-scoped and omits applicant identity fields", a
   }
 });
 
-test("approved reviewers can persist server administrator access, then restore assigned access", async () => {
+test("all approved reviewers receive server administrator access automatically", async () => {
   const initial = await request("GET", "/staff/access", "building");
   assert.equal(initial.status, 200);
   assert.deepEqual(initial.body, {
-    administratorEnabled: false,
+    administratorEnabled: true,
     assignedDepartment: "Building",
-    accessibleDepartments: ["Building"],
+    accessibleDepartments: ["Planning", "Building", "Fire", "Economic Development"],
   });
 
   const unauthorizedActors = [
@@ -307,85 +307,23 @@ test("approved reviewers can persist server administrator access, then restore a
     ["unassigned", 403],
   ];
   for (const [actor, expectedStatus] of unauthorizedActors) {
-    const denied = await request("PUT", "/staff/access", actor, { administratorEnabled: true });
+    const denied = await request("GET", "/staff/access", actor);
     assert.equal(denied.status, expectedStatus);
   }
   const unavailableProfile = await request("GET", "/staff/access", "lookupFailure");
   assert.equal(unavailableProfile.status, 503);
+  const removedToggle = await request("PUT", "/staff/access", "building", { administratorEnabled: false });
+  assert.equal(removedToggle.status, 404);
 
-  const malformed = await request("PUT", "/staff/access", "building", { administratorEnabled: "true" });
-  assert.equal(malformed.status, 400);
-  const extraField = await request("PUT", "/staff/access", "building", {
-    administratorEnabled: true,
-    userId: "resident",
-  });
-  assert.equal(extraField.status, 400);
-
-  for (const authorization of ["Bearer attacker-token", "bearer attacker-token"]) {
-    const crossOrigin = await fetch(`${baseUrl}/api/staff/access`, {
-      method: "PUT",
-      headers: {
-        "x-test-actor": "building",
-        authorization,
-        origin: "https://attacker.invalid",
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({ administratorEnabled: true }),
-    });
-    assert.equal(crossOrigin.status, 403);
+  const legacyDisabledMetadata = await request("GET", "/staff/access", "building");
+  const legacyUnsetMetadata = await request("GET", "/staff/access", "fire");
+  for (const profile of [legacyDisabledMetadata, legacyUnsetMetadata]) {
+    assert.equal(profile.status, 200);
+    assert.equal(profile.body.administratorEnabled, true);
+    assert.deepEqual(profile.body.accessibleDepartments, [
+      "Planning", "Building", "Fire", "Economic Development",
+    ]);
   }
-
-  const wrongScheme = await fetch(`${baseUrl}/api/staff/access`, {
-    method: "PUT",
-    headers: {
-      "x-test-actor": "building",
-      origin: baseUrl.replace("http://", "https://"),
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({ administratorEnabled: true }),
-  });
-  assert.equal(wrongScheme.status, 403);
-
-  const bearerWithoutOrigin = await fetch(`${baseUrl}/api/staff/access`, {
-    method: "PUT",
-    headers: {
-      "x-test-actor": "building",
-      authorization: "Bearer attacker-token",
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({ administratorEnabled: true }),
-  });
-  assert.equal(bearerWithoutOrigin.status, 403);
-  const bearerMutation = await fetch(`${baseUrl}/api/staff/access`, {
-    method: "PUT",
-    headers: {
-      "x-test-actor": "fire",
-      authorization: "Bearer verified-test-token",
-      origin: baseUrl,
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({ administratorEnabled: true }),
-  });
-  assert.equal(bearerMutation.status, 200);
-  assert.deepEqual((await bearerMutation.json()).accessibleDepartments, ["Planning", "Building", "Fire", "Economic Development"]);
-  const bearerModeReset = await request("PUT", "/staff/access", "fire", { administratorEnabled: false });
-  assert.equal(bearerModeReset.status, 200);
-
-  const clerkFailure = await request("PUT", "/staff/access", "metadataFailure", { administratorEnabled: true });
-  assert.equal(clerkFailure.status, 503);
-  assert.deepEqual(clerkFailure.body, {
-    error: "Staff permissions could not be updated. Your current permissions remain unchanged.",
-  });
-
-  const deniedBeforeGrant = await request("GET", `/applications/staff?applicationId=${fireId}`, "building");
-  assert.deepEqual(deniedBeforeGrant.body, []);
-  const enabled = await request("PUT", "/staff/access", "building", { administratorEnabled: true });
-  assert.equal(enabled.status, 200);
-  assert.deepEqual(enabled.body, {
-    administratorEnabled: true,
-    assignedDepartment: "Building",
-    accessibleDepartments: ["Planning", "Building", "Fire", "Economic Development"],
-  });
 
   const crossDepartmentList = await request("GET", `/applications/staff?applicationId=${fireId}`, "building");
   assert.equal(crossDepartmentList.status, 200);
@@ -447,18 +385,9 @@ test("approved reviewers can persist server administrator access, then restore a
   const otherApplicantsRecords = await request("GET", `/applications/mine?applicantKey=${applicantKeyB}`, "building");
   assert.deepEqual(otherApplicantsRecords.body, []);
 
-  const disabled = await request("PUT", "/staff/access", "building", { administratorEnabled: false });
-  assert.deepEqual(disabled.body, {
-    administratorEnabled: false,
-    assignedDepartment: "Building",
-    accessibleDepartments: ["Building"],
-  });
-  const deniedAfterDisable = await request("GET", `/applications/staff?applicationId=${fireId}`, "building");
-  assert.deepEqual(deniedAfterDisable.body, []);
-  const deniedDocumentsAfterDisable = await request("GET", `/applications/${fireId}/documents`, "building");
-  assert.equal(deniedDocumentsAfterDisable.status, 404);
-  const deniedHistoryAfterDisable = await request("GET", `/applications/${fireId}/history`, "building");
-  assert.equal(deniedHistoryAfterDisable.status, 403);
+  assert.equal(crossDepartmentList.body[0].assignedDepartment, "Fire");
+  const continuesCrossDepartmentAccess = await request("GET", `/applications/staff?applicationId=${fireId}`, "building");
+  assert.deepEqual(continuesCrossDepartmentAccess.body.map(row => row.id), [fireId]);
 });
 
 test("reviewer notes, overrides, and rejections persist through completion and reopening", async () => {
@@ -525,7 +454,8 @@ test("staff queue falls back only for transient database failures and recovers o
     const unavailable = await request("GET", "/applications?businessCategory=Bakery", "building");
     assert.equal(transientFailures, 2, "the query is retried once before the sample fallback");
     assert.equal(unavailable.status, 200);
-    assert.equal(unavailable.body.length, 1);
+    assert.ok(unavailable.body.length > 0, "authorized staff can query sample fallback in every department");
+    assert.ok(unavailable.body.every(row => row.plan._dataSource === "sample-fallback"));
     assert.match(unavailable.body[0].id, /^DEMO-D2-/);
     assert.equal(unavailable.body[0].plan._dataSource, "sample-fallback");
     assert.equal(unavailable.body[0].plan.intake.applicantEmail, "sample-applicant-2@example.invalid");

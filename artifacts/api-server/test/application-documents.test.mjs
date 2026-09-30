@@ -359,7 +359,7 @@ test("canceled uploads retain tombstones through signed-link expiry and remove a
     .where(eq(applicationDocumentsTable.id, pending.id))).length, 0);
 });
 
-test("submitted documents are readable only by their owner or assigned authorized staff", async () => {
+test("submitted documents are readable only by their owner or approved city staff", async () => {
   const reserved = await upload("submitter", submittedId);
   assert.equal(reserved.response.status, 403, "submitted owners cannot change documents");
 
@@ -382,7 +382,9 @@ test("submitted documents are readable only by their owner or assigned authorize
   });
 
   assert.equal((await request("GET", `/applications/${submittedId}/documents`, "stranger")).status, 403);
-  assert.equal((await request("GET", `/applications/${submittedId}/documents`, "fire")).status, 404);
+  const crossDepartmentStaff = await request("GET", `/applications/${submittedId}/documents`, "fire");
+  assert.equal(crossDepartmentStaff.status, 200);
+  assert.equal((await crossDepartmentStaff.json()).length, 1);
   assert.equal((await request("GET", `/applications/${submittedId}/documents`, "unassigned")).status, 403);
   const assigned = await request("GET", `/applications/${submittedId}/documents`, "building");
   assert.equal(assigned.status, 200);
@@ -392,8 +394,9 @@ test("submitted documents are readable only by their owner or assigned authorize
 
   const hiddenCity = await request("GET", `/applications/${cityId}/documents`, "economic");
   assert.equal(hiddenCity.status, 404, "public City rows never expose application documents");
-  const deniedContent = await request("GET", `/applications/${submittedId}/documents/${doc.id}/content`, "fire");
-  assert.equal(deniedContent.status, 404);
+  const crossDepartmentContent = await request("GET", `/applications/${submittedId}/documents/${doc.id}/content`, "fire");
+  assert.equal(crossDepartmentContent.status, 200);
+  assert.equal(Buffer.from(await crossDepartmentContent.arrayBuffer()).toString(), "%PDF-1.7\n");
   const content = await request("GET", `/applications/${submittedId}/documents/${doc.id}/content?download=1`, "building");
   assert.equal(content.status, 200);
   assert.equal(content.headers.get("cache-control"), "no-store");
