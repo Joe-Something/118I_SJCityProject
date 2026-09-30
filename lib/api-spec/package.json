@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "scripts": {
-    "generate": "orval --config ./orval.config.ts",
+    "generate": "orval --config ./orval.config.ts && sed -i \"\\\\|^export \\\\* from './generated/types';$|d\" ../api-zod/src/index.ts",
     "codegen": "pnpm run generate && pnpm -w run typecheck:libs"
   },
   "devDependencies": {

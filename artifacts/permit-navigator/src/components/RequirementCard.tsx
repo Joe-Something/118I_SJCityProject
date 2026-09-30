@@ -15,7 +15,7 @@ export function RequirementCard({ reqId, language, simplified, note, onEdit }: {
   return <article className="requirement-card" data-testid={`card-requirement-${reqId}`}>
     <div className="requirement-top">
       <div className="req-icon"><Building2 size={18} /></div>
-      <div><h3>{reqCopy.name}</h3><p>Demo Data — Synthetic · {PROTOTYPE_REQUIREMENT_VERSION} · example revised {PROTOTYPE_REQUIREMENT_REVISED}</p><p>{displayedDesc}</p></div>
+      <div><h3>{reqCopy.name}</h3><p>Synthetic example · {PROTOTYPE_REQUIREMENT_VERSION} · sample revised {PROTOTYPE_REQUIREMENT_REVISED}</p><p>{displayedDesc}</p></div>
       <span className="req-department">{reqCopy.dept}</span>
     </div>
     <div className="req-body">

@@ -130,6 +130,74 @@ paths:
               schema:
                 type: array
                 items: { $ref: "#/components/schemas/StatusEvent" }
+  /applications/{id}/documents:
+    get:
+      operationId: listApplicationDocuments
+      tags: [applications]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Documents available to the owner or authorized staff assigned to this submitted application
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/ApplicationDocument" }
+  /applications/{id}/documents/upload-url:
+    post:
+      operationId: requestApplicationDocumentUpload
+      tags: [applications]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ApplicationDocumentInput" }
+      responses:
+        "201":
+          description: Short-lived upload URL and reserved document metadata
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ApplicationDocumentUpload" }
+  /applications/{id}/documents/{documentId}/complete:
+    post:
+      operationId: completeApplicationDocumentUpload
+      tags: [applications]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string } }
+        - { in: path, name: documentId, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: Verified, ready document metadata
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ApplicationDocument" }
+  /applications/{id}/documents/{documentId}:
+    delete:
+      operationId: deleteApplicationDocument
+      tags: [applications]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string } }
+        - { in: path, name: documentId, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "204":
+          description: Document and private object deleted
+  /applications/{id}/documents/{documentId}/content:
+    get:
+      operationId: downloadApplicationDocument
+      tags: [applications]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string } }
+        - { in: path, name: documentId, required: true, schema: { type: string, format: uuid } }
+        - { in: query, name: download, schema: { type: boolean, default: false } }
+      responses:
+        "200":
+          description: Protected document content
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
   /applications/{id}/response:
     post:
       operationId: postApplicationResponse
@@ -371,17 +439,42 @@ components:
         plan: { type: object, additionalProperties: true }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
+    ApplicationDocument:
+      type: object
+      required: [id, name, size, contentType, state, uploadedAt]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        size: { type: integer }
+        contentType: { type: string, enum: [application/pdf, image/png, image/jpeg] }
+        state: { type: string, enum: [pending, ready] }
+        uploadedAt: { type: ["string", "null"], format: date-time }
+    ApplicationDocumentInput:
+      type: object
+      required: [name, size, contentType]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 200 }
+        size: { type: integer, minimum: 1, maximum: 10485760 }
+        contentType: { type: string, enum: [application/pdf, image/png, image/jpeg] }
+    ApplicationDocumentUpload:
+      type: object
+      required: [uploadUrl, document]
+      properties:
+        uploadUrl: { type: string, format: uri }
+        document: { $ref: "#/components/schemas/ApplicationDocument" }
     ApplicationInput:
       type: object
       required: [applicantKey, plan]
       properties:
         applicantKey: { type: string, minLength: 1, maxLength: 200 }
         plan: { type: object, additionalProperties: true }
+        expectedUpdatedAt: { type: string, format: date-time, description: Version returned by the last application read; stale writes are rejected with 409 }
     ApplicationReview:
       type: object
       required: [plan]
       properties:
         plan: { type: object, additionalProperties: true }
+        expectedUpdatedAt: { type: string, format: date-time, description: Version returned by the last application read; stale review writes are rejected with 409 }
     ApplicationResponseInput:
       type: object
       required: [text]

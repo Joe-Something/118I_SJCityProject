@@ -32,7 +32,11 @@ export function ApplicantDashboard({
       <div key={plan.id} className="catalog-card" style={{ marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }} data-testid={`dashboard-plan-card-${plan.id}`}>
         <div>
             <div style={{ fontWeight: 600, fontSize: 16 }}>{plan.intake.businessName || plan.intake.address || 'Untitled Project'}</div>
-            <div style={{ fontSize: 11, color: 'hsl(var(--muted-foreground))', marginTop: 3 }}>Application ID: {plan.id} · Prototype application</div>
+            <div style={{ fontSize: 11, color: 'hsl(var(--muted-foreground))', marginTop: 3 }}>Application ID: {plan.id}</div>
+           {plan.notes?._staff_response && <div className="verification-notice" style={{ margin: '12px 0 0', padding: 11 }} role="status" data-testid={`notification-applicant-response-${plan.id}`}>
+             <strong>In-app notification · Staff response available</strong><p style={{ margin: '5px 0' }}>A reviewer posted guidance on this application. No email was sent.</p>
+             <button className="button-secondary" onClick={() => onResume(plan)} data-testid={`button-open-response-${plan.id}`}>Open response <ChevronRight size={14} /></button>
+           </div>}
            <div style={{ fontSize: 13, color: 'hsl(var(--muted-foreground))', marginTop: 4 }}>
              {plan.intake.businessType ? (t.businessLabels[plan.intake.businessType] || plan.intake.businessOther || 'Unknown Type') : 'Draft'} &middot; {new Date(plan.updatedAt).toLocaleDateString()}
              <div style={{ display: 'inline-block', marginLeft: 8 }} className="catalog-badge">
@@ -50,7 +54,7 @@ export function ApplicantDashboard({
            
            {showEst && (
              <div style={{ marginTop: 8, fontSize: 12, color: 'hsl(var(--primary))', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}>
-               <Clock3 size={14} /> Est. 2–3 business days for staff verification
+               <Clock3 size={14} /> Awaiting staff verification · No guaranteed completion date
              </div>
            )}
         </div>

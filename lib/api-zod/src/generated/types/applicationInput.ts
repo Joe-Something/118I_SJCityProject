@@ -14,4 +14,6 @@ export interface ApplicationInput {
      */
   applicantKey: string;
   plan: ApplicationInputPlan;
+  /** Version returned by the last application read; stale writes are rejected with 409 */
+  expectedUpdatedAt?: Date;
 }

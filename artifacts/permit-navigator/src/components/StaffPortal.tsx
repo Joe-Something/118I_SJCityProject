@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { ActivePlan, Department } from '../types';
 import { ReviewCatalog } from './ReviewCatalog';
@@ -61,7 +61,7 @@ function StaffPlanReview({
     <div className="staff-panel" aria-busy={saving} data-testid={`panel-staff-review-${plan.id}`}>
           <div className="staff-panel-header">
             <div>
-              <h2>City Staff Review Mode</h2>
+               <h2>Staff recommendation review</h2>
               <p>Confirm, adjust, or explain each suggested starting point before the plan is marked as reviewed.</p>
             </div>
             <div className="staff-tools">
@@ -72,7 +72,7 @@ function StaffPlanReview({
                   data-testid={`button-complete-review-${plan.id}`}
                   style={{ marginTop: 0 }}
                 >
-                  <CheckCircle2 size={16} /> Complete Review
+                   <CheckCircle2 size={16} /> Complete recommendation
                 </button>
             </div>
           </div>
@@ -88,11 +88,11 @@ function StaffPlanReview({
                   <strong style={{ fontSize: 13, textDecoration: isRejected ? 'line-through' : 'none' }}>{reqCopyEn.name}</strong>
                   <div style={{ display: 'flex', gap: 6 }}>
                      {isRejected ? (
-                       <button className="button-secondary" disabled={saving} onClick={() => void toggleReject(reqId)} data-testid={`button-reapprove-${plan.id}-${reqId}`}><Check size={13} /> Re-approve</button>
+                        <button className="button-secondary" disabled={saving} onClick={() => void toggleReject(reqId)} data-testid={`button-reapprove-${plan.id}-${reqId}`}><Check size={13} /> Restore topic</button>
                     ) : (
                       <>
-                         <button className="button-secondary" disabled={saving} onClick={() => void updateNotes(reqId, plan.notes[reqId] ?? 'Reviewed as a preliminary item; verify with the relevant department.')} data-testid={`button-approve-${plan.id}-${reqId}`}><Check size={13} /> Approve</button>
-                         <button className="button-danger" disabled={saving} onClick={() => void toggleReject(reqId)} data-testid={`button-reject-${plan.id}-${reqId}`}><X size={13} /> Reject</button>
+                          <button className="button-secondary" disabled={saving} onClick={() => void updateNotes(reqId, plan.notes[reqId] ?? 'Reviewed as a preliminary item; verify with the relevant department.')} data-testid={`button-approve-${plan.id}-${reqId}`}><Check size={13} /> Keep topic</button>
+                          <button className="button-danger" disabled={saving} onClick={() => void toggleReject(reqId)} data-testid={`button-reject-${plan.id}-${reqId}`}><X size={13} /> Remove topic</button>
                       </>
                     )}
                     <button className="button-tertiary" onClick={() => { setNoteFor(noteFor === reqId ? null : reqId); setNoteText(plan.notes[reqId] ?? ''); }} data-testid={`button-note-${plan.id}-${reqId}`}><Plus size={13} /> Note</button>
@@ -142,10 +142,12 @@ function StaffPlanReview({
   );
 }
 
-export type StaffRole = 'Master City Queue' | Department;
+export type StaffRole = 'Master City Queue' | 'Planning' | 'Building' | 'Fire' | 'Economic Development';
 
 export function StaffPortal({ 
   desk,
+  selectedDepartment,
+  simulateAdmin,
   activeQueue, 
   catalog,
   records,
@@ -154,12 +156,15 @@ export function StaffPortal({
   recordsLoading,
   recordsError,
   recordsRefreshWarning,
+  onRefreshRecords,
   onCompleteReview, 
   onUpdateActivePlan,
   onPostResponse,
   onReopenReview
 }: { 
   desk: StaffDesk;
+  selectedDepartment: Exclude<StaffRole, 'Master City Queue'>;
+  simulateAdmin: boolean;
   activeQueue: ActivePlan[];
   catalog: ActivePlan[];
   records: ApplicationRecord[];
@@ -168,28 +173,30 @@ export function StaffPortal({
   recordsLoading: boolean;
   recordsError: string;
   recordsRefreshWarning: string;
+  onRefreshRecords: () => Promise<void>;
   onCompleteReview: (planId: string, finalStatus: ActivePlan['status']) => void;
   onUpdateActivePlan: (planId: string, updates: Partial<ActivePlan>) => Promise<boolean>;
   onPostResponse: (planId: string, text: string) => Promise<boolean>;
   onReopenReview: (recordId: string) => Promise<boolean>;
 }) {
   const queryClient = useQueryClient();
-  const [staffTab, setStaffTab] = useState<'queue' | 'catalog' | 'public'>('public');
+  const [staffTab, setStaffTab] = useState<'queue' | 'catalog' | 'public'>('queue');
   const [expandedPlans, setExpandedPlans] = useState<string[]>([]);
   const [ackError, setAckError] = useState('');
   const acknowledge = useAcknowledgeWorkspaceEscalation();
   
-  const staffRole: StaffRole = desk === 'Building Code Reviewer' ? 'Building' : desk === 'Fire Prevention' ? 'Fire' : 'Master City Queue';
+  const staffRole: StaffRole = simulateAdmin ? 'Master City Queue' : selectedDepartment;
   const escalations = useListWorkspaceEscalations({ query: {
     enabled: staffRole === 'Fire' || staffRole === 'Master City Queue',
     queryKey: getListWorkspaceEscalationsQueryKey(),
     refetchInterval: 30_000,
   } });
   const [reviewerFilter, setReviewerFilter] = useState<string>('All');
+  useEffect(() => { setReviewerFilter('All'); setExpandedPlans([]); setStaffTab('queue'); }, [selectedDepartment, simulateAdmin]);
 
   const availableReviewers = useMemo(() => {
     if (staffRole === 'Master City Queue') return ['All', ...Object.values(STAFF_REVIEWERS).flat()];
-    return ['All', ...STAFF_REVIEWERS[staffRole]];
+    return ['All', ...(STAFF_REVIEWERS[staffRole as Department] || [])];
   }, [staffRole]);
 
   const filteredQueue = useMemo(() => {
@@ -199,7 +206,7 @@ export function StaffPortal({
     if (staffRole !== 'Master City Queue') {
       filtered = filtered.filter(p => {
         const deps = p.departments || deriveDepartments(p.intake, p.matched);
-        return deps.includes(staffRole as Department);
+          return deps.includes(staffRole as Department) || (staffRole === 'Economic Development' && deps.includes('Environmental Services'));
       });
     }
 
@@ -217,7 +224,7 @@ export function StaffPortal({
 
   const visibleCatalog = useMemo(() => staffRole === 'Master City Queue'
     ? catalog
-    : catalog.filter(plan => (plan.departments || deriveDepartments(plan.intake, plan.matched)).includes(staffRole)),
+    : catalog.filter(plan => (plan.departments || deriveDepartments(plan.intake, plan.matched)).includes(staffRole as Department) || (staffRole === 'Economic Development' && (plan.departments || deriveDepartments(plan.intake, plan.matched)).includes('Environmental Services'))),
   [catalog, staffRole]);
   const publicPermits = records.filter(record => record.sourceUrl && !record.synthetic);
 
@@ -243,16 +250,17 @@ export function StaffPortal({
       
       <div className="staff-banner">
         <div>
-          <strong data-testid="staff-role-label">Selected desk: {staffRole === 'Master City Queue' ? 'Master Overview' : staffRole}</strong>
+           <strong data-testid="staff-role-label">Selected view: {staffRole === 'Master City Queue' ? 'Administrator overview (UI test only)' : staffRole}</strong>
           <span>Reviewing {filteredQueue.length} active plans</span>
         </div>
         <span className="catalog-badge" data-testid="staff-desk-label">{desk} desk</span>
       </div>
+      {simulateAdmin && <p className="verification-notice" role="status">Administrator Role is a development-only UI simulation. It does not change your server permissions or grant access to other departments. Server access is always checked independently.</p>}
       {(staffRole === 'Fire' || staffRole === 'Master City Queue') && (
         <section className="verification-notice" aria-label="High-urgency review queue">
           <AlertCircle size={18} />
           <div>
-            <strong>High-urgency review queue (prototype)</strong>
+            <strong>High-urgency workspace flags</strong>
             <p>Items are stored here only. The test address is not City-owned; opening an email draft does not send or confirm delivery. No City inbox, automatic retry, or emergency service is connected.</p>
             {escalations.isLoading && <p>Loading flagged items…</p>}
             {escalations.isError && <p role="alert">Review queue unavailable or your account lacks an administrator-assigned Fire or Economic Development staff role. <button onClick={() => void escalations.refetch()}>Retry</button></p>}
@@ -268,7 +276,7 @@ export function StaffPortal({
                 </p>
                 <p>{item.departmentInbox} · {item.deliveryStatus}</p>
                 {item.testRecipient && <a
-                  href={`mailto:${encodeURIComponent(item.testRecipient)}?subject=${encodeURIComponent(`TEST ONLY - Permit Navigator urgent ticket ${item.ticketId}`)}&body=${encodeURIComponent(`TEST ONLY - Not City dispatch. A safety concern was flagged in the Permit Navigator prototype. Ticket: ${item.ticketId}. No resident details are included. Email sending and receipt are not tracked by this prototype.`)}`}
+                  href={`mailto:${encodeURIComponent(item.testRecipient)}?subject=${encodeURIComponent(`TEST ONLY - Permit Navigator urgent ticket ${item.ticketId}`)}&body=${encodeURIComponent(`TEST ONLY - Not City dispatch. A safety concern was flagged in the Permit Navigator workspace. Ticket: ${item.ticketId}. No resident details are included. Email sending and receipt are not tracked here.`)}`}
                 >Open test email draft (does not confirm sending)</a>}
                 {!item.acknowledgedAt && <button
                   className="button-secondary"
@@ -283,7 +291,7 @@ export function StaffPortal({
                       setAckError('Acknowledgement could not be saved. Retry after checking your connection.');
                     }
                   }}
-                >Acknowledge in prototype queue</button>}
+                 >Acknowledge flag</button>}
               </div>
             ))}
           </div>
@@ -298,6 +306,7 @@ export function StaffPortal({
       {recordsLoading && <p role="status">Searching database records…</p>}
       {recordsError && <div className="verification-notice" role="alert">{recordsError}</div>}
       {recordsRefreshWarning && <div className="verification-notice" role="status" data-testid="records-refresh-warning">{recordsRefreshWarning}</div>}
+      {(recordsError || recordsRefreshWarning) && <button className="button-secondary" type="button" onClick={() => void onRefreshRecords().catch(() => undefined)} data-testid="button-refresh-staff-cases">Refresh cases</button>}
 
       <div className="staff-tabs" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12, paddingBottom: 12, marginBottom: 24, borderBottom: '1px solid hsl(var(--border))' }}>
         <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
@@ -338,7 +347,7 @@ export function StaffPortal({
       {recordsError || recordsLoading ? null : staffTab === 'public' ? (
         <section aria-label="City open-data permit records">
           <p style={{ marginBottom: 16, color: 'hsl(var(--muted-foreground))' }}>
-            Commercial/industrial building permits from the City of San José open-data portal. These are issued public records, not applicant submissions to this prototype and not items for staff review here. Business name, applicant language, submission date, and assigned reviewer are not supplied by this dataset.
+            Commercial/industrial building permits from the City of San José open-data portal. These are issued public records, not submissions to this workspace and not items for review here. Business name, applicant language, submission date, and assigned reviewer are not supplied by this dataset.
           </p>
           {publicPermits.length === 0 ? <div className="no-match">No public permits match these filters. Try clearing the filters; if this is a new workspace, the City data may still be loading.</div> : (
             <div className="active-queue-list" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -402,7 +411,7 @@ export function StaffPortal({
                     <div style={{ fontWeight: 600, fontSize: '16px', marginBottom: '4px' }}>{record?.businessName || plan.intake.businessName || plan.intake.address}</div>
                     <div style={{ fontSize: 12, color: 'hsl(var(--muted-foreground))', marginBottom: 5 }}>
                       ID: {plan.id} · {record?.businessCategory || plan.intake.businessType} · {record?.requestType || 'Permit review'} · {record?.applicantLanguage || plan.language}
-                      {record?.synthetic && <strong> · Applicant demo entry (not a City record)</strong>}
+                       {record?.synthetic && <strong> · Synthetic example (not a City record)</strong>}
                     </div>
                     {record && <div style={{ fontSize: 12, color: 'hsl(var(--muted-foreground))', marginBottom: 5 }}>
                       Submitted (UTC): {record.submittedAt ? new Date(record.submittedAt).toLocaleDateString('en-US', { timeZone: 'UTC' }) : 'Not submitted'} · {record.description}
@@ -443,6 +452,7 @@ export function StaffPortal({
                       plan={plan}
                       record={record}
                       onPostResponse={text => onPostResponse(plan.id, text)}
+                       onSaveWorkflow={(workflow, text) => onUpdateActivePlan(plan.id, { notes: { ...plan.notes, [`_workflow_${workflow}`]: text } })}
                     >
                       <StaffPlanReview
                         plan={plan}

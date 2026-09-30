@@ -237,7 +237,7 @@ test("reference endpoints and prototype freshness states match generated respons
   const sources = ListWorkspacePrototypeSourcesResponse.parse(sourceResponse.body);
   assert.ok(sources.length > 0);
   assert.ok(sources.every(source => source.state === "demo"));
-  assert.ok(sources.every(source => /Fictional example/.test(source.content)));
+  assert.ok(sources.every(source => /Synthetic example/.test(source.content)));
   assert.ok(sources.every(source => source.officialReferenceUrl.startsWith("https://www.sanjoseca.gov/") ||
     source.officialReferenceUrl.startsWith("https://permits.sanjoseca.gov/")));
 
@@ -592,7 +592,7 @@ test("authorized queue lists only urgent tickets without resident details or dis
     const item = response.body.find(row => row.ticketId === ticketId);
     assert.ok(item);
     assert.equal(response.body.some(row => row.ticketId === ordinaryId), false);
-    assert.equal(item.status, "Awaiting prototype staff acknowledgement");
+    assert.equal(item.status, "Awaiting workspace review acknowledgement");
     assert.equal(item.acknowledgedAt, null);
     assert.match(item.deliveryStatus, /not verified; no automatic dispatch or retries/i);
     assert.doesNotMatch(JSON.stringify(item), /ownerId|conversationId|Prototype safety warning/i);
@@ -616,7 +616,7 @@ test("legacy acknowledged tickets stay acknowledged without fabricated reviewer 
   assert.equal(response.status, 200);
   const item = response.body.find(row => row.ticketId === legacyAcknowledgedTicketId);
   assert.ok(item);
-  assert.equal(item.status, "Acknowledged in prototype queue");
+  assert.equal(item.status, "Acknowledged in workspace review queue");
   assert.equal(item.acknowledgedAt, legacyAcknowledgedTime.toISOString());
   assert.equal(item.acknowledgedBy, null);
   assert.equal(item.acknowledgedDepartment, null);
@@ -659,7 +659,7 @@ test("an audit-write failure rolls back the urgent ticket acknowledgement", asyn
     assert.equal(response.status, 500, "the request must not report a successful acknowledgement");
     assert.deepEqual(response.body, { error: "Internal server error." });
     assert.doesNotMatch(JSON.stringify(response.body), /controlled audit write failure|workspace_acknowledgements/);
-    assert.notEqual(response.body.status, "Acknowledged in prototype queue");
+    assert.notEqual(response.body.status, "Acknowledged in workspace review queue");
     const failureLog = errorLogs.at(-1);
     assert.equal(failureLog.fields.ticketId, auditFailureTicketId);
     assert.match(failureLog.fields.err.message, /Failed query: insert into "workspace_acknowledgements"/);
@@ -684,7 +684,7 @@ test("an audit-write failure rolls back the urgent ticket acknowledgement", asyn
 
   const retry = await ack("fire", auditFailureTicketId);
   assert.equal(retry.status, 200, "the same staff member can retry after the audit store recovers");
-  assert.equal(retry.body.status, "Acknowledged in prototype queue");
+  assert.equal(retry.body.status, "Acknowledged in workspace review queue");
   assert.equal(retry.body.acknowledgedBy, "fire");
   assert.equal(retry.body.acknowledgedDepartment, "Fire");
 
@@ -709,7 +709,7 @@ test("simultaneous reviewers share the first acknowledgement and create one audi
   assert.ok(timestamps[0]);
   assert.equal(new Set(timestamps).size, 1, "both requests return the original winning timestamp");
   assert.ok(new Date(timestamps[0]) > originalTime);
-  assert.ok(results.every(result => result.body.status === "Acknowledged in prototype queue"));
+  assert.ok(results.every(result => result.body.status === "Acknowledged in workspace review queue"));
 
   const auditRowsBeforeRetry = await db.select().from(workspaceAcknowledgementsTable)
     .where(eq(workspaceAcknowledgementsTable.ticketId, ticketId));
@@ -780,7 +780,7 @@ test("hazardous resident message creates a ticket but never claims delivery or s
   assert.doesNotMatch(sent.body.message.content, /staff (has|have) acknowledged|email (was|has been) sent/i);
   const newTicket = sent.body.message.id;
   const staffQueue = await queue("fire");
-  assert.equal(staffQueue.body.find(row => row.ticketId === newTicket)?.status, "Awaiting prototype staff acknowledgement");
+  assert.equal(staffQueue.body.find(row => row.ticketId === newTicket)?.status, "Awaiting workspace review acknowledgement");
   assert.equal(staffQueue.body.find(row => row.ticketId === newTicket)?.acknowledgedAt, null);
 
   const messages = await request("GET", `/workspace/conversations/${conversationId}/messages`, "resident");

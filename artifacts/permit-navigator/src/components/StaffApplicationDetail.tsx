@@ -1,10 +1,11 @@
 import { useState, type ReactNode } from 'react';
-import { Clipboard, FileX2 } from 'lucide-react';
+import { Clipboard } from 'lucide-react';
 import { useListApplicationHistory, type ApplicationRecord } from '@workspace/api-client-react';
 import type { ActivePlan } from '../types';
 import type { BusinessType, Modification, RequirementId } from '../requirements';
 import { requirementsConfig } from '../requirements';
 import { copy } from '../copy';
+import { ApplicationDocuments } from './ApplicationDocuments';
 import './StaffApplicationDetail.css';
 
 type Workflow = 'clarification' | 'internal' | 'hearing' | 'permit-decision' | 'escalation' | 'next-steps';
@@ -47,21 +48,21 @@ function buildDraft(plan: ActivePlan, workflow: Workflow, record?: ApplicationRe
     .filter(id => !plan.rejected.includes(id))
     .map(id => copy.en.requirements[id].name);
   const topics = suggested.length ? suggested.join(', ') : 'the proposed use and scope of work';
-  const opening = `Permit Navigator prototype entry ${plan.id}\nBusiness: ${name}\nLocation: ${location}\n\n`;
+  const opening = `Permit Navigator application ${plan.id}\nBusiness: ${name}\nLocation: ${location}\n\n`;
   if (workflow === 'clarification') {
-    return opening + `Hello,\n\nTo help review this prototype entry, please clarify the proposed use at this address and the planned changes (${changesLabel(plan)}). If available, describe the scope of work and any drawings you can share through an appropriate channel.\n\nThe local guide surfaced ${topics} as possible starting points. These are not findings or permit approvals. Please verify requirements directly with the relevant City department before work begins.\n\nThis is draft wording only; it has not been sent.`;
+    return opening + `Hello,\n\nTo help review this submission, please clarify the proposed use at this address and the planned changes (${changesLabel(plan)}). If available, describe the scope of work and any drawings you can share through an appropriate channel.\n\nThe local guide surfaced ${topics} as possible starting points. These are not findings or permit approvals. Please verify requirements directly with the relevant City department before work begins.\n\nThis is draft wording only; it has not been sent.`;
   }
   if (workflow === 'internal') {
-    return opening + `Internal handoff draft\n\nPlease verify the proposed use, address, and scope of changes (${changesLabel(plan)}). The local prototype guide surfaced ${topics} for follow-up. Confirm the applicable rules and whether another department needs to be consulted. Do not treat a local match or a removed item as a zoning, building, fire, health, or utilities decision.\n\nThis text is a local draft only; it has not been routed or sent.`;
+    return opening + `Internal handoff draft\n\nPlease verify the proposed use, address, and scope of changes (${changesLabel(plan)}). The preliminary guide surfaced ${topics} for follow-up. Confirm the applicable rules and whether another department needs to be consulted. Do not treat a local match or a removed item as a zoning, building, fire, health, or utilities decision.\n\nThis text is a local draft only; it has not been routed or sent.`;
   }
   if (workflow === 'hearing') {
     return opening + `Hearing coordination draft\n\nConfirm whether a public hearing is required for this project under current City rules. If so, identify the responsible department, required notices, accessibility needs, and scheduling process. No hearing has been scheduled by this application.\n\nThis text is a local draft only; it has not been routed or sent.`;
   }
   if (workflow === 'permit-decision') {
-    return opening + `Permit decision preparation draft\n\nReview the submitted scope, supporting documents, and current agency requirements before recommending any outcome. The local guide surfaced ${topics} for further verification. This prototype cannot issue, deny, or condition a City permit.\n\nThis text is a local draft only; it has not been routed or sent.`;
+    return opening + `Permit decision preparation draft\n\nReview the submitted scope, supporting documents, and current agency requirements before recommending any outcome. The local guide surfaced ${topics} for further verification. This workspace cannot issue, deny, or condition a City permit.\n\nThis text is a local draft only; it has not been routed or sent.`;
   }
   if (workflow === 'escalation') {
-    return opening + `Department-head consultation draft\n\nRequest an authorized department-head review of the proposed use and planned changes (${changesLabel(plan)}). Include any verified facts, unresolved questions, and urgency when routing through approved internal channels. This prototype has not sent or routed this draft.\n\nThis text is a local draft only; it has not been routed or sent.`;
+    return opening + `Department-head consultation draft\n\nRequest an authorized department-head review of the proposed use and planned changes (${changesLabel(plan)}). Include any verified facts, unresolved questions, and urgency when routing through approved internal channels. This workspace has not sent or routed this draft.\n\nThis text is a local draft only; it has not been routed or sent.`;
   }
   return opening + `Hello,\n\nFor this project, start by confirming the proposed use at the location and describing the planned changes (${changesLabel(plan)}). Ask the relevant department about ${topics}, and what documents they would need to review. Keep any guidance you receive with your project records.\n\nPermit Navigator offers preliminary, local rules-of-thumb only. It does not determine which permits are required or authorize work. Verify next steps directly with the appropriate City or county office.\n\nThis is draft wording only; it has not been sent.`;
 }
@@ -70,19 +71,22 @@ export function StaffApplicationDetail({
   plan,
   record,
   onPostResponse,
+  onSaveWorkflow,
   children,
 }: {
   plan: ActivePlan;
   record?: ApplicationRecord;
   onPostResponse: (text: string) => Promise<boolean>;
+  onSaveWorkflow?: (workflow: string, text: string) => Promise<boolean>;
   children?: ReactNode;
 }) {
   const history = useListApplicationHistory(plan.id);
   const [draftState, setDraftState] = useState<DraftState | null>(null);
   const [copyState, setCopyState] = useState<CopyState | null>(null);
   const [postState, setPostState] = useState<{ planId: string; message: string; busy: boolean } | null>(null);
+  const [workflowState, setWorkflowState] = useState<{ busy: boolean; message: string }>({ busy: false, message: '' });
   const workflow = draftState?.planId === plan.id ? draftState.workflow : 'clarification';
-  const draftText = draftState?.planId === plan.id ? draftState.text : buildDraft(plan, 'clarification', record);
+  const draftText = draftState?.planId === plan.id ? draftState.text : plan.notes?._workflow_clarification || buildDraft(plan, 'clarification', record);
   const feedback = copyState?.planId === plan.id ? copyState.message : '';
   const postFeedback = postState?.planId === plan.id ? postState.message : '';
   const posting = postState?.planId === plan.id && postState.busy;
@@ -100,7 +104,8 @@ export function StaffApplicationDetail({
       : 'Possible review topics identified';
 
   const changeWorkflow = (next: Workflow) => {
-    setDraftState({ planId: plan.id, workflow: next, text: buildDraft(plan, next, record) });
+    setDraftState({ planId: plan.id, workflow: next, text: plan.notes?.[`_workflow_${next}`] || buildDraft(plan, next, record) });
+    setWorkflowState({ busy: false, message: '' });
     setCopyState(null);
     setPostState(null);
   };
@@ -134,20 +139,20 @@ export function StaffApplicationDetail({
     <article className="staff-application-detail" data-testid={`staff-application-detail-${plan.id}`} aria-labelledby={`staff-detail-title-${plan.id}`}>
       <header className="staff-application-detail__mast">
         <div>
-          <p className="staff-application-detail__eyebrow">Review dossier / prototype casework</p>
+          <p className="staff-application-detail__eyebrow">Review dossier / casework</p>
           <h2 id={`staff-detail-title-${plan.id}`} data-testid={`text-detail-business-${plan.id}`}>
             {provided(record?.businessName || plan.intake.businessName)}
           </h2>
           <p className="staff-application-detail__subtitle">
-            Application detail · {provided(record?.requestType)} · Current prototype status: <strong data-testid={`status-detail-${plan.id}`}>{record?.status || plan.status}</strong>
+            Application detail · {provided(record?.requestType)} · Review status: <strong data-testid={`status-detail-${plan.id}`}>{record?.status || plan.status}</strong>
           </p>
         </div>
         <span className="staff-application-detail__id" data-testid={`text-detail-id-${plan.id}`}>ID {plan.id}</span>
       </header>
 
       <p className="staff-application-detail__notice" data-testid={`notice-detail-prototype-${plan.id}`}>
-        <strong>Prototype review, not a live City workflow.</strong> This record and its local recommendations are not an official application, permit determination, zoning clearance, or notice to an applicant. A person must verify each item with the appropriate agency.
-        {record?.synthetic && ' This entry is synthetic demonstration data.'}
+         <strong>Preliminary review only.</strong> Local recommendations are not an official permit determination, zoning clearance, or legal City decision. A person must verify each item with the appropriate agency.
+         {record?.synthetic && ' This entry uses synthetic example data, not verified City facts.'}
       </p>
 
       <section className="staff-application-detail__section" aria-labelledby={`detail-intake-${plan.id}`}>
@@ -163,10 +168,12 @@ export function StaffApplicationDetail({
               <dl className="staff-application-detail__facts">
                 <div><dt>Business name</dt><dd data-testid={`text-detail-name-${plan.id}`}>{provided(record?.businessName || plan.intake.businessName)}</dd></div>
                 <div><dt>Business type</dt><dd data-testid={`text-detail-type-${plan.id}`}>{businessType}</dd></div>
-                <div><dt>Applicant name</dt><dd>Not provided</dd></div>
-                <div><dt>Email / phone</dt><dd>Not provided</dd></div>
+                 <div><dt>Applicant name</dt><dd data-testid={`text-detail-applicant-${plan.id}`}>{provided(plan.intake.applicantName)}</dd></div>
+                 <div><dt>Email</dt><dd data-testid={`text-detail-email-${plan.id}`}>{provided(plan.intake.applicantEmail)}</dd></div>
+                 <div><dt>Phone</dt><dd data-testid={`text-detail-phone-${plan.id}`}>{provided(plan.intake.applicantPhone)}</dd></div>
                 <div><dt>Location</dt><dd data-testid={`text-detail-location-${plan.id}`}>{provided(location)}</dd></div>
-                <div><dt>Preferred language</dt><dd data-testid={`text-detail-language-${plan.id}`}>{provided(record?.applicantLanguage || (plan.language === 'other' ? plan.customLanguage : plan.language))}</dd></div>
+                 <div><dt>Preferred language</dt><dd data-testid={`text-detail-language-${plan.id}`}>{provided(plan.language === 'other' ? plan.customLanguage : (record?.applicantLanguage || plan.language))}</dd></div>
+                 <div><dt>Plain-language guidance requested</dt><dd>{plan.simplified ? 'Yes' : 'No'}</dd></div>
                 <div><dt>Suggested request type (derived)</dt><dd>{provided(record?.requestType)}</dd></div>
                 <div><dt>Staff routing (derived)</dt><dd>{provided(record?.assignedDepartment || plan.departments?.join(', '))}</dd></div>
                 <div><dt>Submitted</dt><dd data-testid={`text-detail-submitted-${plan.id}`}>{dateLabel(record?.submittedAt || plan.submittedAt)}</dd></div>
@@ -176,14 +183,12 @@ export function StaffApplicationDetail({
               <dl className="staff-application-detail__stack">
                 <div><dt>Project description</dt><dd data-testid={`text-detail-description-${plan.id}`}>{provided(record?.description || plan.intake.description)}</dd></div>
                 <div><dt>Planned changes</dt><dd data-testid={`text-detail-changes-${plan.id}`}>{changesLabel(plan)}</dd></div>
+                 {plan.intake.businessType === 'other' && <div><dt>Other business type (submitted)</dt><dd>{provided(plan.intake.businessOther)}</dd></div>}
+                 {plan.intake.modifications?.includes('other') && <div><dt>Other changes (submitted)</dt><dd>{provided(plan.intake.modificationOther)}</dd></div>}
               </dl>
             </div>
             <div className="staff-application-detail__panel">
-              <h4>Document list</h4>
-              <div className="staff-application-detail__file-state" data-testid={`empty-detail-documents-${plan.id}`}>
-                <FileX2 size={18} aria-hidden="true" />
-                <span><strong>No persisted files.</strong> Upload bytes are discarded by this prototype. There are no documents available here to preview or download.</span>
-              </div>
+               <ApplicationDocuments id={plan.id} />
             </div>
           </div>
           <aside className="staff-application-detail__panel" aria-labelledby={`detail-history-${plan.id}`}>
@@ -239,7 +244,7 @@ export function StaffApplicationDetail({
                 </div>
                 <p>{item.desc}</p>
                 {matched && !removed && <p><strong>Ask / verify:</strong> {item.steps[0]}. {item.steps[1]}.</p>}
-                {removed && <p className="staff-application-detail__annotation">Removed from this prototype plan by a reviewer. This is not a finding that the requirement does not apply.</p>}
+                 {removed && <p className="staff-application-detail__annotation">Removed from this preliminary plan by a reviewer. This is not a finding that the requirement does not apply.</p>}
                 {plan.overrides[id] && <p className="staff-application-detail__annotation"><strong>Reviewer-edited recommendation:</strong> {plan.overrides[id]}</p>}
                 {plan.notes[id] && <p className="staff-application-detail__annotation"><strong>Reviewer note:</strong> {plan.notes[id]}</p>}
                 <a className="staff-application-detail__source" href={requirementsConfig[id].source_url} target="_blank" rel="noopener noreferrer" data-testid={`link-detail-source-${plan.id}-${id}`}>View source: {item.sourceTitle} <span aria-hidden="true">↗</span></a>
@@ -249,7 +254,7 @@ export function StaffApplicationDetail({
         </div>
         {children && <div className="staff-application-detail__controls" data-testid={`region-detail-decisions-${plan.id}`}>
           <h4>Reviewer decisions</h4>
-          <p>Review the intake and sources before recording any change. These controls update this prototype record only; they do not issue a legal or agency determination.</p>
+           <p>Review the intake and sources before recording any change. These controls update reviewer recommendations only; they do not issue a legal or agency determination.</p>
           <div className="staff-application-detail__controls-inner">{children}</div>
         </div>}
       </section>
@@ -264,22 +269,22 @@ export function StaffApplicationDetail({
           <div className="staff-application-detail__panel">
             <h4>Suggested review path</h4>
             <ol className="staff-application-detail__guidance">
-              <li>{['Approved', 'Rejected', 'Modified via Staff Override'].includes(plan.status) ? 'Review the recorded prototype decision before any further correspondence.' : 'Confirm the proposed use and application type before making a recommendation.'} Project: <strong>{provided(record?.requestType)}</strong> at <strong>{provided(location)}</strong>; described changes: {changesLabel(plan)}.</li>
+              <li>{['Approved', 'Rejected', 'Modified via Staff Override'].includes(plan.status) ? 'Review the recorded recommendation before any further correspondence.' : 'Confirm the proposed use and application type before making a recommendation.'} Project: <strong>{provided(record?.requestType)}</strong> at <strong>{provided(location)}</strong>; described changes: {changesLabel(plan)}.</li>
               <li>{openItems.length ? <>Use the {openItems.map(id => copy.en.requirements[id].name).join(', ')} {openItems.length === 1 ? 'topic' : 'topics'} to frame questions for the relevant agencies.</> : 'No local topics remain on this plan. Ask the appropriate agency to identify the applicable path; do not assume no review is needed.'}</li>
-              <li>Request appropriate scope details or drawings through an authorized channel if needed; this prototype has no persisted files.</li>
+              <li>Review attached documents above; request missing scope details or drawings through an authorized channel if needed.</li>
               <li>Verify the current process directly with the relevant City or county office before anyone relies on this guidance to start work.</li>
             </ol>
           </div>
           <div className="staff-application-detail__panel">
             <h4>Draft workspace</h4>
-            <p className="staff-application-detail__intro">Choose a workflow and edit the wording. Switching workflows replaces your unsaved draft. Drafts exist only in this open view.</p>
+             <p className="staff-application-detail__intro">Choose a workflow and edit the wording. Switching workflows replaces unsaved changes. Saving an internal draft records it on this case; it does not schedule, issue, route, email, or post anything.</p>
             <div className="staff-application-detail__draft">
               <label htmlFor={`detail-workflow-${plan.id}`}>Workflow type</label>
               <select id={`detail-workflow-${plan.id}`} value={workflow} onChange={event => changeWorkflow(event.target.value as Workflow)} data-testid={`select-detail-workflow-${plan.id}`}>
                 <option value="clarification">Request clarification</option>
                 <option value="internal">Internal review handoff</option>
-                <option value="hearing">Prepare hearing coordination</option>
-                <option value="permit-decision">Prepare permit decision (not issued)</option>
+                 <option value="hearing">Draft hearing coordination questions (not scheduled)</option>
+                 <option value="permit-decision">Draft permit decision questions (not issued)</option>
                 <option value="escalation">Prepare department-head escalation</option>
                 <option value="next-steps">Suggested next steps</option>
               </select>
@@ -292,6 +297,16 @@ export function StaffApplicationDetail({
               <span data-testid={`status-detail-draft-${plan.id}`}>Editable draft · not emailed or sent outside the app</span>
               <button type="button" className="staff-application-detail__copy" onClick={() => void copyDraft()} disabled={!draftText.trim()} data-testid={`button-copy-detail-draft-${plan.id}`}><Clipboard size={14} aria-hidden="true" /> Copy draft</button>
             </div>
+             {onSaveWorkflow && <div className="staff-application-detail__post">
+               <button type="button" className="staff-application-detail__copy" disabled={!draftText.trim() || workflowState.busy} onClick={async () => {
+                 setWorkflowState({ busy: true, message: '' });
+                 try {
+                   const saved = await onSaveWorkflow(workflow, draftText.trim());
+                   setWorkflowState({ busy: false, message: saved ? 'Internal workflow draft saved to this case. No external action was taken.' : 'Draft was not saved. Retry.' });
+                 } catch { setWorkflowState({ busy: false, message: 'Draft was not saved. Retry.' }); }
+               }} data-testid={`button-save-detail-workflow-${plan.id}`}>{workflowState.busy ? 'Saving…' : 'Save internal workflow draft'}</button>
+               {workflowState.message && <p role="status" data-testid={`feedback-detail-workflow-${plan.id}`}>{workflowState.message}</p>}
+             </div>}
             {feedback && <p role="status" className="staff-application-detail__subtitle" data-testid={`feedback-detail-copy-${plan.id}`}>{feedback}</p>}
             {(workflow === 'clarification' || workflow === 'next-steps') && (
               <div className="staff-application-detail__post">

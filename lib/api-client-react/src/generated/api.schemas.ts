@@ -185,6 +185,61 @@ export interface ApplicationRecord {
   updatedAt: string;
 }
 
+export type ApplicationDocumentContentType = typeof ApplicationDocumentContentType[keyof typeof ApplicationDocumentContentType];
+
+
+export const ApplicationDocumentContentType = {
+  'application/pdf': 'application/pdf',
+  'image/png': 'image/png',
+  'image/jpeg': 'image/jpeg',
+} as const;
+
+export type ApplicationDocumentState = typeof ApplicationDocumentState[keyof typeof ApplicationDocumentState];
+
+
+export const ApplicationDocumentState = {
+  pending: 'pending',
+  ready: 'ready',
+} as const;
+
+export interface ApplicationDocument {
+  id: string;
+  name: string;
+  size: number;
+  contentType: ApplicationDocumentContentType;
+  state: ApplicationDocumentState;
+  /** @nullable */
+  uploadedAt: string | null;
+}
+
+export type ApplicationDocumentInputContentType = typeof ApplicationDocumentInputContentType[keyof typeof ApplicationDocumentInputContentType];
+
+
+export const ApplicationDocumentInputContentType = {
+  'application/pdf': 'application/pdf',
+  'image/png': 'image/png',
+  'image/jpeg': 'image/jpeg',
+} as const;
+
+export interface ApplicationDocumentInput {
+  /**
+     * @minLength 1
+     * @maxLength 200
+     */
+  name: string;
+  /**
+     * @minimum 1
+     * @maximum 10485760
+     */
+  size: number;
+  contentType: ApplicationDocumentInputContentType;
+}
+
+export interface ApplicationDocumentUpload {
+  uploadUrl: string;
+  document: ApplicationDocument;
+}
+
 export type ApplicationInputPlan = { [key: string]: unknown };
 
 export interface ApplicationInput {
@@ -194,12 +249,16 @@ export interface ApplicationInput {
      */
   applicantKey: string;
   plan: ApplicationInputPlan;
+  /** Version returned by the last application read; stale writes are rejected with 409 */
+  expectedUpdatedAt?: string;
 }
 
 export type ApplicationReviewPlan = { [key: string]: unknown };
 
 export interface ApplicationReview {
   plan: ApplicationReviewPlan;
+  /** Version returned by the last application read; stale review writes are rejected with 409 */
+  expectedUpdatedAt?: string;
 }
 
 export interface ApplicationResponseInput {
@@ -229,6 +288,10 @@ export const ListWorkspaceRecordsMode = {
   research: 'research',
   live: 'live',
 } as const;
+
+export type DownloadApplicationDocumentParams = {
+download?: boolean;
+};
 
 export type ListMyApplicationsParams = {
 /**

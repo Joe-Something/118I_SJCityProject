@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { ClerkProvider, Show, useUser, useClerk } from '@clerk/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { publishableKeyFromHost } from '@clerk/react/internal';
@@ -20,12 +20,15 @@ import { PersonaLogin } from './components/PersonaLogin';
 import { ApplicantDashboard } from './components/ApplicantDashboard';
 import { IntakeView } from './components/IntakeView';
 import { StaffPortal } from './components/StaffPortal';
+import { ApplicationDocuments, uploadApplicationFiles, type DocumentStatus, type PendingUpload } from './components/ApplicationDocuments';
+import { DraftContactDetails } from './components/DraftContactDetails';
 import { RequirementCard } from './components/RequirementCard';
 import { AIWorkspace, PublicWorkspace } from './components/AIWorkspace';
 import { StaffApplicationFilters } from './components/StaffSearchFilters';
 import { applicantId, readPersona, personaKey, PENDING_PERSONA_KEY, readPlans, Persona } from './prototypeStore';
 import { createApplication, getListApplicationHistoryQueryKey, postApplicationResponse, reviewApplication, updateMyApplication } from '@workspace/api-client-react';
 import { saveAndRefresh, useApplicationRecords } from './hooks/useApplicationRecords';
+import { isStaleWrite } from './utils/writeErrors';
 
 const clerkPubKey = publishableKeyFromHost(
   window.location.hostname,
@@ -118,7 +121,7 @@ function PortalWorkspace({ persona, userId, onLogout }: { persona: Persona; user
     requestType: '', status: '', assignedDepartment: '', applicantLanguage: '',
     submissionDate: '', descriptionOrNotes: '',
   });
-  const { records, recordsLoading, recordsError, recordsRefreshWarning, refreshRows } = useApplicationRecords(persona, filters);
+  const { records, recordsLoading, recordsError, recordsRefreshWarning, refreshRows, acceptRecord } = useApplicationRecords(persona, filters);
 
   const plans: ActivePlan[] = records.map(record => ({
     ...(record.plan as unknown as ActivePlan),
@@ -144,6 +147,16 @@ function PortalWorkspace({ persona, userId, onLogout }: { persona: Persona; user
   const [customLanguage, setCustomLanguage] = useState('');
   const [simplified, setSimplified] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [failedFiles, setFailedFiles] = useState<PendingUpload[]>([]);
+  const [documentStatus, setDocumentStatus] = useState<DocumentStatus | null>(null);
+  const [contactBusy, setContactBusy] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [staleDraft, setStaleDraft] = useState(false);
+  const onDocumentStatus = useCallback((next: DocumentStatus) => {
+    setDocumentStatus(current => current?.id === next.id && current.busy === next.busy && current.pending === next.pending && current.ready === next.ready ? current : next);
+  }, []);
+  const [staffDepartment, setStaffDepartment] = useState<'Planning' | 'Building' | 'Fire' | 'Economic Development'>(() => persona.kind === 'staff' && persona.desk === 'Building Code Reviewer' ? 'Building' : persona.kind === 'staff' && persona.desk === 'Fire Prevention' ? 'Fire' : 'Economic Development');
+  const [simulateAdmin, setSimulateAdmin] = useState(false);
 
   const t = copy[language === 'other' ? 'en' : language];
 
@@ -179,6 +192,9 @@ function PortalWorkspace({ persona, userId, onLogout }: { persona: Persona; user
 
   const handleCreateNew = () => {
     setIntake(emptyIntake);
+    setFailedFiles([]);
+    setDocumentStatus(null);
+    setStaleDraft(false);
     setCurrentPlanId(null);
     setApplicantView('intake');
   };
@@ -200,6 +216,9 @@ function PortalWorkspace({ persona, userId, onLogout }: { persona: Persona; user
   };
 
   const handleResumePlan = (plan: ActivePlan) => {
+    setFailedFiles([]);
+    setDocumentStatus(null);
+    setStaleDraft(false);
     setCurrentPlanId(plan.id);
     if (plan.status === 'Draft') {
       setApplicantView('draft-review');
@@ -213,6 +232,9 @@ function PortalWorkspace({ persona, userId, onLogout }: { persona: Persona; user
     setCustomLanguage('');
     setIntake({
       businessName: 'Business at 150 South First Street, San Jose, CA',
+      applicantName: 'Sample applicant',
+      applicantEmail: '',
+      applicantPhone: '',
       businessType: 'restaurant',
       businessOther: '',
       address: '150 South First Street, San Jose, CA',
@@ -259,7 +281,7 @@ function PortalWorkspace({ persona, userId, onLogout }: { persona: Persona; user
     try {
       await createApplication({ applicantKey: persona.kind === 'applicant' ? persona.key : '', plan: JSON.parse(JSON.stringify(newPlan)) });
       await refreshRows();
-      toast({ title: 'Demo application created', description: 'The example action plan was saved to the database and sent to the review queue.' });
+       toast({ title: 'Sample application created', description: 'Synthetic example saved to your application list and review queue.' });
     } catch {
       toast({ title: 'Could not save sample', description: 'Please try again.', variant: 'destructive' });
     }
@@ -278,7 +300,7 @@ function PortalWorkspace({ persona, userId, onLogout }: { persona: Persona; user
       const newPlan: ActivePlan = {
         id: generateId(),
         userId: ownerId,
-        intake: draftIntake,
+         intake: { ...draftIntake, files: [] },
         language: draftLanguage,
         customLanguage: draftCustomLanguage,
         simplified: draftSimplified,
@@ -291,11 +313,18 @@ function PortalWorkspace({ persona, userId, onLogout }: { persona: Persona; user
         matched,
       };
       const saved = await createApplication({ applicantKey: persona.kind === 'applicant' ? persona.key : '', plan: JSON.parse(JSON.stringify(newPlan)) });
-      await refreshRows();
+      acceptRecord(saved);
       setCurrentPlanId(saved.id);
+      setDocumentStatus(null);
       setApplicantView('draft-review');
+       if (draftIntake.files.length) {
+         const failed = await uploadApplicationFiles(saved.id, draftIntake.files);
+         setFailedFiles(failed);
+         if (failed.length) toast({ title: 'Application saved; files need attention', description: `${failed.map(item => item.file.name).join(', ')} did not finish uploading. Retry the same reservation or discard it before submitting.`, variant: 'destructive' });
+       }
+       try { await refreshRows(); } catch { toast({ title: 'Draft saved', description: 'The list could not refresh. Reload to retrieve the saved draft.' }); }
     } catch {
-      toast({ title: 'Plan not saved', description: 'The database could not save your application. Please try again.', variant: 'destructive' });
+       toast({ title: 'Application could not be saved', description: 'Please retry. If a draft was created, check your saved applications before creating another.', variant: 'destructive' });
     } finally {
       setLoading(false);
     }
@@ -303,6 +332,9 @@ function PortalWorkspace({ persona, userId, onLogout }: { persona: Persona; user
 
   const handleSubmitToStaff = async () => {
     if (!currentPlanId) return;
+    if (submitting || contactBusy || documentStatus?.id !== currentPlanId || documentStatus.busy || documentStatus.pending || !documentStatus.ready || failedFiles.length) {
+      toast({ title: 'Draft is not ready to submit', description: 'Finish contact saves and document uploads, then retry. Pending reservations must be finalized or discarded.', variant: 'destructive' }); return;
+    }
     
     const draftPlan = myPlans.find(p => p.id === currentPlanId && p.status === 'Draft');
     if (!draftPlan) return;
@@ -315,15 +347,19 @@ function PortalWorkspace({ persona, userId, onLogout }: { persona: Persona; user
       assignees[d] = departmentReviewers[submittedCount % departmentReviewers.length];
     });
     
+    setSubmitting(true);
     try {
-      await updateMyApplication(currentPlanId, { applicantKey: persona.kind === 'applicant' ? persona.key : '',
+      const saved = await updateMyApplication(currentPlanId, { applicantKey: persona.kind === 'applicant' ? persona.key : '',
+        expectedUpdatedAt: new Date(draftPlan.updatedAt).toISOString(),
         plan: JSON.parse(JSON.stringify({ ...draftPlan, status: 'Draft — Requires Review', submittedAt: Date.now(), updatedAt: Date.now(), departments: deps, departmentAssignees: assignees })) });
-      await refreshRows();
-      toast({ title: 'Submitted to City Staff Queue', description: 'Your plan has been saved and sent to the review queue.' });
+      acceptRecord(saved);
       setApplicantView('dashboard');
-    } catch {
-      toast({ title: 'Submission failed', description: 'Your draft has not been sent. Please try again.', variant: 'destructive' });
-    }
+      toast({ title: 'Submission saved', description: 'Your application was accepted by the server for staff review. This is not a permit decision.' });
+      try { await refreshRows(); } catch { toast({ title: 'Submission saved; list may be out of date', description: 'The server accepted the submission, but the application list could not refresh. Reload to confirm the latest queue state.' }); }
+    } catch (error) {
+      if (isStaleWrite(error)) setStaleDraft(true);
+      toast({ title: isStaleWrite(error) ? 'Draft changed elsewhere' : 'Submission not confirmed', description: isStaleWrite(error) ? 'Refresh this application before submitting. Your local draft has not replaced the newer version.' : 'The server did not confirm submission. Refresh your applications before retrying.', variant: 'destructive' });
+    } finally { setSubmitting(false); }
   };
 
   const saveStaffReview = async (planId: string, updates: Partial<ActivePlan>, showErrorToast = true) => {
@@ -331,7 +367,7 @@ function PortalWorkspace({ persona, userId, onLogout }: { persona: Persona; user
     if (!current) return { saved: false, refreshed: false };
     try {
       const refreshed = await saveAndRefresh(
-        () => reviewApplication(planId, { plan: JSON.parse(JSON.stringify({ ...current, ...updates })) }),
+        async () => { const saved = await reviewApplication(planId, { expectedUpdatedAt: new Date(current.updatedAt).toISOString(), plan: JSON.parse(JSON.stringify({ ...current, ...updates })) }); acceptRecord(saved); return saved; },
         refreshRows,
       );
       if (!refreshed) {
@@ -341,9 +377,9 @@ function PortalWorkspace({ persona, userId, onLogout }: { persona: Persona; user
         });
       }
       return { saved: true, refreshed };
-    } catch {
-      if (showErrorToast) {
-        toast({ title: 'Review not saved', description: 'Please retry your change.', variant: 'destructive' });
+    } catch (error) {
+      if (showErrorToast || isStaleWrite(error)) {
+        toast({ title: isStaleWrite(error) ? 'Case changed elsewhere' : 'Review not saved', description: isStaleWrite(error) ? 'Refresh the review queue and reapply your edit to the current version.' : 'Please retry your change.', variant: 'destructive' });
       }
       return { saved: false, refreshed: false };
     }
@@ -351,7 +387,8 @@ function PortalWorkspace({ persona, userId, onLogout }: { persona: Persona; user
 
   const postStaffResponse = async (planId: string, text: string): Promise<boolean> => {
     try {
-      await postApplicationResponse(planId, { text });
+      const saved = await postApplicationResponse(planId, { text });
+      acceptRecord(saved);
       void queryClient.invalidateQueries({ queryKey: getListApplicationHistoryQueryKey(planId) });
     } catch {
       toast({ title: 'Response not saved', description: 'Please retry after checking your connection.', variant: 'destructive' });
@@ -367,7 +404,7 @@ function PortalWorkspace({ persona, userId, onLogout }: { persona: Persona; user
 
   const handleStaffComplete = (planId: string, status: PlanStatus) => {
     void saveStaffReview(planId, { status, completedAt: Date.now(), updatedAt: Date.now() }).then(({ saved, refreshed }) => {
-      if (saved && refreshed) toast({ title: 'Review Completed', description: `Plan has been marked as ${status}.` });
+      if (saved && refreshed) toast({ title: 'Review recommendation recorded', description: `Case marked ${status} for internal review only. No permit decision was issued.` });
     });
   };
 
@@ -386,7 +423,7 @@ function PortalWorkspace({ persona, userId, onLogout }: { persona: Persona; user
       <header className="topbar">
         <Link href="/welcome" className="brand" data-testid="brand-permit-navigator" aria-label="Permit Navigator Home">
           <div className="brand-mark"><Landmark size={19} /></div>
-          <div><div className="brand-name">Permit Navigator</div><div className="brand-sub">City of San José · Prototype</div></div>
+           <div><div className="brand-name">Permit Navigator</div><div className="brand-sub">San José · Case workspace</div></div>
         </Link>
 
         <div className="top-actions">
@@ -425,6 +462,12 @@ function PortalWorkspace({ persona, userId, onLogout }: { persona: Persona; user
           <div className="signed-in-identity" data-testid="text-signed-in-user">
             {persona.kind === 'applicant' ? `Applicant · ${persona.key}` : `City Staff · ${persona.desk}`}
           </div>
+           {persona.kind === 'staff' && <div className="staff-context-controls">
+             {import.meta.env.DEV && <button type="button" className="button-tertiary" aria-pressed={simulateAdmin} title="UI-only test view. This cannot grant server access or change your Clerk role." onClick={() => setSimulateAdmin(value => !value)} data-testid="button-administrator-role">Administrator Role · {simulateAdmin ? 'On' : 'Off'}</button>}
+             <label htmlFor="staff-department">Department <select id="staff-department" value={staffDepartment} onChange={event => setStaffDepartment(event.target.value as typeof staffDepartment)} data-testid="select-staff-department">
+               <option value="Planning">Planning &amp; Zoning</option><option value="Building">Building Safety</option><option value="Fire">Fire Prevention</option><option value="Economic Development">Economic Development</option>
+             </select></label>
+           </div>}
           
           <button className="button-secondary" style={{ padding: '6px 12px' }} onClick={() => { onLogout(); void signOut({ redirectUrl: `${basePath}/welcome` }); }} data-testid="button-logout">
             Log out
@@ -474,6 +517,8 @@ function PortalWorkspace({ persona, userId, onLogout }: { persona: Persona; user
       {persona.kind === 'staff' ? (
         <StaffPortal 
           desk={persona.desk}
+           selectedDepartment={staffDepartment}
+           simulateAdmin={import.meta.env.DEV && simulateAdmin}
           activeQueue={activeQueue} 
           catalog={catalog}
           records={records}
@@ -482,6 +527,7 @@ function PortalWorkspace({ persona, userId, onLogout }: { persona: Persona; user
           recordsLoading={recordsLoading}
           recordsError={recordsError}
           recordsRefreshWarning={recordsRefreshWarning}
+           onRefreshRecords={refreshRows}
           onCompleteReview={handleStaffComplete} 
           onUpdateActivePlan={async (id, updates) => (await saveStaffReview(id, updates)).saved}
           onPostResponse={postStaffResponse}
@@ -527,6 +573,16 @@ function PortalWorkspace({ persona, userId, onLogout }: { persona: Persona; user
                 <div><strong>Response posted to your plan</strong><p style={{ whiteSpace: 'pre-wrap', margin: '6px 0 0' }}>{planToShow.notes._staff_response}</p><small>This response appears in the app only; no email was sent.</small></div>
               </section>
             )}
+             <ApplicationDocuments key={`documents-${planToShow.id}`} id={planToShow.id} editable={planToShow.status === 'Draft'} pending={failedFiles} onPendingChange={setFailedFiles} onStatusChange={onDocumentStatus} />
+             {staleDraft && <div className="verification-notice" role="alert" data-testid="warning-stale-draft">This draft changed elsewhere. Review the newest version before saving again. <button className="button-secondary" type="button" onClick={async () => { try { await refreshRows(); setStaleDraft(false); } catch { toast({ title: 'Refresh failed', description: 'Your local edits remain visible. Retry refreshing before saving.', variant: 'destructive' }); } }} data-testid="button-refresh-stale-draft">Refresh application</button></div>}
+             {planToShow.status === 'Draft' && <DraftContactDetails key={`contact-${planToShow.id}`} plan={planToShow} onBusyChange={setContactBusy} onSave={async values => {
+               try {
+                 const saved = await updateMyApplication(planToShow.id, { applicantKey: persona.key, expectedUpdatedAt: new Date(planToShow.updatedAt).toISOString(), plan: JSON.parse(JSON.stringify({ ...planToShow, intake: { ...planToShow.intake, ...values, files: [] } })) });
+                 acceptRecord(saved);
+                 try { await refreshRows(); } catch { toast({ title: 'Contact saved', description: 'The application list could not refresh. Reload to confirm the latest information.' }); }
+                 return true;
+               } catch (error) { if (isStaleWrite(error)) { setStaleDraft(true); throw error; } return false; }
+             }} />}
             {/\b(?:chemical spill|hazmat|toxic leak|gas leak|active fire|electrical fire|immediate danger|safety hazard|derrame qu[ií]mico|fuga de gas|incendio activo)\b/i.test(planToShow.intake.description) && (
               <div className="verification-notice" role="alert">
                 <AlertCircle size={18} />
@@ -553,8 +609,8 @@ function PortalWorkspace({ persona, userId, onLogout }: { persona: Persona; user
                   <Printer size={16} /> {t.print}
                 </button>
                 {planToShow.status === 'Draft' ? (
-                  <button className="button-primary" onClick={handleSubmitToStaff} data-testid="button-submit-review">
-                    <Send size={16} /> Send to City Staff
+                  <button className="button-primary" onClick={handleSubmitToStaff} disabled={staleDraft || submitting || contactBusy || documentStatus?.id !== planToShow.id || documentStatus.busy || documentStatus.pending || !documentStatus.ready || failedFiles.length > 0} data-testid="button-submit-review">
+                    <Send size={16} /> {submitting ? 'Submitting…' : 'Send to City Staff'}
                   </button>
                 ) : (
                   <button className="button-primary" disabled data-testid="button-submitted">
@@ -567,12 +623,12 @@ function PortalWorkspace({ persona, userId, onLogout }: { persona: Persona; user
             {['Approved', 'Rejected', 'Modified via Staff Override'].includes(planToShow.status) ? (
                <div className="verification-notice" style={{ background: 'hsl(var(--primary) / 0.1)', borderColor: 'hsl(var(--primary) / 0.2)', color: 'hsl(var(--primary))' }} data-testid="notice-review-complete">
                  <CheckCircle2 size={18} />
-                 <span>Review Complete: City staff have completed their simulation review for this plan.</span>
+                  <span>Staff recommendation recorded. This is not a permit approval, denial, or authorization to begin work.</span>
                </div>
             ) : planToShow.status !== 'Draft' ? (
               <div className="verification-notice" data-testid="notice-under-review">
                 <AlertCircle size={18} />
-                <span>Under Review: Your plan has been sent to City Staff. Expected turnaround is 2-3 business days.</span>
+                 <span>Under Review: Your plan has been sent to the staff queue. No turnaround time or permit outcome is guaranteed.</span>
               </div>
             ) : null}
 
@@ -718,7 +774,7 @@ function App() {
         routerReplace={(to) => setLocation(stripBase(to), { replace: true })}
       >
         <div className="global-safety-banner" data-testid="global-safety-banner">
-          Prototype guidance is not official City advice. Public permit records are linked to their source.
+          Preliminary guidance is not official City advice or a legal permit decision. Public permit records are linked to their source.
         </div>
         <Switch>
           <Route path="/" component={HomeRedirect} />

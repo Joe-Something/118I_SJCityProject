@@ -26,7 +26,7 @@ export function PersonaLogin({ onLogin, signedIn }: { onLogin: (persona: Persona
   return (
     <div className="persona-page" data-testid="page-persona-login">
       <header className="topbar">
-        <div className="brand"><div className="brand-mark"><Landmark size={19} /></div><div><div className="brand-name">Permit Navigator</div><div className="brand-sub">City of San José · Prototype</div></div></div>
+        <div className="brand"><div className="brand-mark"><Landmark size={19} /></div><div><div className="brand-name">Permit Navigator</div><div className="brand-sub">San José · Case workspace</div></div></div>
       </header>
       <main className="persona-main">
         <div className="persona-intro">
@@ -36,7 +36,7 @@ export function PersonaLogin({ onLogin, signedIn }: { onLogin: (persona: Persona
         </div>
         <form className="persona-card" onSubmit={submit}>
           <h2>Choose how to continue</h2>
-          <p className="persona-muted">{signedIn ? 'Choose a prototype persona for this account.' : 'Choose a persona, then sign in to your account.'}</p>
+          <p className="persona-muted">{signedIn ? 'Choose a workspace view for this account.' : 'Choose a view, then sign in to your account.'}</p>
           <div className="persona-options" role="group" aria-label="Login type">
             <button type="button" className={`persona-option ${mode === 'applicant' ? 'selected' : ''}`} aria-pressed={mode === 'applicant'} onClick={() => { setMode('applicant'); setError(''); }}><UserRound size={20} /><span><strong>Applicant</strong><small>Manage my action plans</small></span></button>
             <button type="button" className={`persona-option ${mode === 'staff' ? 'selected' : ''}`} aria-pressed={mode === 'staff'} onClick={() => { setMode('staff'); setError(''); }}><Building2 size={20} /><span><strong>City Staff</strong><small>Review submitted plans</small></span></button>
@@ -58,7 +58,7 @@ export function PersonaLogin({ onLogin, signedIn }: { onLogin: (persona: Persona
           <button className="button-primary persona-submit" type="submit" data-testid="button-persona-login">
             {signedIn ? `Enter ${mode === 'applicant' ? 'Applicant Dashboard' : 'Staff Portal'}` : 'Continue to secure sign in'}
           </button>
-          <p className="persona-caution">Prototype only: selecting a staff desk does not grant access. Staff API access requires an administrator-assigned Clerk role. Applicant keys identify plans within your signed-in account. Do not enter sensitive information.</p>
+          <p className="persona-caution">Selecting a staff desk is a UI preference, not access control. Staff API access requires an administrator-assigned Clerk role. Applicant keys identify plans within your signed-in account. Do not enter sensitive information.</p>
         </form>
       </main>
       <section className="footer"><div className="footer-inner"><span>Permit Navigator · San José</span><Disclaimer /></div></section>

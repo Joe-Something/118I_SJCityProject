@@ -6,6 +6,7 @@ import { publishableKeyFromHost } from "@clerk/shared/keys";
 import router from "./routes";
 import { logger } from "./lib/logger";
 import { apiErrorHandler } from "./middlewares/apiErrorHandler";
+import { scheduleApplicationDocumentCleanup } from "./lib/applicationDocumentMaintenance";
 import {
   CLERK_PROXY_PATH,
   clerkProxyMiddleware,
@@ -13,6 +14,8 @@ import {
 } from "./middlewares/clerkProxyMiddleware";
 
 const app: Express = express();
+
+scheduleApplicationDocumentCleanup();
 
 app.use(
   pinoHttp({

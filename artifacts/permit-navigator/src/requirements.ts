@@ -1,14 +1,17 @@
 export type BusinessType = 'boba' | 'restaurant' | 'retail' | 'kitchen' | 'cafe' | 'salon' | 'office' | 'service' | 'other';
 export type Modification = 'plumbing' | 'walls' | 'signage' | 'hvac' | 'electrical' | 'exterior' | 'other';
 
-export const DISCLAIMER = 'Prototype guidance is not official City advice. Public permit records link to City open data.';
-export const PROTOTYPE_REQUIREMENT_VERSION = 'prototype-1';
+export const DISCLAIMER = 'Preliminary guidance is not official City advice or a permit decision. Verify current requirements with the appropriate agency.';
+export const PROTOTYPE_REQUIREMENT_VERSION = 'sample-1';
 export const PROTOTYPE_REQUIREMENT_REVISED = '2026-09-29';
 
 export type RequirementId = 'business-registration' | 'zoning-clearance' | 'building-permits' | 'sign-permits' | 'health-safety';
 
 export type Intake = {
   businessName: string;
+  applicantName?: string;
+  applicantEmail?: string;
+  applicantPhone?: string;
   businessType: BusinessType | '';
   businessOther: string;
   address: string;

@@ -173,6 +173,87 @@ export const ListApplicationHistoryResponseItem = zod.object({
 export const ListApplicationHistoryResponse = zod.array(ListApplicationHistoryResponseItem)
 
 
+export const ListApplicationDocumentsParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const ListApplicationDocumentsResponseItem = zod.object({
+  "id": zod.string().uuid(),
+  "name": zod.string(),
+  "size": zod.number().int(),
+  "contentType": zod.enum(['application/pdf', 'image/png', 'image/jpeg']),
+  "state": zod.enum(['pending', 'ready']),
+  "uploadedAt": zod.coerce.date().nullable()
+})
+export const ListApplicationDocumentsResponse = zod.array(ListApplicationDocumentsResponseItem)
+
+
+export const RequestApplicationDocumentUploadParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const requestApplicationDocumentUploadBodyNameMax = 200;
+
+export const requestApplicationDocumentUploadBodySizeMax = 10485760;
+
+
+
+export const RequestApplicationDocumentUploadBody = zod.object({
+  "name": zod.string().min(1).max(requestApplicationDocumentUploadBodyNameMax),
+  "size": zod.number().int().min(1).max(requestApplicationDocumentUploadBodySizeMax),
+  "contentType": zod.enum(['application/pdf', 'image/png', 'image/jpeg'])
+})
+
+export const RequestApplicationDocumentUploadResponse = zod.object({
+  "uploadUrl": zod.string().url(),
+  "document": zod.object({
+  "id": zod.string().uuid(),
+  "name": zod.string(),
+  "size": zod.number().int(),
+  "contentType": zod.enum(['application/pdf', 'image/png', 'image/jpeg']),
+  "state": zod.enum(['pending', 'ready']),
+  "uploadedAt": zod.coerce.date().nullable()
+})
+})
+
+
+export const CompleteApplicationDocumentUploadParams = zod.object({
+  "id": zod.coerce.string(),
+  "documentId": zod.coerce.string().uuid()
+})
+
+export const CompleteApplicationDocumentUploadResponse = zod.object({
+  "id": zod.string().uuid(),
+  "name": zod.string(),
+  "size": zod.number().int(),
+  "contentType": zod.enum(['application/pdf', 'image/png', 'image/jpeg']),
+  "state": zod.enum(['pending', 'ready']),
+  "uploadedAt": zod.coerce.date().nullable()
+})
+
+
+export const DeleteApplicationDocumentParams = zod.object({
+  "id": zod.coerce.string(),
+  "documentId": zod.coerce.string().uuid()
+})
+
+export const DeleteApplicationDocumentResponse = zod.void()
+
+
+export const DownloadApplicationDocumentParams = zod.object({
+  "id": zod.coerce.string(),
+  "documentId": zod.coerce.string().uuid()
+})
+
+export const downloadApplicationDocumentQueryDownloadDefault = false;
+
+export const DownloadApplicationDocumentQueryParams = zod.object({
+  "download": zod.coerce.boolean().default(downloadApplicationDocumentQueryDownloadDefault)
+})
+
+export const DownloadApplicationDocumentResponse = zod.unknown()
+
+
 export const PostApplicationResponseParams = zod.object({
   "id": zod.coerce.string()
 })
@@ -279,7 +360,8 @@ export const createApplicationBodyApplicantKeyMax = 200;
 
 export const CreateApplicationBody = zod.object({
   "applicantKey": zod.string().min(1).max(createApplicationBodyApplicantKeyMax),
-  "plan": zod.record(zod.string(), zod.unknown())
+  "plan": zod.record(zod.string(), zod.unknown()),
+  "expectedUpdatedAt": zod.coerce.date().optional().describe('Version returned by the last application read; stale writes are rejected with 409')
 })
 
 export const CreateApplicationResponse = zod.object({
@@ -314,7 +396,8 @@ export const updateMyApplicationBodyApplicantKeyMax = 200;
 
 export const UpdateMyApplicationBody = zod.object({
   "applicantKey": zod.string().min(1).max(updateMyApplicationBodyApplicantKeyMax),
-  "plan": zod.record(zod.string(), zod.unknown())
+  "plan": zod.record(zod.string(), zod.unknown()),
+  "expectedUpdatedAt": zod.coerce.date().optional().describe('Version returned by the last application read; stale writes are rejected with 409')
 })
 
 export const UpdateMyApplicationResponse = zod.object({
@@ -344,7 +427,8 @@ export const ReviewApplicationParams = zod.object({
 })
 
 export const ReviewApplicationBody = zod.object({
-  "plan": zod.record(zod.string(), zod.unknown())
+  "plan": zod.record(zod.string(), zod.unknown()),
+  "expectedUpdatedAt": zod.coerce.date().optional().describe('Version returned by the last application read; stale review writes are rejected with 409')
 })
 
 export const ReviewApplicationResponse = zod.object({

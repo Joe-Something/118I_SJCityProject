@@ -9,4 +9,6 @@ import type { ApplicationReviewPlan } from './applicationReviewPlan';
 
 export interface ApplicationReview {
   plan: ApplicationReviewPlan;
+  /** Version returned by the last application read; stale review writes are rejected with 409 */
+  expectedUpdatedAt?: Date;
 }

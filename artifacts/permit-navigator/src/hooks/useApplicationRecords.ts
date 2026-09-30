@@ -28,6 +28,11 @@ export function useApplicationRecords(persona: Persona, filters: StaffApplicatio
   const [recordsError, setRecordsError] = useState('');
   const [recordsRefreshWarning, setRecordsRefreshWarning] = useState('');
   const hasSuccessfulLoad = useRef(false);
+  const acceptRecord = useCallback((record: ApplicationRecord) => {
+    setRecords(current => current.some(item => item.id === record.id)
+      ? current.map(item => item.id === record.id ? record : item)
+      : [...current, record]);
+  }, []);
 
   const loadRecords = useCallback(() => {
     if (persona.kind === 'applicant') {
@@ -101,5 +106,5 @@ export function useApplicationRecords(persona: Persona, filters: StaffApplicatio
     };
   }, [loadRecords, persona.kind, reportLoadError]);
 
-  return { records, recordsLoading, recordsError, recordsRefreshWarning, refreshRows };
+  return { records, recordsLoading, recordsError, recordsRefreshWarning, refreshRows, acceptRecord };
 }

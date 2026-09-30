@@ -6,6 +6,12 @@
  * OpenAPI spec version: 0.1.0
  */
 
+export * from './applicationDocument';
+export * from './applicationDocumentContentType';
+export * from './applicationDocumentInput';
+export * from './applicationDocumentInputContentType';
+export * from './applicationDocumentState';
+export * from './applicationDocumentUpload';
 export * from './applicationInput';
 export * from './applicationInputPlan';
 export * from './applicationRecord';
@@ -13,6 +19,7 @@ export * from './applicationRecordPlan';
 export * from './applicationResponseInput';
 export * from './applicationReview';
 export * from './applicationReviewPlan';
+export * from './downloadApplicationDocumentParams';
 export * from './healthStatus';
 export * from './listMyApplicationsParams';
 export * from './listWorkspaceRecordsMode';

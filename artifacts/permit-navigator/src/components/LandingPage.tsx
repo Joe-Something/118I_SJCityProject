@@ -9,7 +9,7 @@ export function LandingPage({ signedIn }: { signedIn?: boolean }) {
       <header className="topbar">
         <Link href="/welcome" className="brand" data-testid="brand-permit-navigator" aria-label="Permit Navigator Home">
           <div className="brand-mark"><Landmark size={19} /></div>
-          <div><div className="brand-name">Permit Navigator</div><div className="brand-sub">City of San José · Prototype</div></div>
+          <div><div className="brand-name">Permit Navigator</div><div className="brand-sub">San José · Case workspace</div></div>
         </Link>
         <div className="top-actions">
            {signedIn ? (

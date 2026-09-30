@@ -20,10 +20,14 @@ import type {
 } from '@tanstack/react-query';
 
 import type {
+  ApplicationDocument,
+  ApplicationDocumentInput,
+  ApplicationDocumentUpload,
   ApplicationInput,
   ApplicationRecord,
   ApplicationResponseInput,
   ApplicationReview,
+  DownloadApplicationDocumentParams,
   HealthStatus,
   ListMyApplicationsParams,
   ListWorkspaceRecordsParams,
@@ -720,6 +724,388 @@ export function useListApplicationHistory<TData = Awaited<ReturnType<typeof list
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListApplicationHistoryQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getListApplicationDocumentsUrl = (id: string,) => {
+
+
+
+
+  return `/api/applications/${id}/documents`
+}
+
+export const listApplicationDocuments = async (id: string, options?: Parameters<typeof customFetch>[1]): Promise<ApplicationDocument[]> => {
+
+  return customFetch<ApplicationDocument[]>(getListApplicationDocumentsUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListApplicationDocumentsQueryKey = (id: string,) => {
+    return [
+    `/api/applications/${id}/documents`
+    ] as const;
+    }
+
+
+export const getListApplicationDocumentsQueryOptions = <TData = Awaited<ReturnType<typeof listApplicationDocuments>>, TError = ErrorType<unknown>>(id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listApplicationDocuments>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListApplicationDocumentsQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listApplicationDocuments>>> = ({ signal }) => listApplicationDocuments(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listApplicationDocuments>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListApplicationDocumentsQueryResult = NonNullable<Awaited<ReturnType<typeof listApplicationDocuments>>>
+export type ListApplicationDocumentsQueryError = ErrorType<unknown>
+
+
+
+export function useListApplicationDocuments<TData = Awaited<ReturnType<typeof listApplicationDocuments>>, TError = ErrorType<unknown>>(
+ id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listApplicationDocuments>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListApplicationDocumentsQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getRequestApplicationDocumentUploadUrl = (id: string,) => {
+
+
+
+
+  return `/api/applications/${id}/documents/upload-url`
+}
+
+export const requestApplicationDocumentUpload = async (id: string,
+    applicationDocumentInput: ApplicationDocumentInput, options?: Parameters<typeof customFetch>[1]): Promise<ApplicationDocumentUpload> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<ApplicationDocumentUpload>(getRequestApplicationDocumentUploadUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(applicationDocumentInput)
+  }
+);}
+
+
+
+
+
+export const getRequestApplicationDocumentUploadMutationKey = () => ['requestApplicationDocumentUpload'] as const;
+
+export const getRequestApplicationDocumentUploadMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof requestApplicationDocumentUpload>>, TError,RequestApplicationDocumentUploadMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof requestApplicationDocumentUpload>>, TError,RequestApplicationDocumentUploadMutationVariables, TContext> => {
+
+const mutationKey = getRequestApplicationDocumentUploadMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof requestApplicationDocumentUpload>>, RequestApplicationDocumentUploadMutationVariables> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  requestApplicationDocumentUpload(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RequestApplicationDocumentUploadMutationResult = NonNullable<Awaited<ReturnType<typeof requestApplicationDocumentUpload>>>
+    export type RequestApplicationDocumentUploadMutationBody = BodyType<ApplicationDocumentInput>
+    export type RequestApplicationDocumentUploadMutationError = ErrorType<unknown>
+    export type RequestApplicationDocumentUploadMutationVariables = {id: string;data: BodyType<ApplicationDocumentInput>}
+
+    export const useRequestApplicationDocumentUpload = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof requestApplicationDocumentUpload>>, TError,RequestApplicationDocumentUploadMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof requestApplicationDocumentUpload>>,
+        TError,
+        RequestApplicationDocumentUploadMutationVariables,
+        TContext
+      > => {
+      return useMutation(getRequestApplicationDocumentUploadMutationOptions(options));
+    }
+
+export const getCompleteApplicationDocumentUploadUrl = (id: string,
+    documentId: string,) => {
+
+
+
+
+  return `/api/applications/${id}/documents/${documentId}/complete`
+}
+
+export const completeApplicationDocumentUpload = async (id: string,
+    documentId: string, options?: Parameters<typeof customFetch>[1]): Promise<ApplicationDocument> => {
+
+  return customFetch<ApplicationDocument>(getCompleteApplicationDocumentUploadUrl(id,documentId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getCompleteApplicationDocumentUploadMutationKey = () => ['completeApplicationDocumentUpload'] as const;
+
+export const getCompleteApplicationDocumentUploadMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof completeApplicationDocumentUpload>>, TError,CompleteApplicationDocumentUploadMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof completeApplicationDocumentUpload>>, TError,CompleteApplicationDocumentUploadMutationVariables, TContext> => {
+
+const mutationKey = getCompleteApplicationDocumentUploadMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof completeApplicationDocumentUpload>>, CompleteApplicationDocumentUploadMutationVariables> = (props) => {
+          const {id,documentId} = props ?? {};
+
+          return  completeApplicationDocumentUpload(id,documentId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CompleteApplicationDocumentUploadMutationResult = NonNullable<Awaited<ReturnType<typeof completeApplicationDocumentUpload>>>
+
+    export type CompleteApplicationDocumentUploadMutationError = ErrorType<unknown>
+    export type CompleteApplicationDocumentUploadMutationVariables = {id: string;documentId: string}
+
+    export const useCompleteApplicationDocumentUpload = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof completeApplicationDocumentUpload>>, TError,CompleteApplicationDocumentUploadMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof completeApplicationDocumentUpload>>,
+        TError,
+        CompleteApplicationDocumentUploadMutationVariables,
+        TContext
+      > => {
+      return useMutation(getCompleteApplicationDocumentUploadMutationOptions(options));
+    }
+
+export const getDeleteApplicationDocumentUrl = (id: string,
+    documentId: string,) => {
+
+
+
+
+  return `/api/applications/${id}/documents/${documentId}`
+}
+
+export const deleteApplicationDocument = async (id: string,
+    documentId: string, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+
+  return customFetch<void>(getDeleteApplicationDocumentUrl(id,documentId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getDeleteApplicationDocumentMutationKey = () => ['deleteApplicationDocument'] as const;
+
+export const getDeleteApplicationDocumentMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteApplicationDocument>>, TError,DeleteApplicationDocumentMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteApplicationDocument>>, TError,DeleteApplicationDocumentMutationVariables, TContext> => {
+
+const mutationKey = getDeleteApplicationDocumentMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteApplicationDocument>>, DeleteApplicationDocumentMutationVariables> = (props) => {
+          const {id,documentId} = props ?? {};
+
+          return  deleteApplicationDocument(id,documentId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteApplicationDocumentMutationResult = NonNullable<Awaited<ReturnType<typeof deleteApplicationDocument>>>
+
+    export type DeleteApplicationDocumentMutationError = ErrorType<unknown>
+    export type DeleteApplicationDocumentMutationVariables = {id: string;documentId: string}
+
+    export const useDeleteApplicationDocument = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteApplicationDocument>>, TError,DeleteApplicationDocumentMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteApplicationDocument>>,
+        TError,
+        DeleteApplicationDocumentMutationVariables,
+        TContext
+      > => {
+      return useMutation(getDeleteApplicationDocumentMutationOptions(options));
+    }
+
+export const getDownloadApplicationDocumentUrl = (id: string,
+    documentId: string,
+    params?: DownloadApplicationDocumentParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/applications/${id}/documents/${documentId}/content?${stringifiedParams}` : `/api/applications/${id}/documents/${documentId}/content`
+}
+
+export const downloadApplicationDocument = async (id: string,
+    documentId: string,
+    params?: DownloadApplicationDocumentParams, options?: Parameters<typeof customFetch>[1]): Promise<Blob> => {
+
+  return customFetch<Blob>(getDownloadApplicationDocumentUrl(id,documentId,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getDownloadApplicationDocumentQueryKey = (id: string,
+    documentId: string,
+    params?: DownloadApplicationDocumentParams,) => {
+    return [
+    `/api/applications/${id}/documents/${documentId}/content`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getDownloadApplicationDocumentQueryOptions = <TData = Awaited<ReturnType<typeof downloadApplicationDocument>>, TError = ErrorType<unknown>>(id: string,
+    documentId: string,
+    params?: DownloadApplicationDocumentParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof downloadApplicationDocument>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getDownloadApplicationDocumentQueryKey(id,documentId,params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof downloadApplicationDocument>>> = ({ signal }) => downloadApplicationDocument(id,documentId,params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined && documentId !== null && documentId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof downloadApplicationDocument>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type DownloadApplicationDocumentQueryResult = NonNullable<Awaited<ReturnType<typeof downloadApplicationDocument>>>
+export type DownloadApplicationDocumentQueryError = ErrorType<unknown>
+
+
+
+export function useDownloadApplicationDocument<TData = Awaited<ReturnType<typeof downloadApplicationDocument>>, TError = ErrorType<unknown>>(
+ id: string,
+    documentId: string,
+    params?: DownloadApplicationDocumentParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof downloadApplicationDocument>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getDownloadApplicationDocumentQueryOptions(id,documentId,params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

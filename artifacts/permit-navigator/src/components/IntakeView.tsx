@@ -17,6 +17,7 @@ export function IntakeForm({ intake, setIntake, onGenerate, language, setLanguag
   const validateAndGenerate = () => {
     const next: Record<string, string> = {};
     if (!intake.businessName.trim()) next.businessName = 'Enter a business name.';
+    if (intake.applicantEmail?.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(intake.applicantEmail.trim())) next.applicantEmail = 'Enter a valid email address.';
     if (!intake.businessType) next.business = t.errorBusiness;
     if (intake.businessType === 'other' && !intake.businessOther.trim()) next.businessOther = t.errorCustomBusiness;
     if (!intake.address.trim()) next.address = t.errorAddress;
@@ -92,6 +93,11 @@ export function IntakeForm({ intake, setIntake, onGenerate, language, setLanguag
       <input id="business-name" value={intake.businessName} onChange={event => update('businessName', event.target.value)} placeholder="Your business or project name" data-testid="input-business-name" />
       {errors.businessName && <div className="field-error" role="alert">{errors.businessName}</div>}
     </div>
+    <div className="input-row">
+      <div className="field"><label htmlFor="applicant-name">Applicant full name (optional)</label><input id="applicant-name" value={intake.applicantName || ''} onChange={event => update('applicantName', event.target.value)} data-testid="input-applicant-name" /></div>
+      <div className="field"><label htmlFor="applicant-phone">Phone (optional)</label><input id="applicant-phone" type="tel" value={intake.applicantPhone || ''} onChange={event => update('applicantPhone', event.target.value)} data-testid="input-applicant-phone" /></div>
+    </div>
+    <div className="field"><label htmlFor="applicant-email">Email (optional)</label><input id="applicant-email" type="email" value={intake.applicantEmail || ''} onChange={event => update('applicantEmail', event.target.value)} aria-invalid={!!errors.applicantEmail} data-testid="input-applicant-email" />{errors.applicantEmail && <p className="field-error" role="alert">{errors.applicantEmail}</p>}</div>
     
     <div className="field">
       <label htmlFor="business-type">{t.business} <span className="required">*</span></label>
@@ -142,7 +148,7 @@ export function IntakeForm({ intake, setIntake, onGenerate, language, setLanguag
     <div className="field">
       <label>{t.documents}</label>
       <div className="upload-zone"><FileText size={17} /><span>{t.upload}</span><input ref={fileRef} type="file" accept=".pdf,.png,.jpg,.jpeg" multiple onChange={handleFiles} data-testid="input-documents" /></div>
-      <p style={{ fontSize: 12, color: 'hsl(var(--muted-foreground))', margin: '8px 0 0' }}>Prototype: selected documents are not uploaded or saved with the application record.</p>
+      <p style={{ fontSize: 12, color: 'hsl(var(--muted-foreground))', margin: '8px 0 0' }}>Files upload after the draft is saved. Check each file before submitting.</p>
       {intake.files.length > 0 && <div className="file-list" data-testid="text-uploaded-files">{intake.files.map((file) => file.name).join(', ')}</div>}
       {errors.files && <div className="field-error">{errors.files}</div>}
     </div>
