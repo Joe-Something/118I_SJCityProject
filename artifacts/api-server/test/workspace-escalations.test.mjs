@@ -30,12 +30,14 @@ const importerPermitNumber = `2026-${randomUUID().replace(/\D/g, "")}-CI`;
 const importerRecordId = `SJ-OPEN-${importerPermitNumber}`;
 const ticketId = randomUUID();
 const ordinaryId = randomUUID();
+const legacyAcknowledgedTicketId = randomUUID();
 const auditFailureTicketId = randomUUID();
 const auditFailureTriggerSuffix = randomUUID().replaceAll("-", "");
 const currentPublicRecordId = `REF-CURRENT-${fixture}`;
 const outdatedPublicRecordId = `REF-OUTDATED-${fixture}`;
 const syntheticRecordId = `DEMO-D2-${fixture}`;
 const originalTime = new Date("2024-01-02T03:04:05.000Z");
+const legacyAcknowledgedTime = new Date("2024-03-04T05:06:07.000Z");
 const auditFailureOriginalTime = new Date("2024-02-03T04:05:06.000Z");
 const importedAt = new Date();
 const outdatedImportedAt = new Date(importedAt.getTime() - 48 * 60 * 60 * 1000);
@@ -108,6 +110,14 @@ before(async () => {
   await db.insert(workspaceMessagesTable).values([
     { id: ticketId, conversationId, role: "assistant", content: "Prototype safety warning", status: "high-urgency", updatedAt: originalTime },
     { id: ordinaryId, conversationId, role: "assistant", content: "Regular guidance", status: "complete" },
+    {
+      id: legacyAcknowledgedTicketId,
+      conversationId,
+      role: "assistant",
+      content: "Older acknowledged safety warning",
+      status: "high-urgency-acknowledged",
+      updatedAt: legacyAcknowledgedTime,
+    },
   ]);
   await db.insert(applicationsTable).values([
     {
@@ -161,7 +171,7 @@ before(async () => {
 after(async () => {
   if (server) await new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
   await db.delete(workspaceAcknowledgementsTable)
-    .where(inArray(workspaceAcknowledgementsTable.ticketId, [ticketId, auditFailureTicketId, ...residentTicketIds]));
+    .where(inArray(workspaceAcknowledgementsTable.ticketId, [ticketId, legacyAcknowledgedTicketId, auditFailureTicketId, ...residentTicketIds]));
   await db.delete(workspaceMessagesTable).where(eq(workspaceMessagesTable.conversationId, conversationId));
   await db.delete(workspaceConversationsTable).where(eq(workspaceConversationsTable.id, conversationId));
   await db.delete(applicationsTable)
@@ -341,6 +351,26 @@ test("authorized queue lists only urgent tickets without resident details or dis
   assert.equal((await ack("fire", ordinaryId)).status, 404);
   assert.equal((await ack("fire", randomUUID())).status, 404);
   assert.equal((await ack("fire", "bad-id")).status, 400);
+});
+
+test("legacy acknowledged tickets stay acknowledged without fabricated reviewer identity", async () => {
+  const [persisted] = await db.select().from(workspaceMessagesTable)
+    .where(eq(workspaceMessagesTable.id, legacyAcknowledgedTicketId));
+  assert.equal(persisted.status, "high-urgency-acknowledged");
+  assert.equal(persisted.updatedAt.toISOString(), legacyAcknowledgedTime.toISOString());
+
+  const auditRows = await db.select().from(workspaceAcknowledgementsTable)
+    .where(eq(workspaceAcknowledgementsTable.ticketId, legacyAcknowledgedTicketId));
+  assert.equal(auditRows.length, 0, "legacy acknowledged ticket has no audit event");
+
+  const response = await queue("fire");
+  assert.equal(response.status, 200);
+  const item = response.body.find(row => row.ticketId === legacyAcknowledgedTicketId);
+  assert.ok(item);
+  assert.equal(item.status, "Acknowledged in prototype queue");
+  assert.equal(item.acknowledgedAt, legacyAcknowledgedTime.toISOString());
+  assert.equal(item.acknowledgedBy, null);
+  assert.equal(item.acknowledgedDepartment, null);
 });
 
 test("an audit-write failure rolls back the urgent ticket acknowledgement", async () => {
