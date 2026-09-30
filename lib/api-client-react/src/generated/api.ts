@@ -84,7 +84,7 @@ export const getGetStaffAccessUrl = () => {
 }
 
 /**
- * @summary Read automatic administrator access for the signed-in staff reviewer
+ * @summary Read full department access for the signed-in City Staff account
  */
 export const getStaffAccess = async ( options?: Parameters<typeof customFetch>[1]): Promise<StaffAccess> => {
 
@@ -131,7 +131,7 @@ export type GetStaffAccessQueryError = ErrorType<void>
 
 
 /**
- * @summary Read automatic administrator access for the signed-in staff reviewer
+ * @summary Read full department access for the signed-in City Staff account
  */
 
 export function useGetStaffAccess<TData = Awaited<ReturnType<typeof getStaffAccess>>, TError = ErrorType<void>>(
@@ -151,6 +151,81 @@ export function useGetStaffAccess<TData = Awaited<ReturnType<typeof getStaffAcce
 
 
 
+
+export const getEnterStaffWorkspaceUrl = () => {
+
+
+
+
+  return `/api/staff/access`
+}
+
+/**
+ * The server verifies the signed-in identity, assigns any missing staff metadata to that account, and returns access to every department. No account ID or department is accepted from the browser.
+ * @summary Grant City Staff access to the authenticated account that selected the staff workspace
+ */
+export const enterStaffWorkspace = async ( options?: Parameters<typeof customFetch>[1]): Promise<StaffAccess> => {
+
+  return customFetch<StaffAccess>(getEnterStaffWorkspaceUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getEnterStaffWorkspaceMutationKey = () => ['enterStaffWorkspace'] as const;
+
+export const getEnterStaffWorkspaceMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof enterStaffWorkspace>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof enterStaffWorkspace>>, TError,void, TContext> => {
+
+const mutationKey = getEnterStaffWorkspaceMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof enterStaffWorkspace>>, void> = () => {
+
+
+          return  enterStaffWorkspace(requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type EnterStaffWorkspaceMutationResult = NonNullable<Awaited<ReturnType<typeof enterStaffWorkspace>>>
+
+    export type EnterStaffWorkspaceMutationError = ErrorType<void>
+
+
+    /**
+ * @summary Grant City Staff access to the authenticated account that selected the staff workspace
+ */
+export const useEnterStaffWorkspace = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof enterStaffWorkspace>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof enterStaffWorkspace>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getEnterStaffWorkspaceMutationOptions(options));
+    }
 
 export const getListWorkspacePrototypeSourcesUrl = () => {
 

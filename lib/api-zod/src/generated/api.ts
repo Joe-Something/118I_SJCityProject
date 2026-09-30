@@ -9,9 +9,20 @@ import * as zod from 'zod';
 
 
 /**
- * @summary Read automatic administrator access for the signed-in staff reviewer
+ * @summary Read full department access for the signed-in City Staff account
  */
 export const GetStaffAccessResponse = zod.object({
+  "administratorEnabled": zod.boolean().describe('Always true for a server-approved City Staff account.'),
+  "assignedDepartment": zod.enum(['Planning', 'Building', 'Fire', 'Economic Development']),
+  "accessibleDepartments": zod.array(zod.enum(['Planning', 'Building', 'Fire', 'Economic Development']))
+})
+
+
+/**
+ * The server verifies the signed-in identity, assigns any missing staff metadata to that account, and returns access to every department. No account ID or department is accepted from the browser.
+ * @summary Grant City Staff access to the authenticated account that selected the staff workspace
+ */
+export const EnterStaffWorkspaceResponse = zod.object({
   "administratorEnabled": zod.boolean().describe('Always true for a server-approved City Staff account.'),
   "assignedDepartment": zod.enum(['Planning', 'Building', 'Fire', 'Economic Development']),
   "accessibleDepartments": zod.array(zod.enum(['Planning', 'Building', 'Fire', 'Economic Development']))

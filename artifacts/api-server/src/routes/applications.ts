@@ -7,6 +7,8 @@ import { applicationDocumentStorage } from "../lib/applicationDocumentStorage";
 import { cleanupApplicationDocuments, cleanupDocumentObject } from "../lib/applicationDocumentMaintenance";
 import { databaseErrorCode, isDatabaseUnavailable, withDatabaseRetry } from "../lib/databaseResilience";
 import { createDemoApplications, filterDemoApplications, isDemoApplicationId } from "../lib/applicationSamples";
+import { clerkClient } from "@clerk/express";
+import { getClerkProxyHost } from "../middlewares/clerkProxyMiddleware";
 import {
   CompleteApplicationDocumentUploadParams, CompleteApplicationDocumentUploadResponse,
   DeleteApplicationDocumentParams, DownloadApplicationDocumentParams, ListApplicationDocumentsParams,
@@ -21,7 +23,7 @@ import {
   SearchStaffApplicationsQueryParams, SearchStaffApplicationsResponse,
   UpdateMyApplicationBody, UpdateMyApplicationParams, UpdateMyApplicationResponse,
   ReviewApplicationBody, ReviewApplicationParams, ReviewApplicationResponse,
-  GetStaffAccessResponse,
+  GetStaffAccessResponse, EnterStaffWorkspaceResponse,
 } from "@workspace/api-zod";
 
 const router: IRouter = Router();
@@ -42,11 +44,70 @@ function staffAccessResponse(staff: { administratorEnabled: boolean; department:
   };
 }
 
+function sameOriginCookieMutation(req: Request): boolean {
+  const origin = req.get("origin");
+  const trustedHost = getClerkProxyHost(req);
+  if (!origin || !trustedHost) return false;
+  try {
+    const parsed = new URL(origin);
+    const forwardedProtocol = req.headers["x-forwarded-proto"];
+    const firstForwardedProtocol = (Array.isArray(forwardedProtocol)
+      ? forwardedProtocol[0]
+      : forwardedProtocol)?.split(",")[0]?.trim().toLowerCase();
+    const trustedProtocol = firstForwardedProtocol || req.protocol.toLowerCase();
+    return (trustedProtocol === "https" || trustedProtocol === "http")
+      && parsed.protocol === `${trustedProtocol}:`
+      && parsed.host.toLowerCase() === trustedHost.toLowerCase()
+      && parsed.origin === origin;
+  } catch {
+    return false;
+  }
+}
+
 router.get("/staff/access", async (req, res): Promise<void> => {
   const staff = await authorizedStaff(req, res);
   if (!staff) return;
   res.setHeader("Cache-Control", "no-store");
   res.json(GetStaffAccessResponse.parse(staffAccessResponse(staff)));
+});
+
+router.post("/staff/access", async (req, res): Promise<void> => {
+  const id = signedInUser(req, res);
+  if (!id) return;
+  if (!sameOriginCookieMutation(req)) {
+    res.status(403).json({ error: "Selecting City Staff requires a same-origin request." });
+    return;
+  }
+  if (req.body !== undefined && (!req.body || typeof req.body !== "object" || Array.isArray(req.body)
+      || Object.keys(req.body).length > 0)) {
+    res.status(400).json({ error: "City Staff access is assigned to the signed-in account; user IDs and departments cannot be supplied." });
+    return;
+  }
+
+  try {
+    const user = await clerkClient.users.getUser(id);
+    const existingDepartment = user.privateMetadata?.staffDepartment;
+    const department = typeof existingDepartment === "string" && allowedDepartments.includes(existingDepartment as typeof allowedDepartments[number])
+      ? existingDepartment
+      : "Economic Development";
+    const alreadyEnrolled = user.privateMetadata?.staffRole === "reviewer"
+      && department === existingDepartment;
+    if (!alreadyEnrolled) {
+      await clerkClient.users.updateUserMetadata(id, {
+        privateMetadata: { staffRole: "reviewer", staffDepartment: department },
+      });
+    }
+
+    res.setHeader("Cache-Control", "no-store");
+    res.json(EnterStaffWorkspaceResponse.parse({
+      administratorEnabled: true,
+      assignedDepartment: department,
+      accessibleDepartments: [...allowedDepartments],
+    }));
+  } catch {
+    req.log?.warn({ staffUserId: id }, "Could not grant staff workspace access");
+    res.status(503).json({ error: "City Staff access could not be verified. Please retry shortly." });
+  }
 });
 
 function documentView(document: typeof applicationDocumentsTable.$inferSelect) {

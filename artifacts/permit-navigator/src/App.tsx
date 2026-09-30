@@ -26,11 +26,11 @@ import { RequirementCard } from './components/RequirementCard';
 import { AIWorkspace, PublicWorkspace } from './components/AIWorkspace';
 import { StaffApplicationFilters } from './components/StaffSearchFilters';
 import { applicantId, readPersona, personaKey, PENDING_PERSONA_KEY, readPlans, Persona } from './prototypeStore';
-import { createApplication, getListApplicationHistoryQueryKey, getStaffAccess, postApplicationResponse, reviewApplication, updateMyApplication, type StaffAccess as StaffAccessProfile } from '@workspace/api-client-react';
+import { createApplication, enterStaffWorkspace, getListApplicationHistoryQueryKey, getStaffAccess, postApplicationResponse, reviewApplication, updateMyApplication, type StaffAccess as StaffAccessProfile } from '@workspace/api-client-react';
 import { saveAndRefresh, useApplicationRecords } from './hooks/useApplicationRecords';
 import { isStaleWrite } from './utils/writeErrors';
 import { isDemoSeedApplicationId } from './utils/applicationResilience';
-import { shouldApplyStaffAccessResponse, staffPermissionsChanged } from './utils/staffAccess';
+import { readOrEnterStaffWorkspace, shouldApplyStaffAccessResponse, staffPermissionsChanged } from './utils/staffAccess';
 
 const clerkPubKey = publishableKeyFromHost(
   window.location.hostname,
@@ -156,7 +156,11 @@ function PortalWorkspace({ persona, userId, onLogout }: { persona: Persona; user
     else signal?.addEventListener('abort', () => controller.abort(), { once: true });
     const requestId = ++accessRequestId.current;
     try {
-      const value: unknown = await getStaffAccess({ signal: controller.signal });
+      const value: unknown = await readOrEnterStaffWorkspace(
+        () => getStaffAccess({ signal: controller.signal }),
+        () => enterStaffWorkspace({ signal: controller.signal }),
+        () => !controller.signal.aborted && requestId === accessRequestId.current,
+      );
       if (!isStaffAccess(value)) throw new Error('The server returned an invalid staff access profile.');
       if (!shouldApplyStaffAccessResponse(requestId, accessRequestId.current, false, controller.signal.aborted)) return;
       if (staffPermissionsChanged(staffAccessSnapshot.current, value)) clearStaffScopedQueries();
@@ -175,7 +179,7 @@ function PortalWorkspace({ persona, userId, onLogout }: { persona: Persona; user
       setStaffAccess(null);
       const status = error && typeof error === 'object' && 'status' in error ? error.status : undefined;
       setStaffAccessError(status === 403
-        ? 'Staff access requires an administrator-approved reviewer account.'
+        ? 'City Staff access could not be activated. Retry from the City Staff sign-in view.'
         : status === 401 ? 'Your sign-in has expired. Sign in again.'
           : status === 503 ? 'The server could not verify your permissions. The staff workspace is temporarily unavailable; retry to reconnect.'
             : error instanceof Error ? error.message : 'Could not verify your staff permissions. Try again.');

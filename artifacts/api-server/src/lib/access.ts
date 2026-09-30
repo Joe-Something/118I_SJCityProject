@@ -10,7 +10,7 @@ export function signedInUser(req: Request, res: Response): string | null {
   return id;
 }
 
-/** Staff eligibility is server-managed; every approved staff reviewer has administrator access. */
+/** The signed-in user selects the staff workspace, then server-issued private metadata authorizes access. */
 export type AuthorizedStaff = {
   id: string;
   department: string;
@@ -34,7 +34,7 @@ export async function authorizedStaff(req: Request, res: Response): Promise<Auth
   }
   const department = user.privateMetadata?.staffDepartment;
   if (user.privateMetadata?.staffRole !== "reviewer" || typeof department !== "string" || !allowedDepartmentSet.has(department)) {
-    res.status(403).json({ error: "Staff access requires an administrator-assigned Clerk staff role." });
+    res.status(403).json({ error: "Select the City Staff workspace to enroll your signed-in account." });
     return null;
   }
   return { id, department, administratorEnabled: true };

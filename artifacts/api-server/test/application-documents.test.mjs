@@ -359,7 +359,7 @@ test("canceled uploads retain tombstones through signed-link expiry and remove a
     .where(eq(applicationDocumentsTable.id, pending.id))).length, 0);
 });
 
-test("submitted documents are readable only by their owner or approved city staff", async () => {
+test("submitted documents are readable only by their owner or enrolled city staff", async () => {
   const reserved = await upload("submitter", submittedId);
   assert.equal(reserved.response.status, 403, "submitted owners cannot change documents");
 

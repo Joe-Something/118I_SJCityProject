@@ -58,7 +58,7 @@ export function PersonaLogin({ onLogin, signedIn }: { onLogin: (persona: Persona
           <button className="button-primary persona-submit" type="submit" data-testid="button-persona-login">
             {signedIn ? `Enter ${mode === 'applicant' ? 'Applicant Dashboard' : 'Staff Portal'}` : 'Continue to secure sign in'}
           </button>
-          <p className="persona-caution">Selecting a staff desk is a UI preference, not access control. Staff API access requires an administrator-assigned Clerk role. Applicant keys identify plans within your signed-in account. Do not enter sensitive information.</p>
+          <p className="persona-caution">Choosing City Staff grants your signed-in account administrator access to submitted applications across all departments. No staff approval is required. Applicant keys identify plans within your signed-in account. Do not enter sensitive information.</p>
         </form>
       </main>
       <section className="footer"><div className="footer-inner"><span>Permit Navigator · San José</span><Disclaimer /></div></section>

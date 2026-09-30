@@ -26,6 +26,21 @@ export function staffPermissionsChanged(
       !== [...next.accessibleDepartments].sort().join('|');
 }
 
+/** A staff selection explicitly enrolls this account only after an authenticated read denies access. */
+export async function readOrEnterStaffWorkspace<T>(
+  read: () => Promise<T>,
+  enter: () => Promise<T>,
+  canEnter: () => boolean,
+): Promise<T> {
+  try {
+    return await read();
+  } catch (error) {
+    const status = error && typeof error === 'object' && 'status' in error ? error.status : undefined;
+    if (status !== 403 || !canEnter()) throw error;
+    return enter();
+  }
+}
+
 export function matchesStaffDepartmentView(
   departments: readonly string[],
   selectedDepartment: StaffDepartmentView,

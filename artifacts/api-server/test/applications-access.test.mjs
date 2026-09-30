@@ -72,7 +72,7 @@ async function request(method, route, actor = "anonymous", body) {
     method,
     headers: {
       "x-test-actor": actor,
-      ...(method === "PUT" ? { origin: baseUrl } : {}),
+      ...(method === "PUT" || (method === "POST" && route === "/staff/access") ? { origin: baseUrl } : {}),
       ...(body ? { "content-type": "application/json" } : {}),
     },
     ...(body ? { body: JSON.stringify(body) } : {}),
@@ -159,6 +159,9 @@ before(async () => {
               economic: { staffRole: "reviewer", staffDepartment: "Economic Development", staffAdministratorEnabled: false },
               unassigned: { staffRole: "reviewer" },
               resident: {},
+              visitor: {},
+              existingDepartment: { staffDepartment: "Fire", existingMetadata: "preserved" },
+              enrollmentFailure: { staffDepartment: "Planning", existingMetadata: "preserved" },
               metadataFailure: { staffRole: "reviewer", staffDepartment: "Building", staffAdministratorEnabled: false },
               lookupFailure: { staffRole: "reviewer", staffDepartment: "Building", staffAdministratorEnabled: false },
             };
@@ -169,7 +172,7 @@ before(async () => {
                 return { privateMetadata: testStaff[id] ?? {} };
               },
               updateUserMetadata: async (id, update) => {
-                if (id === "metadataFailure") throw new Error("Injected Clerk metadata service failure");
+                if (id === "metadataFailure" || id === "enrollmentFailure") throw new Error("Injected Clerk metadata service failure");
                 testStaff[id] = { ...testStaff[id], ...update.privateMetadata };
                 return { privateMetadata: testStaff[id] };
               },
@@ -259,7 +262,7 @@ test("history detail is limited to the owner and an authorized staff reviewer", 
   assert.equal(crossDepartmentReviewer.status, 200);
 });
 
-test("all approved staff reviewers can access every department and applicant identity stays private", async () => {
+test("staff reviewers can access every department without exposing applicant identity", async () => {
   const buildingReviewer = await request("GET", `/applications/staff?applicationId=${buildingId}`, "building");
   assert.equal(buildingReviewer.status, 200);
   assert.equal(buildingReviewer.body.length, 1);
@@ -292,7 +295,7 @@ test("all approved staff reviewers can access every department and applicant ide
   }
 });
 
-test("all approved reviewers receive server administrator access automatically", async () => {
+test("reviewers automatically receive server administrator access across departments", async () => {
   const initial = await request("GET", "/staff/access", "building");
   assert.equal(initial.status, 200);
   assert.deepEqual(initial.body, {
@@ -388,6 +391,84 @@ test("all approved reviewers receive server administrator access automatically",
   assert.equal(crossDepartmentList.body[0].assignedDepartment, "Fire");
   const continuesCrossDepartmentAccess = await request("GET", `/applications/staff?applicationId=${fireId}`, "building");
   assert.deepEqual(continuesCrossDepartmentAccess.body.map(row => row.id), [fireId]);
+});
+
+test("selecting City Staff enrolls only the authenticated account and grants full access", async () => {
+  const unselectedAccount = await request("GET", "/staff/access", "visitor");
+  assert.equal(unselectedAccount.status, 403);
+  const unselectedQueue = await request("GET", `/applications/staff?applicationId=${fireId}`, "visitor");
+  assert.equal(unselectedQueue.status, 403);
+
+  const blockedEnrollments = [
+    { name: "missing Origin", headers: {} },
+    { name: "another site", headers: { origin: "https://attacker.invalid" } },
+    { name: "wrong protocol", headers: { origin: baseUrl.replace("http://", "https://") } },
+    { name: "Bearer authorization without Origin", headers: { authorization: "Bearer verified-test-token" } },
+  ];
+  for (const { name, headers } of blockedEnrollments) {
+    const response = await fetch(`${baseUrl}/api/staff/access`, {
+      method: "POST",
+      headers: { "x-test-actor": "visitor", ...headers },
+    });
+    assert.equal(response.status, 403, `${name} cannot enroll`);
+    assert.equal((await request("GET", "/staff/access", "visitor")).status, 403);
+  }
+
+  const bearerMutation = await fetch(`${baseUrl}/api/staff/access`, {
+    method: "POST",
+    headers: {
+      "x-test-actor": "visitor",
+      authorization: "Bearer verified-test-token",
+      origin: baseUrl,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({ userId: "resident", department: "Planning" }),
+  });
+  assert.equal(bearerMutation.status, 400, "the browser cannot select another user's identity or department");
+  assert.equal((await request("GET", "/staff/access", "visitor")).status, 403);
+  const clerkFailure = await request("POST", "/staff/access", "enrollmentFailure");
+  assert.equal(clerkFailure.status, 503);
+  assert.equal((await request("GET", "/staff/access", "enrollmentFailure")).status, 403);
+  const lookupFailure = await request("POST", "/staff/access", "lookupFailure");
+  assert.equal(lookupFailure.status, 503);
+
+  const enteredStaffWorkspace = await request("POST", "/staff/access", "visitor");
+  assert.equal(enteredStaffWorkspace.status, 200);
+  assert.equal(enteredStaffWorkspace.body.administratorEnabled, true);
+  assert.equal(enteredStaffWorkspace.body.assignedDepartment, "Economic Development");
+  assert.deepEqual(enteredStaffWorkspace.body.accessibleDepartments, [
+    "Planning", "Building", "Fire", "Economic Development",
+  ]);
+  const responseWithNoStore = await fetch(`${baseUrl}/api/staff/access`, {
+    headers: { "x-test-actor": "visitor" },
+  });
+  assert.equal(responseWithNoStore.status, 200);
+  assert.equal(responseWithNoStore.headers.get("cache-control"), "no-store");
+  assert.deepEqual(await responseWithNoStore.json(), enteredStaffWorkspace.body);
+
+  const repeatEnrollment = await request("POST", "/staff/access", "visitor");
+  assert.equal(repeatEnrollment.status, 200);
+  assert.deepEqual(repeatEnrollment.body, enteredStaffWorkspace.body);
+
+  const existingAssignment = await request("POST", "/staff/access", "existingDepartment");
+  assert.equal(existingAssignment.status, 200);
+  assert.equal(existingAssignment.body.assignedDepartment, "Fire");
+  assert.deepEqual(existingAssignment.body.accessibleDepartments, [
+    "Planning", "Building", "Fire", "Economic Development",
+  ]);
+
+  const crossDepartmentList = await request("GET", `/applications/staff?applicationId=${fireId}`, "visitor");
+  assert.equal(crossDepartmentList.status, 200);
+  assert.deepEqual(crossDepartmentList.body.map(row => row.id), [fireId]);
+  assert.equal(crossDepartmentList.body[0].ownerId, undefined);
+  assert.equal(crossDepartmentList.body[0].applicantKey, undefined);
+  assert.equal((await request("GET", `/applications/${fireId}/history`, "visitor")).status, 200);
+  assert.deepEqual((await request("GET", `/applications/${fireId}/documents`, "visitor")).body, []);
+
+  // Selecting the staff workspace does not change applicant ownership checks.
+  const ownApplicantPlans = await request("GET", `/applications/mine?applicantKey=${applicantKeyA}`, "visitor");
+  assert.equal(ownApplicantPlans.status, 200);
+  assert.deepEqual(ownApplicantPlans.body, []);
 });
 
 test("reviewer notes, overrides, and rejections persist through completion and reopening", async () => {

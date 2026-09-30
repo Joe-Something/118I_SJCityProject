@@ -144,7 +144,7 @@ export function useApplicationRecords(
           records: [],
           error: status === 401
             ? 'Your sign-in has expired. Sign in again to access applications.'
-            : 'Staff access requires an administrator-assigned Clerk role and department. Selecting a desk does not grant access.',
+            : 'City Staff access is not active yet. Finish entering the City Staff workspace or retry the permission check.',
           warning: '',
           readOnly: true,
           lastConfirmedAt: null,

@@ -15,7 +15,7 @@ paths:
     get:
       operationId: getStaffAccess
       tags: [staff]
-      summary: Read automatic administrator access for the signed-in staff reviewer
+      summary: Read full department access for the signed-in City Staff account
       responses:
         "200":
           description: Reviewer department and effective department access
@@ -25,7 +25,26 @@ paths:
         "401":
           description: Sign in required
         "403":
-          description: Only administrator-assigned staff reviewers may use this endpoint
+          description: Select City Staff and enroll the signed-in account before reading staff access
+        "503":
+          description: Staff access service is temporarily unavailable
+    post:
+      operationId: enterStaffWorkspace
+      tags: [staff]
+      summary: Grant City Staff access to the authenticated account that selected the staff workspace
+      description: The server verifies the signed-in identity, assigns any missing staff metadata to that account, and returns access to every department. No account ID or department is accepted from the browser.
+      responses:
+        "200":
+          description: City Staff access for the authenticated account
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StaffAccess" }
+        "400":
+          description: Enrollment does not accept a user ID or department
+        "401":
+          description: Sign in required
+        "403":
+          description: Origin must match the current signed-in site
         "503":
           description: Staff access service is temporarily unavailable
   /workspace/prototype-sources:
