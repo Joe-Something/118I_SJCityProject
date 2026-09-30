@@ -5,6 +5,7 @@ import { clerkMiddleware } from "@clerk/express";
 import { publishableKeyFromHost } from "@clerk/shared/keys";
 import router from "./routes";
 import { logger } from "./lib/logger";
+import { apiErrorHandler } from "./middlewares/apiErrorHandler";
 import {
   CLERK_PROXY_PATH,
   clerkProxyMiddleware,
@@ -49,5 +50,6 @@ app.use(
 );
 
 app.use("/api", router);
+app.use(apiErrorHandler);
 
 export default app;

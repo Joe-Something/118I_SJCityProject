@@ -16,6 +16,7 @@ import {
 } from "@workspace/api-zod";
 import { refreshPublicPermits } from "../src/lib/public-permits.ts";
 import { prototypeSources } from "../src/lib/prototype-sources.ts";
+import { apiErrorHandler } from "../src/middlewares/apiErrorHandler.ts";
 
 // Exercise the real route, access checks, response schemas, and PostgreSQL.
 // Replace only Clerk's network boundary; never allow a client-provided role
@@ -160,9 +161,10 @@ before(async () => {
   });
   app.use(express.json());
   app.use("/api", router);
-  app.use((error, _req, res, _next) => {
-    res.status(500).json({ error: "Internal server error." });
+  app.get("/api/__test/unhandled-error", (_req, _res, next) => {
+    next(new Error("sensitive database connection details"));
   });
+  app.use(apiErrorHandler);
   server = app.listen(0);
   await new Promise(resolve => server.once("listening", resolve));
   baseUrl = `http://127.0.0.1:${server.address().port}`;
@@ -178,6 +180,17 @@ after(async () => {
     .where(inArray(applicationsTable.id, [currentPublicRecordId, outdatedPublicRecordId, syntheticRecordId, importerRecordId]));
   if (outputDir) await rm(outputDir, { recursive: true, force: true });
   await pool.end();
+});
+
+test("uncaught API errors return generic JSON and retain details in server logs", async () => {
+  const response = await request("GET", "/__test/unhandled-error");
+  assert.equal(response.status, 500);
+  assert.deepEqual(response.body, { error: "Internal server error." });
+  assert.doesNotMatch(JSON.stringify(response.body), /sensitive database connection details/);
+
+  const failureLog = errorLogs.at(-1);
+  assert.equal(failureLog.message, "Unhandled API error");
+  assert.equal(failureLog.fields.err.message, "sensitive database connection details");
 });
 
 test("reference endpoints and prototype freshness states match generated response schemas", async () => {
