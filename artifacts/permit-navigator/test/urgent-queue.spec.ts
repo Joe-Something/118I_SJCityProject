@@ -650,7 +650,7 @@ test('resident safety and non-dispatch warning survives leaving and returning to
   });
 
   await page.goto('/test/harness.html');
-  await expect(page.getByText('Guidance, not a decision.')).toBeVisible();
+  await expect(page.getByText('Guidance, not a decision.')).toBeHidden();
   await page.getByTestId('input-workspace-question').fill('There is a gas leak near my shop');
   await page.getByTestId('button-send-workspace-message').click();
   await expect(page.getByText('Leave the area and contact emergency services', { exact: false })).toBeVisible();
@@ -658,7 +658,7 @@ test('resident safety and non-dispatch warning survives leaving and returning to
   await page.getByTestId('harness-navigate').click();
   await expect(page.getByText('Permit portal', { exact: true })).toBeVisible();
   await page.getByTestId('harness-navigate').click();
-  await expect(page.getByText('Guidance, not a decision.')).toBeVisible();
+  await expect(page.getByText('Guidance, not a decision.')).toBeHidden();
   await expect(page.getByText('Leave the area and contact emergency services', { exact: false })).toBeVisible();
   await expect(page.getByText('No email delivery or City dispatch confirmed', { exact: false })).toBeVisible();
   await expect(page.getByText('has not notified emergency responders or City staff', { exact: false })).toBeVisible();

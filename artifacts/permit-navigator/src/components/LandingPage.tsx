@@ -1,6 +1,5 @@
 import { Landmark, ShieldCheck, Lightbulb, ClipboardCheck } from 'lucide-react';
 import { useLocation, Link } from 'wouter';
-import { Disclaimer } from './Disclaimer';
 
 export function LandingPage({ signedIn }: { signedIn?: boolean }) {
   const [, setLocation] = useLocation();
@@ -48,7 +47,7 @@ export function LandingPage({ signedIn }: { signedIn?: boolean }) {
           </div>
         </main>
       </div>
-      <section className="footer" style={{ marginTop: 'auto' }}><div className="footer-inner"><span>Permit Navigator · San José</span><Disclaimer /></div></section>
+      <section className="footer" style={{ marginTop: 'auto' }}><div className="footer-inner"><span>Permit Navigator · San José</span></div></section>
     </div>
   );
 }

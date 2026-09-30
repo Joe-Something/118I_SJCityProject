@@ -51,21 +51,21 @@ function buildDraft(plan: ActivePlan, workflow: Workflow, record?: ApplicationRe
   const topics = suggested.length ? suggested.join(', ') : 'the proposed use and scope of work';
   const opening = `Permit Navigator application ${plan.id}\nBusiness: ${name}\nLocation: ${location}\n\n`;
   if (workflow === 'clarification') {
-    return opening + `Hello,\n\nTo help review this submission, please clarify the proposed use at this address and the planned changes (${changesLabel(plan)}). If available, describe the scope of work and any drawings you can share through an appropriate channel.\n\nThe local guide surfaced ${topics} as possible starting points. These are not findings or permit approvals. Please verify requirements directly with the relevant City department before work begins.\n\nThis is draft wording only; it has not been sent.`;
+    return opening + `Hello,\n\nTo help review this submission, please clarify the proposed use at this address and the planned changes (${changesLabel(plan)}). If available, describe the scope of work and any drawings you can share through an appropriate channel.\n\nTopics identified for follow-up: ${topics}.\n\nThis is draft wording only; it has not been sent.`;
   }
   if (workflow === 'internal') {
-    return opening + `Internal handoff draft\n\nPlease verify the proposed use, address, and scope of changes (${changesLabel(plan)}). The preliminary guide surfaced ${topics} for follow-up. Confirm the applicable rules and whether another department needs to be consulted. Do not treat a local match or a removed item as a zoning, building, fire, health, or utilities decision.\n\nThis text is a local draft only; it has not been routed or sent.`;
+    return opening + `Internal handoff draft\n\nReview the proposed use, address, and scope of changes (${changesLabel(plan)}). Topics identified for follow-up: ${topics}. Identify questions to clarify and whether another department needs to be consulted.\n\nThis text is a local draft only; it has not been routed or sent.`;
   }
   if (workflow === 'hearing') {
     return opening + `Hearing coordination draft\n\nConfirm whether a public hearing is required for this project under current City rules. If so, identify the responsible department, required notices, accessibility needs, and scheduling process. No hearing has been scheduled by this application.\n\nThis text is a local draft only; it has not been routed or sent.`;
   }
   if (workflow === 'permit-decision') {
-    return opening + `Permit decision preparation draft\n\nReview the submitted scope, supporting documents, and current agency requirements before recommending any outcome. The local guide surfaced ${topics} for further verification. This workspace cannot issue, deny, or condition a City permit.\n\nThis text is a local draft only; it has not been routed or sent.`;
+    return opening + `Permit decision preparation draft\n\nReview the submitted scope, supporting documents, and current requirements before recommending an outcome. Topics identified for follow-up: ${topics}.\n\nThis text is a local draft only; it has not been routed or sent.`;
   }
   if (workflow === 'escalation') {
     return opening + `Department-head consultation draft\n\nRequest an authorized department-head review of the proposed use and planned changes (${changesLabel(plan)}). Include any verified facts, unresolved questions, and urgency when routing through approved internal channels. This workspace has not sent or routed this draft.\n\nThis text is a local draft only; it has not been routed or sent.`;
   }
-  return opening + `Hello,\n\nFor this project, start by confirming the proposed use at the location and describing the planned changes (${changesLabel(plan)}). Ask the relevant department about ${topics}, and what documents they would need to review. Keep any guidance you receive with your project records.\n\nPermit Navigator offers preliminary, local rules-of-thumb only. It does not determine which permits are required or authorize work. Verify next steps directly with the appropriate City or county office.\n\nThis is draft wording only; it has not been sent.`;
+  return opening + `Hello,\n\nFor this project, start by confirming the proposed use at the location and describing the planned changes (${changesLabel(plan)}). Ask the relevant department about ${topics}, and what documents they would need to review. Keep any guidance you receive with your project records.\n\nThis is draft wording only; it has not been sent.`;
 }
 
 export function StaffApplicationDetail({
@@ -108,7 +108,7 @@ export function StaffApplicationDetail({
   const triage = plan.matched.length === 0
     ? 'Manual routing needed'
     : plan.rejected.length > 0
-      ? 'Staff-adjusted checklist · verify remaining items'
+      ? 'Staff-adjusted checklist'
       : 'Possible review topics identified';
 
   const changeWorkflow = (next: Workflow) => {
@@ -158,11 +158,12 @@ export function StaffApplicationDetail({
         <span className="staff-application-detail__id" data-testid={`text-detail-id-${plan.id}`}>ID {plan.id}</span>
       </header>
 
-      <p className="staff-application-detail__notice" data-testid={`notice-detail-prototype-${plan.id}`}>
-         <strong>Preliminary review only.</strong> Local recommendations are not an official permit determination, zoning clearance, or legal City decision. A person must verify each item with the appropriate agency.
-         {record?.synthetic && ' This entry uses synthetic example data, not verified City facts.'}
-         {sampleFallback && ' This is a database-outage sample for browsing only, not a submitted application; its documents and history were not requested.'}
-      </p>
+      {(record?.synthetic || sampleFallback) && (
+        <p className="staff-application-detail__notice" data-testid={`notice-detail-prototype-${plan.id}`}>
+          {record?.synthetic && 'Synthetic example data, not verified City facts. '}
+          {sampleFallback && 'Database-outage sample for browsing only, not a submitted application; its documents and history were not requested.'}
+        </p>
+      )}
 
       <section className="staff-application-detail__section" aria-labelledby={`detail-intake-${plan.id}`}>
         <div className="staff-application-detail__section-heading">
@@ -236,21 +237,21 @@ export function StaffApplicationDetail({
         <div className="staff-application-detail__section-heading">
           <span className="staff-application-detail__section-number">02</span>
           <h3 id={`detail-recommendations-${plan.id}`}>Recommendations & checks</h3>
-          <span className="staff-application-detail__section-hint">Human verification required</span>
+          <span className="staff-application-detail__section-hint">Application topics</span>
         </div>
         <p className="staff-application-detail__intro">
-          These five standardized topics are a local rules-of-thumb checklist, not official PASS/FAIL tests. A match identifies a possible conversation; an unmatched or removed item does not establish that a requirement is unnecessary.
+          Common review topics associated with this submission are listed below.
         </p>
         <div className="staff-application-detail__assessment" data-testid={`status-detail-triage-${plan.id}`}>
-          <strong>Preliminary triage: {triage}</strong>
-          <span>{openItems.length} possible {openItems.length === 1 ? 'topic' : 'topics'} remain. No compliance score or permit decision can be calculated from the data currently collected.</span>
+          <strong>Topics to review: {triage}</strong>
+          <span>{openItems.length} {openItems.length === 1 ? 'topic is' : 'topics are'} listed below.</span>
         </div>
         <div className="staff-application-detail__checks">
           {requirementIds.map(id => {
             const item = copy.en.requirements[id];
             const matched = plan.matched.includes(id);
             const removed = plan.rejected.includes(id);
-            const status = removed ? 'Removed locally · verify' : matched ? 'Pending verification' : 'Scope not matched · verify';
+             const status = removed ? 'Removed by reviewer' : matched ? 'Pending review' : 'No match';
             return (
               <div className="staff-application-detail__check" key={id} data-testid={`check-detail-${plan.id}-${id}`}>
                 <div className="staff-application-detail__check-head">
@@ -258,8 +259,8 @@ export function StaffApplicationDetail({
                   <span className={`staff-application-detail__tag ${!matched || removed ? 'staff-application-detail__tag--neutral' : ''}`} data-testid={`status-detail-check-${plan.id}-${id}`}>{status}</span>
                 </div>
                 <p>{item.desc}</p>
-                {matched && !removed && <p><strong>Ask / verify:</strong> {item.steps[0]}. {item.steps[1]}.</p>}
-                 {removed && <p className="staff-application-detail__annotation">Removed from this preliminary plan by a reviewer. This is not a finding that the requirement does not apply.</p>}
+                 {matched && !removed && <p><strong>Review steps:</strong> {item.steps[0]}. {item.steps[1]}.</p>}
+                  {removed && <p className="staff-application-detail__annotation">Removed from this review plan by a reviewer.</p>}
                 {plan.overrides[id] && <p className="staff-application-detail__annotation"><strong>Reviewer-edited recommendation:</strong> {plan.overrides[id]}</p>}
                 {plan.notes[id] && <p className="staff-application-detail__annotation"><strong>Reviewer note:</strong> {plan.notes[id]}</p>}
                 <a className="staff-application-detail__source" href={requirementsConfig[id].source_url} target="_blank" rel="noopener noreferrer" data-testid={`link-detail-source-${plan.id}-${id}`}>View source: {item.sourceTitle} <span aria-hidden="true">↗</span></a>
@@ -269,7 +270,7 @@ export function StaffApplicationDetail({
         </div>
         {children && <div className="staff-application-detail__controls" data-testid={`region-detail-decisions-${plan.id}`}>
           <h4>Reviewer decisions</h4>
-           <p>Review the intake and sources before recording any change. These controls update reviewer recommendations only; they do not issue a legal or agency determination.</p>
+           <p>Review the intake and sources before recording any change.</p>
           <div className="staff-application-detail__controls-inner">{children}</div>
         </div>}
       </section>
@@ -290,9 +291,8 @@ export function StaffApplicationDetail({
             <h4>Suggested review path</h4>
             <ol className="staff-application-detail__guidance">
               <li>{['Approved', 'Rejected', 'Modified via Staff Override'].includes(plan.status) ? 'Review the recorded recommendation before any further correspondence.' : 'Confirm the proposed use and application type before making a recommendation.'} Project: <strong>{provided(record?.requestType)}</strong> at <strong>{provided(location)}</strong>; described changes: {changesLabel(plan)}.</li>
-              <li>{openItems.length ? <>Use the {openItems.map(id => copy.en.requirements[id].name).join(', ')} {openItems.length === 1 ? 'topic' : 'topics'} to frame questions for the relevant agencies.</> : 'No local topics remain on this plan. Ask the appropriate agency to identify the applicable path; do not assume no review is needed.'}</li>
+              <li>{openItems.length ? <>Use the {openItems.map(id => copy.en.requirements[id].name).join(', ')} {openItems.length === 1 ? 'topic' : 'topics'} to frame questions for the relevant agencies.</> : 'No topics remain on this plan.'}</li>
               <li>Review attached documents above; request missing scope details or drawings through an authorized channel if needed.</li>
-              <li>Verify the current process directly with the relevant City or county office before anyone relies on this guidance to start work.</li>
             </ol>
           </div>
           <div className="staff-application-detail__panel">
@@ -304,7 +304,7 @@ export function StaffApplicationDetail({
                 <option value="clarification">Request clarification</option>
                 <option value="internal">Internal review handoff</option>
                  <option value="hearing">Draft hearing coordination questions (not scheduled)</option>
-                 <option value="permit-decision">Draft permit decision questions (not issued)</option>
+                 <option value="permit-decision">Draft permit decision questions</option>
                 <option value="escalation">Prepare department-head escalation</option>
                 <option value="next-steps">Suggested next steps</option>
               </select>

@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { Building2, Landmark, UserRound } from 'lucide-react';
 import { Persona, StaffDesk } from '../prototypeStore';
-import { Disclaimer } from './Disclaimer';
 
 export function PersonaLogin({ onLogin, signedIn }: { onLogin: (persona: Persona) => void; signedIn: boolean }) {
   const [mode, setMode] = useState<'applicant' | 'staff'>('applicant');
@@ -61,7 +60,7 @@ export function PersonaLogin({ onLogin, signedIn }: { onLogin: (persona: Persona
           <p className="persona-caution">Choosing City Staff grants your signed-in account administrator access to submitted applications across all departments. No staff approval is required. Applicant keys identify plans within your signed-in account. Do not enter sensitive information.</p>
         </form>
       </main>
-      <section className="footer"><div className="footer-inner"><span>Permit Navigator · San José</span><Disclaimer /></div></section>
+      <section className="footer"><div className="footer-inner"><span>Permit Navigator · San José</span></div></section>
     </div>
   );
 }

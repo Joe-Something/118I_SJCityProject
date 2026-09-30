@@ -3,6 +3,7 @@ import { Search, History, MapPin, Building2, CheckCircle2, Clock3, Pencil } from
 import { ActivePlan } from '../types';
 import { deriveDepartments } from '../utils/helpers';
 import { isDemoSeedApplicationId } from '../utils/applicationResilience';
+import { getApplicationPlanDetailIssue } from '../utils/newplan-normalizer';
 
 export function ReviewCatalog({ records, onReopen, renderDetail, readOnly = false }: {
   records: ActivePlan[];
@@ -99,11 +100,13 @@ export function ReviewCatalog({ records, onReopen, renderDetail, readOnly = fals
         </div>
       ) : (
         <div className="catalog-list">
-          {filteredRecords.map(record => (
+          {filteredRecords.map(record => {
+            const detailIssue = getApplicationPlanDetailIssue(record);
+            return (
             <div key={record.id} className="catalog-card" data-testid={`catalog-record-${record.id}`}>
               <div className="catalog-card-header">
                 <div>
-                  <div className="catalog-card-title">{record.intake.businessName || record.intake.address} <span className="catalog-badge">Applicant submission</span></div>
+                  <div className="catalog-card-title">{record.intake.businessName || record.intake.address || 'Application details unavailable'} <span className="catalog-badge">Applicant submission</span></div>
                   <div className="catalog-card-sub">Application ID: {record.id}</div>
                   <div className="catalog-card-sub">
                     <MapPin size={12} /> {record.intake.address} &middot; <Building2 size={12} /> {record.intake.businessType === 'other' ? record.intake.businessOther : record.intake.businessType}
@@ -132,7 +135,7 @@ export function ReviewCatalog({ records, onReopen, renderDetail, readOnly = fals
                   >
                     {expandedId === record.id ? 'Hide details' : 'View full application'}
                   </button>
-                  {!readOnly && !isDemoSeedApplicationId(record.id) && <button
+                  {!readOnly && !detailIssue && !isDemoSeedApplicationId(record.id) && <button
                     className="button-secondary"
                     onClick={() => void handleReopen(record.id)}
                     disabled={reopeningIds.has(record.id)}
@@ -143,6 +146,7 @@ export function ReviewCatalog({ records, onReopen, renderDetail, readOnly = fals
                   </button>}
                 </div>
               </div>
+              {detailIssue && expandedId !== record.id && <div className="verification-notice" role="status" data-testid={`catalog-details-unavailable-${record.id}`}>{detailIssue}</div>}
               {reopenErrors[record.id] && (
                 <div role="alert" data-testid={`reopen-error-${record.id}`} style={{ padding: '10px 14px', color: 'hsl(var(--destructive))' }}>
                   {reopenErrors[record.id]}
@@ -150,9 +154,9 @@ export function ReviewCatalog({ records, onReopen, renderDetail, readOnly = fals
               )}
               {expandedId === record.id ? (
                 <div id={`catalog-detail-${record.id}`} className="active-plan-content" style={{ borderTop: '1px solid hsl(var(--border))', padding: '20px' }}>
-                  {renderDetail(record)}
+                  {detailIssue ? <p role="status" data-testid={`catalog-details-unavailable-${record.id}`}>{detailIssue}</p> : renderDetail(record)}
                 </div>
-              ) : <div className="catalog-card-body">
+              ) : !detailIssue ? <div className="catalog-card-body">
                 <div className="catalog-detail">
                   <strong>Reviewed on:</strong> {record.completedAt ? new Date(record.completedAt).toLocaleString() : 'N/A'}
                 </div>
@@ -191,9 +195,10 @@ export function ReviewCatalog({ records, onReopen, renderDetail, readOnly = fals
                     </ul>
                   ) : <span className="catalog-none"> No modifications recorded.</span>}
                 </div>
-              </div>}
+              </div> : null}
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>

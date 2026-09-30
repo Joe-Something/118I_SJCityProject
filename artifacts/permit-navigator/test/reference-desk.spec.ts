@@ -145,7 +145,7 @@ test('prototype source loading, retry, stale, and unavailable states remain expl
   await expect(outdated.getByText('Demo Data — Synthetic')).toBeVisible();
   await expect(unavailable.getByText('Demo Data — Synthetic')).toBeVisible();
   await expect(unavailable.getByText('Fictional example content for demo-unavailable')).toHaveCount(0);
-  await expect(referenceDesk.getByText('Real City page to verify independently').first()).toHaveAttribute(
+  await expect(referenceDesk.getByText('Open City source page').first()).toHaveAttribute(
     'href',
     'https://www.sanjoseca.gov/business/development-services-permit-center',
   );

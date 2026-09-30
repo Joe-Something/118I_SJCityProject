@@ -1,13 +1,13 @@
 ---
 name: Review trust boundaries
-description: Product wording and testing controls must not imply unimplemented City authority
+description: Requested notice policy, factual source labels, and staff self-enrollment boundaries
 ---
 
-Removing prototype or demo branding does not remove the need to identify synthetic references and distinguish internal review actions from official City decisions. Browser role controls alone must never authorize server access.
+Do not reintroduce general preliminary-guidance or unofficial-City-advice banners and boilerplate. Preserve factual synthetic/sample, read-only, source, and delivery-status labels, and do not add affirmative claims of City ownership or permit issuance.
 
-**Why:** The workspace has synthetic reference material and independently saved submissions, not an authenticated City permit-issuance, hearing-scheduling, dispatch, or email-delivery connection. Relabeling those capabilities as operational would misrepresent what actually occurred.
+**Why:** The user explicitly requested removal of all preliminary-guidance and unofficial-advice flags and notices. The workspace still has synthetic references and independently saved submissions, not an authenticated City permit-issuance, hearing-scheduling, dispatch, or email-delivery connection.
 
-**How to apply:** Keep sample-data and non-official-decision disclosures even when improving enterprise-facing language. Use server-stored Clerk private metadata for staff authorization, including the explicit self-enrollment policy below. Describe in-app messages separately from external delivery.
+**How to apply:** Remove general guidance disclaimers without relabeling workspace actions as externally completed City actions. Keep sample-data and operational-status disclosures. Use server-stored Clerk private metadata for staff authorization, including the explicit self-enrollment policy below. Describe in-app messages separately from external delivery.
 
 Any signed-in account that explicitly chooses City Staff may enroll itself for automatic cross-department administrator access. There is no Administrator Role toggle or prior staff approval requirement. Signed-out visitors cannot enroll.
 

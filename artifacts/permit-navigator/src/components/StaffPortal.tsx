@@ -99,7 +99,7 @@ function StaffPlanReview({
                         <button className="button-secondary" disabled={saving} onClick={() => void toggleReject(reqId)} data-testid={`button-reapprove-${plan.id}-${reqId}`}><Check size={13} /> Restore topic</button>
                     ) : (
                       <>
-                          <button className="button-secondary" disabled={saving} onClick={() => void updateNotes(reqId, plan.notes[reqId] ?? 'Reviewed as a preliminary item; verify with the relevant department.')} data-testid={`button-approve-${plan.id}-${reqId}`}><Check size={13} /> Keep topic</button>
+                          <button className="button-secondary" disabled={saving} onClick={() => void updateNotes(reqId, plan.notes[reqId] ?? 'Reviewed and retained for staff follow-up.')} data-testid={`button-approve-${plan.id}-${reqId}`}><Check size={13} /> Keep topic</button>
                           <button className="button-danger" disabled={saving} onClick={() => void toggleReject(reqId)} data-testid={`button-reject-${plan.id}-${reqId}`}><X size={13} /> Remove topic</button>
                       </>
                     )}
@@ -114,8 +114,8 @@ function StaffPlanReview({
                     <select id={`template-${plan.id}-${reqId}`} value="" onChange={event => setNoteText(event.target.value)} data-testid={`select-note-template-${plan.id}-${reqId}`}>
                       <option value="">Choose a starting point</option>
                       <option value="Additional information is needed before this item can be reviewed. Please confirm the project scope with the relevant department.">Request clarification</option>
-                      <option value="Department consultation is recommended before making a decision on this item. No approval has been issued.">Recommend department consultation</option>
-                      <option value="This item was reviewed as a possible starting point. Confirm current requirements directly with the relevant City department before proceeding.">Document preliminary review</option>
+                      <option value="Department consultation is recommended before making an outcome on this item.">Recommend department consultation</option>
+                      <option value="Reviewed as part of this application. Record any remaining questions for follow-up.">Document review</option>
                     </select>
                     <label htmlFor={`note-${plan.id}-${reqId}`}>Applicant-facing note</label>
                     <div className="staff-edit-actions" style={{ justifyContent: 'stretch' }}>
@@ -258,11 +258,6 @@ export function StaffPortal({
 
   return (
     <main className="plan-shell">
-      <div className="verification-notice" data-testid="notice-staff-verification">
-        <AlertCircle size={18} />
-        <span>Notice: City staff review is required. Business owners must verify all information directly with the appropriate City department before starting work or signing lease agreements.</span>
-      </div>
-      
       <div className="staff-banner">
         <div>
            <strong data-testid="staff-role-label">Selected view: {staffRole === 'Master City Queue' ? 'All-department administrator overview' : staffRole}</strong>

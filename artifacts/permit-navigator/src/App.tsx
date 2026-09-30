@@ -31,6 +31,7 @@ import { saveAndRefresh, useApplicationRecords } from './hooks/useApplicationRec
 import { isStaleWrite } from './utils/writeErrors';
 import { isDemoSeedApplicationId } from './utils/applicationResilience';
 import { readOrEnterStaffWorkspace, shouldApplyStaffAccessResponse, staffPermissionsChanged } from './utils/staffAccess';
+import { normalizeApplicationPlan } from './utils/newplan-normalizer';
 
 const clerkPubKey = publishableKeyFromHost(
   window.location.hostname,
@@ -236,15 +237,7 @@ function PortalWorkspace({ persona, userId, onLogout }: { persona: Persona; user
     `${userId}:${persona.kind === 'staff' ? `${staffDepartment}:${staffAccess?.administratorEnabled ? 'administrator' : 'reviewer'}:${staffAccess?.accessibleDepartments.join(',') ?? 'unverified'}` : ''}`,
   );
 
-  const plans: ActivePlan[] = records.map(record => ({
-    ...(record.plan as unknown as ActivePlan),
-    id: record.id,
-    status: record.status as PlanStatus,
-    submittedAt: record.submittedAt ? new Date(record.submittedAt).getTime() : undefined,
-    updatedAt: new Date(record.updatedAt).getTime(),
-    createdAt: new Date(record.createdAt).getTime(),
-    intake: { ...(record.plan.intake as Intake), businessName: record.businessName, files: [] },
-  }));
+  const plans: ActivePlan[] = records.map(record => normalizeApplicationPlan(record.plan, record).plan);
   const currentApplicantId = persona.kind === 'applicant' ? applicantId(userId, persona.key) : null;
   const myPlans = plans.filter(plan => plan.userId === currentApplicantId);
   
@@ -464,7 +457,7 @@ function PortalWorkspace({ persona, userId, onLogout }: { persona: Persona; user
         plan: JSON.parse(JSON.stringify({ ...draftPlan, status: 'Draft — Requires Review', submittedAt: Date.now(), updatedAt: Date.now(), departments: deps, departmentAssignees: assignees })) });
       acceptRecord(saved);
       setApplicantView('dashboard');
-      toast({ title: 'Submission saved', description: 'Your application was accepted by the server for staff review. This is not a permit decision.' });
+      toast({ title: 'Submission saved', description: 'Your application was accepted by the server for staff review.' });
       try { await refreshRows(); } catch { toast({ title: 'Submission saved; list may be out of date', description: 'The server accepted the submission, but the application list could not refresh. Reload to confirm the latest queue state.' }); }
     } catch (error) {
       if (isStaleWrite(error)) setStaleDraft(true);
@@ -720,10 +713,6 @@ function PortalWorkspace({ persona, userId, onLogout }: { persona: Persona; user
                  <span><strong>High-urgency concern detected.</strong> This plan has not been sent to City staff, dispatch, or emergency responders. Leave the area and call emergency services if there is immediate danger.</span>
               </div>
             )}
-            <div className="verification-notice" data-testid="text-verification-notice">
-              <AlertCircle size={18} />
-              <span>Notice: City staff review is required. Business owners must verify all information directly with the appropriate City department before starting work or signing lease agreements.</span>
-            </div>
             <div className="plan-header">
               <div>
                 <h1>{t.planTitle}</h1>
@@ -754,7 +743,7 @@ function PortalWorkspace({ persona, userId, onLogout }: { persona: Persona; user
             {['Approved', 'Rejected', 'Modified via Staff Override'].includes(planToShow.status) ? (
                <div className="verification-notice" style={{ background: 'hsl(var(--primary) / 0.1)', borderColor: 'hsl(var(--primary) / 0.2)', color: 'hsl(var(--primary))' }} data-testid="notice-review-complete">
                  <CheckCircle2 size={18} />
-                  <span>Staff recommendation recorded. This is not a permit approval, denial, or authorization to begin work.</span>
+                  <span>Staff recommendation recorded.</span>
                </div>
             ) : planToShow.status !== 'Draft' ? (
               <div className="verification-notice" data-testid="notice-under-review">
@@ -904,9 +893,6 @@ function App() {
         routerPush={(to) => setLocation(stripBase(to))}
         routerReplace={(to) => setLocation(stripBase(to), { replace: true })}
       >
-        <div className="global-safety-banner" data-testid="global-safety-banner">
-          Preliminary guidance is not official City advice or a legal permit decision. Public permit records are linked to their source.
-        </div>
         <Switch>
           <Route path="/" component={HomeRedirect} />
           <Route path="/welcome" component={WelcomeRoute} />

@@ -1,7 +1,6 @@
 export type BusinessType = 'boba' | 'restaurant' | 'retail' | 'kitchen' | 'cafe' | 'salon' | 'office' | 'service' | 'other';
 export type Modification = 'plumbing' | 'walls' | 'signage' | 'hvac' | 'electrical' | 'exterior' | 'other';
 
-export const DISCLAIMER = 'Preliminary guidance is not official City advice or a permit decision. Verify current requirements with the appropriate agency.';
 export const PROTOTYPE_REQUIREMENT_VERSION = 'sample-1';
 export const PROTOTYPE_REQUIREMENT_REVISED = '2026-09-29';
 

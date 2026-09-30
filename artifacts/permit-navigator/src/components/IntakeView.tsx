@@ -3,7 +3,6 @@ import { ArrowRight, FileText, ShieldCheck, Lightbulb, ClipboardCheck } from 'lu
 import { Intake, BusinessType, Modification } from '../requirements';
 import { Language, copy } from '../copy';
 import { checkLanguage, getLanguageBundle } from '../utils/language';
-import { Disclaimer } from './Disclaimer';
 
 export function IntakeForm({ intake, setIntake, onGenerate, language, setLanguage, customLanguage, setCustomLanguage }: { intake: Intake; setIntake: (next: Intake) => void; onGenerate: () => void; language: Language; setLanguage: (l: Language) => void; customLanguage: string; setCustomLanguage: (v: string) => void }) {
   const t = copy[language === 'other' ? 'en' : language];
@@ -166,7 +165,6 @@ export function IntakeForm({ intake, setIntake, onGenerate, language, setLanguag
         </div>
       </div>
     )}
-    <Disclaimer className="intake-disclaimer" />
   </section>;
 }
 
@@ -224,7 +222,6 @@ export function IntakeView({
       <section className="footer">
         <div className="footer-inner">
           <span>Permit Navigator · San José</span>
-          <Disclaimer />
         </div>
       </section>
     </>
