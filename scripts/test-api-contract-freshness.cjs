@@ -56,7 +56,7 @@ function createFixture(name) {
   return { fixture, clientFile, schemaFile };
 }
 
-function runTypecheck(fixture) {
+function runTypecheck(fixture, { failApiGeneration = false } = {}) {
   fs.writeFileSync(callLog, "");
   const result = run("sh", ["-c", rootPackage.scripts.typecheck], {
     cwd: fixture,
@@ -65,6 +65,7 @@ function runTypecheck(fixture) {
       PATH: `${shimDirectory}${path.delimiter}${process.env.PATH}`,
       API_CONTRACT_SCRIPT: rootPackage.scripts["check:api-contract"],
       PNPM_CALL_LOG: callLog,
+      PNPM_FAIL_API_GENERATION: failApiGeneration ? "1" : "",
     },
   });
   return {
@@ -91,6 +92,27 @@ function assertFreshnessFailure(name, mutate, expectedPath) {
   );
 }
 
+function assertGenerationFailure() {
+  const fixture = createFixture("generation-failure");
+  const result = runTypecheck(fixture.fixture, { failApiGeneration: true });
+  const output = `${result.stdout}${result.stderr}`;
+
+  assert.notEqual(
+    result.status,
+    0,
+    "root typecheck should fail when API client generation fails",
+  );
+  assert.ok(
+    output.includes("simulated API client generation failure"),
+    `generation failure should be visible in the output:\n${output}`,
+  );
+  assert.deepEqual(
+    result.calls,
+    ["run check:api-contract", "--filter @workspace/api-spec run generate"],
+    "root typecheck must stop before library or artifact typechecks when API generation fails",
+  );
+}
+
 try {
   fs.mkdirSync(shimDirectory, { recursive: true });
   fs.writeFileSync(
@@ -102,6 +124,10 @@ if [ "$1" = "run" ] && [ "$2" = "check:api-contract" ]; then
   exit $?
 fi
 if [ "$1" = "--filter" ] && [ "$2" = "@workspace/api-spec" ] && [ "$3" = "run" ] && [ "$4" = "generate" ]; then
+  if [ "$PNPM_FAIL_API_GENERATION" = "1" ]; then
+    echo "simulated API client generation failure" >&2
+    exit 23
+  fi
   exit 0
 fi
 exit 0
@@ -160,6 +186,8 @@ exit 0
     "lib/api-zod/src/generated/types/newSchema.ts",
   );
 
+  assertGenerationFailure();
+
   const cleanFixture = createFixture("clean-output");
   const cleanResult = runTypecheck(cleanFixture.fixture);
   assert.equal(
@@ -175,7 +203,7 @@ exit 0
   ]);
 
   console.log(
-    "API contract freshness regression checks passed (changed, deleted, untracked, and clean client/Zod output).",
+    "API contract checks passed (changed, deleted, untracked, clean output, and failed generation).",
   );
 } finally {
   fs.rmSync(tempRoot, { recursive: true, force: true });
