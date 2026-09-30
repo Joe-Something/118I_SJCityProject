@@ -8,6 +8,14 @@ Run the generated API output freshness check with:
 pnpm run check:api-contract
 ```
 
+Run the regression test for stale generated output and typecheck ordering with:
+
+```bash
+pnpm run test:api-contract-freshness
+```
+
+The regression test uses isolated Git fixtures to verify that changed or deleted tracked output and newly generated untracked output fail the contract check. It also confirms library and artifact typechecks are skipped after a freshness failure.
+
 The command regenerates both the React Query client and the server's Zod validation schemas. It fails if generated files differ from the committed versions, including deleted or newly created files, under `lib/api-client-react/src/generated/` or `lib/api-zod/src/generated/`. The root `pnpm run typecheck` runs this check before artifact typechecks. When changing the OpenAPI spec, include the regenerated files from both directories in the same commit.
 
 To regenerate both outputs and validate library types during development, run:
