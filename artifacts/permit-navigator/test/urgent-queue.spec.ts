@@ -442,6 +442,38 @@ test('staff queue stays usable through a failed refresh and updates after recove
   await expect(page.getByTestId(`catalog-record-${applicationId}`)).toContainText('Approved');
 });
 
+test('staff queue clears previously loaded applications when access is denied', async ({ page }) => {
+  const applicationId = 'STAFF-ACCESS-DENIED-01';
+  let queueReads = 0;
+
+  await page.clock.install();
+  await page.route('**/api/**', async route => {
+    const { pathname } = new URL(route.request().url());
+    if (pathname === '/api/applications/staff' && route.request().method() === 'GET') {
+      queueReads++;
+      if (queueReads === 2) return route.fulfill({ status: 403, json: { error: 'Staff access denied' } });
+      if (queueReads === 3) return route.fulfill({ status: 503, json: { error: 'Temporary outage' } });
+      return route.fulfill({ json: [staffQueueApplication(applicationId)] });
+    }
+    throw new Error(`Unexpected request: ${route.request().method()} ${pathname}`);
+  });
+
+  await page.goto('/test/harness.html?queue=staff');
+  await page.getByTestId('tab-staff-queue').click();
+  const reviewCard = page.getByTestId(`active-plan-${applicationId}`);
+  await expect(reviewCard).toBeVisible();
+
+  await page.clock.fastForward(15_000);
+  await expect.poll(() => queueReads).toBe(2);
+  await expect(page.getByRole('alert')).toContainText('Staff access requires an administrator-assigned Clerk role and department');
+  await expect(reviewCard).toHaveCount(0);
+
+  await page.clock.fastForward(15_000);
+  await expect.poll(() => queueReads).toBe(3);
+  await expect(page.getByTestId('records-refresh-warning')).toHaveCount(0);
+  await expect(reviewCard).toHaveCount(0);
+});
+
 test('review save confirmation is separate from a failed queue refresh and update failures stay clear', async ({ page }) => {
   const applicationId = 'REVIEW-SAVE-REFRESH-01';
   let application = staffQueueApplication(applicationId);

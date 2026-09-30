@@ -40,6 +40,11 @@ export function useApplicationRecords(persona: Persona, filters: StaffApplicatio
 
   const reportLoadError = useCallback((error: unknown) => {
     const accessDenied = error && typeof error === 'object' && 'status' in error && error.status === 403;
+    if (accessDenied) {
+      setRecords([]);
+      hasSuccessfulLoad.current = false;
+    }
+
     if (hasSuccessfulLoad.current && !accessDenied) {
       setRecordsError('');
       setRecordsRefreshWarning(persona.kind === 'applicant'
