@@ -118,7 +118,7 @@ function PortalWorkspace({ persona, userId, onLogout }: { persona: Persona; user
     requestType: '', status: '', assignedDepartment: '', applicantLanguage: '',
     submissionDate: '', descriptionOrNotes: '',
   });
-  const { records, recordsLoading, recordsError, refreshRows } = useApplicationRecords(persona, filters);
+  const { records, recordsLoading, recordsError, recordsRefreshWarning, refreshRows } = useApplicationRecords(persona, filters);
 
   const plans: ActivePlan[] = records.map(record => ({
     ...(record.plan as unknown as ActivePlan),
@@ -448,6 +448,7 @@ function PortalWorkspace({ persona, userId, onLogout }: { persona: Persona; user
           onFiltersChange={setFilters}
           recordsLoading={recordsLoading}
           recordsError={recordsError}
+          recordsRefreshWarning={recordsRefreshWarning}
           onCompleteReview={handleStaffComplete} 
           onUpdateActivePlan={(id, updates) => { void saveStaffReview(id, updates); }}
           onReopenReview={handleStaffReopen}

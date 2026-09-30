@@ -28,7 +28,7 @@ const testStaffPersona: Persona = { kind: 'staff', desk: 'Building Code Reviewer
 
 function StaffQueueHarness() {
   const [filters, setFilters] = useState(emptyFilters);
-  const { records, recordsLoading, recordsError, refreshRows } = useApplicationRecords(testStaffPersona, filters);
+  const { records, recordsLoading, recordsError, recordsRefreshWarning, refreshRows } = useApplicationRecords(testStaffPersona, filters);
 
   const plans: ActivePlan[] = records.map(record => ({
     ...(record.plan as unknown as ActivePlan),
@@ -59,6 +59,7 @@ function StaffQueueHarness() {
       onFiltersChange={setFilters}
       recordsLoading={recordsLoading}
       recordsError={recordsError}
+      recordsRefreshWarning={recordsRefreshWarning}
       onCompleteReview={(id, status) => { void saveReview(id, { status, completedAt: Date.now(), updatedAt: Date.now() }); }}
       onUpdateActivePlan={(id, updates) => { void saveReview(id, updates); }}
       onReopenReview={id => { void saveReview(id, { status: 'In Review (Re-opened)', updatedAt: Date.now() }); }}
@@ -82,6 +83,7 @@ function Harness() {
       onFiltersChange={setFilters}
       recordsLoading={false}
       recordsError=""
+      recordsRefreshWarning=""
       onCompleteReview={() => {}}
       onUpdateActivePlan={() => {}}
       onReopenReview={() => {}}

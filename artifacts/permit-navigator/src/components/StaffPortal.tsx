@@ -157,6 +157,7 @@ export function StaffPortal({
   onFiltersChange,
   recordsLoading,
   recordsError,
+  recordsRefreshWarning,
   onCompleteReview, 
   onUpdateActivePlan,
   onReopenReview
@@ -169,6 +170,7 @@ export function StaffPortal({
   onFiltersChange: (next: StaffApplicationFilters) => void;
   recordsLoading: boolean;
   recordsError: string;
+  recordsRefreshWarning: string;
   onCompleteReview: (planId: string, finalStatus: ActivePlan['status']) => void;
   onUpdateActivePlan: (planId: string, updates: Partial<ActivePlan>) => void;
   onReopenReview: (recordId: string) => void;
@@ -294,6 +296,7 @@ export function StaffPortal({
       })} />
       {recordsLoading && <p role="status">Searching database records…</p>}
       {recordsError && <div className="verification-notice" role="alert">{recordsError}</div>}
+      {recordsRefreshWarning && <div className="verification-notice" role="status" data-testid="records-refresh-warning">{recordsRefreshWarning}</div>}
 
       <div className="staff-tabs" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12, paddingBottom: 12, marginBottom: 24, borderBottom: '1px solid hsl(var(--border))' }}>
         <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>

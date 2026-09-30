@@ -259,6 +259,94 @@ test('submitted review status refreshes in another open staff queue', async ({ b
   }
 });
 
+test('staff queue stays usable through a failed refresh and updates after recovery', async ({ page }) => {
+  const applicationId = 'STALE-QUEUE-REFRESH-01';
+  let application: ApplicationRecord = {
+    id: applicationId,
+    businessName: 'Last Known Queue Cafe',
+    businessCategory: 'restaurant',
+    requestType: 'Building Permit',
+    status: 'Draft — Requires Review',
+    assignedDepartment: 'Building',
+    applicantLanguage: 'English',
+    submittedAt: '2026-09-15T12:00:00.000Z',
+    description: 'Interior renovation for a neighborhood cafe.',
+    synthetic: true,
+    plan: {
+      id: applicationId,
+      userId: 'test-applicant',
+      departments: ['Building'],
+      departmentAssignees: { Building: 'Marcus Johnson (Building)' },
+      intake: {
+        businessName: 'Last Known Queue Cafe',
+        businessType: 'restaurant',
+        businessOther: '',
+        address: '123 Test Street',
+        zip: '95112',
+        description: 'Interior renovation for a neighborhood cafe.',
+        modifications: ['walls'],
+        modificationOther: '',
+        files: [],
+      },
+      language: 'en',
+      customLanguage: '',
+      simplified: false,
+      createdAt: Date.parse('2026-09-15T11:00:00.000Z'),
+      updatedAt: Date.parse('2026-09-15T12:00:00.000Z'),
+      submittedAt: Date.parse('2026-09-15T12:00:00.000Z'),
+      status: 'Draft — Requires Review',
+      notes: {},
+      overrides: {},
+      rejected: [],
+      matched: ['building-permits'],
+    },
+    createdAt: '2026-09-15T11:00:00.000Z',
+    updatedAt: '2026-09-15T12:00:00.000Z',
+  };
+  let queueReads = 0;
+
+  await page.clock.install();
+  await page.route('**/api/**', async route => {
+    const { pathname } = new URL(route.request().url());
+    const method = route.request().method();
+    if (pathname === '/api/applications/staff' && method === 'GET') {
+      queueReads++;
+      if (queueReads === 2) return route.fulfill({ status: 503, json: { error: 'Temporary outage' } });
+      return route.fulfill({ json: [application] });
+    }
+    if (pathname === `/api/applications/${applicationId}/history` && method === 'GET') {
+      return route.fulfill({ json: [] });
+    }
+    throw new Error(`Unexpected request: ${method} ${pathname}`);
+  });
+
+  await page.goto('/test/harness.html?queue=staff');
+  await page.getByTestId('tab-staff-queue').click();
+  const reviewCard = page.getByTestId(`active-plan-${applicationId}`);
+  await expect(reviewCard).toContainText('Draft — Requires Review');
+
+  const readsBeforeFailure = queueReads;
+  await page.clock.fastForward(15_000);
+  await expect.poll(() => queueReads).toBeGreaterThan(readsBeforeFailure);
+  await expect(page.getByTestId('records-refresh-warning')).toContainText('last successfully loaded review state');
+  await expect(reviewCard).toContainText('Draft — Requires Review');
+  await reviewCard.getByRole('button', { name: 'Review Plan' }).click();
+  await expect(page.getByTestId(`panel-staff-review-${applicationId}`)).toBeVisible();
+
+  application = {
+    ...application,
+    status: 'Approved',
+    plan: { ...application.plan, status: 'Approved' },
+    updatedAt: '2026-09-15T12:10:00.000Z',
+  };
+  const readsBeforeRecovery = queueReads;
+  await page.clock.fastForward(15_000);
+  await expect.poll(() => queueReads).toBeGreaterThan(readsBeforeRecovery);
+  await expect(page.getByTestId('records-refresh-warning')).toHaveCount(0);
+  await page.getByTestId('tab-staff-catalog').click();
+  await expect(page.getByTestId(`catalog-record-${applicationId}`)).toContainText('Approved');
+});
+
 test('resident safety and non-dispatch warning survives leaving and returning to the workspace', async ({ page }) => {
   let messages: Array<{ id: string; role: 'user' | 'assistant'; content: string; createdAt: string }> = [];
   await page.route('**/api/**', async route => {
