@@ -8,8 +8,13 @@ import esbuild from "esbuild";
 import express from "express";
 import { and, eq, inArray } from "drizzle-orm";
 import {
-  db, pool, workspaceAcknowledgementsTable, workspaceConversationsTable, workspaceMessagesTable,
+  db, pool, applicationsTable, workspaceAcknowledgementsTable, workspaceConversationsTable, workspaceMessagesTable,
 } from "@workspace/db";
+import {
+  ListWorkspacePrototypeSourcesResponse,
+  ListWorkspaceRecordsResponse,
+} from "@workspace/api-zod";
+import { prototypeSources } from "../src/lib/prototype-sources.ts";
 
 // Exercise the real route, access checks, response schemas, and PostgreSQL.
 // Replace only Clerk's network boundary; never allow a client-provided role
@@ -24,8 +29,13 @@ const ticketId = randomUUID();
 const ordinaryId = randomUUID();
 const auditFailureTicketId = randomUUID();
 const auditFailureTriggerSuffix = randomUUID().replaceAll("-", "");
+const currentPublicRecordId = `REF-CURRENT-${fixture}`;
+const outdatedPublicRecordId = `REF-OUTDATED-${fixture}`;
+const syntheticRecordId = `DEMO-D2-${fixture}`;
 const originalTime = new Date("2024-01-02T03:04:05.000Z");
 const auditFailureOriginalTime = new Date("2024-02-03T04:05:06.000Z");
+const importedAt = new Date();
+const outdatedImportedAt = new Date(importedAt.getTime() - 48 * 60 * 60 * 1000);
 let outputDir;
 let server;
 let baseUrl;
@@ -95,6 +105,36 @@ before(async () => {
     { id: ticketId, conversationId, role: "assistant", content: "Prototype safety warning", status: "high-urgency", updatedAt: originalTime },
     { id: ordinaryId, conversationId, role: "assistant", content: "Regular guidance", status: "complete" },
   ]);
+  await db.insert(applicationsTable).values([
+    {
+      id: currentPublicRecordId, ownerId: "private-owner", applicantKey: "private-applicant",
+      businessName: "Private Current Permit Applicant", businessCategory: "Commercial",
+      requestType: "Building permit", status: "Issued", assignedDepartment: "Building",
+      applicantLanguage: "English", submittedAt: null, description: "Private current record description",
+      notes: "Private note", synthetic: false, sourceUrl: "https://data.sanjoseca.gov/dataset/last-30-days-building-permits",
+      sourceDataset: "City of San José · Last 30 days building permits",
+      sourceDate: new Date("2026-09-25T12:00:00.000Z"), sourceImportedAt: importedAt,
+      plan: {}, createdAt: importedAt, updatedAt: importedAt,
+    },
+    {
+      id: outdatedPublicRecordId, ownerId: "private-owner", applicantKey: "private-applicant",
+      businessName: "Private Outdated Permit Applicant", businessCategory: "Commercial",
+      requestType: "Building permit", status: "Issued", assignedDepartment: "Building",
+      applicantLanguage: "English", submittedAt: null, description: "Private outdated record description",
+      notes: "Private note", synthetic: false, sourceUrl: "https://data.sanjoseca.gov/dataset/last-30-days-building-permits",
+      sourceDataset: "City of San José · Last 30 days building permits",
+      sourceDate: new Date("2026-09-20T12:00:00.000Z"), sourceImportedAt: outdatedImportedAt,
+      plan: {}, createdAt: outdatedImportedAt, updatedAt: outdatedImportedAt,
+    },
+    {
+      id: syntheticRecordId, ownerId: null, applicantKey: null,
+      businessName: "Synthetic Reference Example", businessCategory: "Example",
+      requestType: "Prototype example", status: "Demo", assignedDepartment: "Not provided",
+      applicantLanguage: "English", submittedAt: null, description: "Fictional example record",
+      notes: null, synthetic: true, sourceUrl: null, sourceDataset: null,
+      sourceDate: null, sourceImportedAt: null, plan: {}, createdAt: importedAt, updatedAt: importedAt,
+    },
+  ]);
   const app = express();
   app.use((req, _res, next) => { req.log = { info() {}, warn() {} }; next(); });
   app.use(express.json());
@@ -113,8 +153,62 @@ after(async () => {
     .where(inArray(workspaceAcknowledgementsTable.ticketId, [ticketId, auditFailureTicketId, ...residentTicketIds]));
   await db.delete(workspaceMessagesTable).where(eq(workspaceMessagesTable.conversationId, conversationId));
   await db.delete(workspaceConversationsTable).where(eq(workspaceConversationsTable.id, conversationId));
+  await db.delete(applicationsTable)
+    .where(inArray(applicationsTable.id, [currentPublicRecordId, outdatedPublicRecordId, syntheticRecordId]));
   if (outputDir) await rm(outputDir, { recursive: true, force: true });
   await pool.end();
+});
+
+test("reference endpoints and prototype freshness states match generated response schemas", async () => {
+  const sourceResponse = await request("GET", "/workspace/prototype-sources");
+  assert.equal(sourceResponse.status, 200);
+  const sources = ListWorkspacePrototypeSourcesResponse.parse(sourceResponse.body);
+  assert.ok(sources.length > 0);
+  assert.ok(sources.every(source => source.state === "demo"));
+  assert.ok(sources.every(source => /Fictional example/.test(source.content)));
+  assert.ok(sources.every(source => source.officialReferenceUrl.startsWith("https://www.sanjoseca.gov/") ||
+    source.officialReferenceUrl.startsWith("https://permits.sanjoseca.gov/")));
+
+  const outdatedSources = ListWorkspacePrototypeSourcesResponse.parse(
+    prototypeSources(new Date("2027-09-30T00:00:00.000Z")),
+  );
+  assert.ok(outdatedSources.every(source => source.state === "outdated"));
+  const unavailableSources = ListWorkspacePrototypeSourcesResponse.parse(
+    prototypeSources(new Date("2026-09-28T00:00:00.000Z")),
+  );
+  assert.ok(unavailableSources.every(source => source.state === "unavailable"));
+
+  const publicResponse = await request(
+    "GET",
+    `/workspace/records?mode=live&search=${encodeURIComponent(fixture)}`,
+  );
+  assert.equal(publicResponse.status, 200);
+  const publicRecords = ListWorkspaceRecordsResponse.parse(publicResponse.body);
+  assert.deepEqual(
+    new Set(publicRecords.map(record => record.id)),
+    new Set([currentPublicRecordId, outdatedPublicRecordId]),
+    JSON.stringify(publicResponse.body),
+  );
+  const current = publicRecords.find(record => record.id === currentPublicRecordId);
+  const outdated = publicRecords.find(record => record.id === outdatedPublicRecordId);
+  assert.equal(current.synthetic, false);
+  assert.equal(current.freshness, "cached");
+  assert.equal(current.sourceUrl, "https://data.sanjoseca.gov/dataset/last-30-days-building-permits");
+  assert.equal(outdated.freshness, "outdated");
+  assert.equal(outdated.sourceImportedAt.toISOString(), outdatedImportedAt.toISOString());
+  assert.doesNotMatch(JSON.stringify(publicResponse.body), /Private (Current|Outdated) Permit Applicant|private-owner|private-applicant|Private note/);
+
+  const demoResponse = await request(
+    "GET",
+    `/workspace/records?mode=research&search=${encodeURIComponent(syntheticRecordId)}`,
+  );
+  const demoRecords = ListWorkspaceRecordsResponse.parse(demoResponse.body);
+  assert.equal(demoRecords.length, 1);
+  assert.equal(demoRecords[0].synthetic, true);
+  assert.equal(demoRecords[0].freshness, "demo");
+  assert.equal(demoRecords[0].sourceUrl, null);
+  assert.equal(demoRecords[0].sourceDate, null);
+  assert.equal(demoRecords[0].sourceImportedAt, null);
 });
 
 test("queue and acknowledgement reject anonymous, resident, and non-queue staff", async () => {

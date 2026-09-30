@@ -60,7 +60,7 @@ function RecordCard({ record, compact = false }: { record: WorkspaceRecord; comp
       <h4>{record.description}</h4>
       <div className="ws-record-tags"><span>{record.department}</span><span>{record.status}</span><span>{record.language}</span></div>
       {record.synthetic && <SyntheticBadge />}
-      <div className="ws-record-foot"><span>{record.synthetic ? `Demo updated ${dateLabel(record.updatedAt)}` : `Issued ${record.sourceDate ? dateLabel(record.sourceDate) : 'date unknown'} · Imported ${record.sourceImportedAt ? dateLabel(record.sourceImportedAt) : 'unknown'} · ${record.freshness === 'outdated' ? 'Import overdue' : 'Cached, not live status'}`}</span>{url ? <a href={url} target="_blank" rel="noopener noreferrer" data-testid={`link-record-source-${record.id}`}>View source <ExternalLink size={12} /></a> : <span>Source link unavailable</span>}</div>
+      <div className="ws-record-foot"><span>{record.synthetic ? `Demo updated ${dateLabel(record.updatedAt)}` : `Issued ${record.sourceDate ? dateLabel(record.sourceDate) : 'date unknown'} · Imported ${record.sourceImportedAt ? dateLabel(record.sourceImportedAt) : 'unknown'} · ${record.freshness === 'outdated' ? 'Import overdue — verify directly with City' : 'Cached, not live status'}`}</span>{url ? <a href={url} target="_blank" rel="noopener noreferrer" data-testid={`link-record-source-${record.id}`}>View source <ExternalLink size={12} /></a> : <span>Source link unavailable</span>}</div>
     </article>
   );
 }
@@ -209,11 +209,11 @@ export function AIWorkspace() {
                <div className="ws-reference-status"><span className="ws-status-dot"/><div><strong>Fictional examples</strong><small>Locally versioned · no live City connection</small></div></div>
                <div className="ws-ref-list">
                  {prototypeDocs.isLoading && <div className="ws-ref-skeleton"><i/><i/><i/></div>}
-                 {prototypeDocs.isError && <div className="ws-ref-error"><AlertTriangle size={20}/><strong>Demo documents unavailable</strong><button onClick={() => void prototypeDocs.refetch()}>Retry</button></div>}
-                 {prototypeDocs.data?.map(doc => <article className="ws-record" key={doc.id} data-testid={`card-prototype-source-${doc.id}`}>
+                  {prototypeDocs.isError && <div className="ws-ref-error"><AlertTriangle size={20}/><strong>Demo documents unavailable</strong><button onClick={() => void prototypeDocs.refetch()} data-testid="button-retry-prototype-sources">Retry</button></div>}
+                  {prototypeDocs.data?.map(doc => <article className="ws-record" key={doc.id} data-state={doc.state} data-testid={`card-prototype-source-${doc.id}`}>
                    <div className="ws-record-top"><span>{doc.topic.toUpperCase()} · SYNTHETIC</span><span>{doc.version}</span></div>
-                   <h4>{doc.title}</h4><p>{doc.content}</p>
-                   <div className="ws-record-foot"><span>Example revised {dateLabel(doc.revisedAt)} · {doc.state === 'demo' ? 'Demo only' : 'Example unavailable / outdated'}</span></div>
+                    <h4>{doc.title}</h4><SyntheticBadge />{doc.state === 'unavailable' ? <p role="status">This fictional example is unavailable and must not be used.</p> : <p>{doc.content}</p>}
+                    <div className="ws-record-foot"><span>{doc.state === 'demo' ? `Example revised ${dateLabel(doc.revisedAt)} · Demo only` : doc.state === 'outdated' ? `Outdated example — do not rely on it · Revised ${dateLabel(doc.revisedAt)}` : 'Example unavailable — not for use'}</span></div>
                    <div className="ws-record-foot"><a href={doc.officialReferenceUrl} target="_blank" rel="noopener noreferrer">Real City page to verify independently <ExternalLink size={12}/></a></div>
                  </article>)}
                </div>
