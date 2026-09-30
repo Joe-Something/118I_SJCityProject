@@ -49,6 +49,9 @@ const futureCachedCityRecordId = `SJ-OPEN-2026-${randomUUID().replaceAll("-", ""
 const currentCachedCityRecordId = `SJ-OPEN-2026-${randomUUID().replaceAll("-", "")}-CI`;
 const nonCityCachedRecordId = `SJ-OPEN-2026-${randomUUID().replaceAll("-", "")}-CI`;
 const applicantCreatedRecordId = `SJ-OPEN-APPLICANT-${randomUUID()}`;
+const failedRefreshPermitNumbers = Array.from({ length: 4 }, () =>
+  `2026-${randomUUID().replace(/\D/g, "").slice(0, 8).padEnd(8, "0")}-CI`);
+const failedRefreshRecordIds = failedRefreshPermitNumbers.map(number => `SJ-OPEN-${number}`);
 const originalTime = new Date("2024-01-02T03:04:05.000Z");
 const legacyAcknowledgedTime = new Date("2024-03-04T05:06:07.000Z");
 const auditFailureOriginalTime = new Date("2024-02-03T04:05:06.000Z");
@@ -209,6 +212,7 @@ after(async () => {
     .where(inArray(applicationsTable.id, [
       currentPublicRecordId, outdatedPublicRecordId, syntheticRecordId, importerRecordId,
       ...fixtureRecordIds,
+      ...failedRefreshRecordIds,
       staleCachedCityRecordId, futureCachedCityRecordId, currentCachedCityRecordId,
       nonCityCachedRecordId, applicantCreatedRecordId,
     ]));
@@ -383,6 +387,108 @@ test("City permit import persists and returns only allowlisted public metadata",
       `rejected issue date must not be returned publicly: ${rejectedRecordId}`,
     );
   }
+});
+
+async function seedCachedCityReference(id) {
+  const savedAt = new Date(Date.now() - 60_000);
+  const sourceDate = new Date(Date.now() - 60_000);
+  await db.insert(applicationsTable).values({
+    id,
+    ownerId: null,
+    applicantKey: null,
+    businessName: "Property at 99 Existing Street",
+    businessCategory: "Existing public category",
+    requestType: "Existing public work",
+    status: "Issued",
+    assignedDepartment: "Not provided",
+    applicantLanguage: "Not provided",
+    submittedAt: null,
+    description: "Existing public reference",
+    notes: null,
+    synthetic: false,
+    sourceUrl: "https://data.sanjoseca.gov/dataset/last-30-days-building-permits",
+    sourceDataset: "City of San José · Last 30 days building permits",
+    sourceDate,
+    sourceImportedAt: savedAt,
+    plan: {},
+    createdAt: savedAt,
+    updatedAt: savedAt,
+  });
+}
+
+async function readPublicReference(id) {
+  const response = await request(
+    "GET",
+    `/workspace/records?mode=live&search=${encodeURIComponent(id)}`,
+  );
+  assert.equal(response.status, 200);
+  return ListWorkspaceRecordsResponse.parse(response.body);
+}
+
+test("failed City download keeps existing references unchanged and available", async () => {
+  const [existingRecordId, attemptedRecordId] = failedRefreshRecordIds;
+  await seedCachedCityReference(existingRecordId);
+  const [before] = await db.select().from(applicationsTable)
+    .where(eq(applicationsTable.id, existingRecordId));
+  const publicBefore = await readPublicReference(existingRecordId);
+  assert.equal(publicBefore.length, 1);
+
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response("City dataset unavailable", { status: 503 });
+  try {
+    await assert.rejects(refreshPublicPermits(), /City permit dataset responded 503/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+
+  const [after] = await db.select().from(applicationsTable)
+    .where(eq(applicationsTable.id, existingRecordId));
+  assert.deepEqual(after, before, "failed download must not update or remove saved references");
+  assert.deepEqual(await readPublicReference(existingRecordId), publicBefore);
+  assert.deepEqual(await readPublicReference(attemptedRecordId), []);
+});
+
+test("invalid City CSV after a valid row keeps existing references and writes no new rows", async () => {
+  const [existingRecordId, attemptedRecordId] = failedRefreshRecordIds.slice(2);
+  await seedCachedCityReference(existingRecordId);
+  const [before] = await db.select().from(applicationsTable)
+    .where(eq(applicationsTable.id, existingRecordId));
+  const publicBefore = await readPublicReference(existingRecordId);
+  assert.equal(publicBefore.length, 1);
+
+  const today = new Date();
+  const validRow = [
+    failedRefreshPermitNumbers[3],
+    "Commercial/Industrial",
+    "100 New Street",
+    "New tenant improvement",
+    "Restaurant",
+    "Interior renovation",
+    `${today.getUTCMonth() + 1}/${today.getUTCDate()}/${today.getUTCFullYear()}`,
+  ];
+  const headers = [
+    "FOLDERNUMBER", "FOLDERDESC", "gx_location", "FOLDERNAME",
+    "SUBTYPEDESCRIPTION", "WORKDESCRIPTION", "ISSUEDATE",
+  ];
+  const quoteRow = values => values.map(value =>
+    `"${String(value).replaceAll('"', '""')}"`).join(",");
+  const csv = `${headers.join(",")}\n${quoteRow(validRow)}\n"unterminated field`;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(csv, { status: 200 });
+  try {
+    await assert.rejects(refreshPublicPermits(), /Unterminated CSV quoted field/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+
+  const [after] = await db.select().from(applicationsTable)
+    .where(eq(applicationsTable.id, existingRecordId));
+  assert.deepEqual(after, before, "CSV parse failure must not update or remove saved references");
+  assert.deepEqual(await readPublicReference(existingRecordId), publicBefore);
+  const attemptedRows = await db.select().from(applicationsTable)
+    .where(eq(applicationsTable.id, attemptedRecordId));
+  assert.deepEqual(attemptedRows, [], "valid rows preceding the CSV error must not be written");
+  assert.deepEqual(await readPublicReference(attemptedRecordId), []);
 });
 
 test("successful City refresh removes previously cached stale and future-dated records only", async () => {
