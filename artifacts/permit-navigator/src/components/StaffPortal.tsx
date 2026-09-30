@@ -178,7 +178,7 @@ export function StaffPortal({
   recordsRefreshWarning: string;
   onCompleteReview: (planId: string, finalStatus: ActivePlan['status']) => void;
   onUpdateActivePlan: (planId: string, updates: Partial<ActivePlan>) => void;
-  onReopenReview: (recordId: string) => void;
+  onReopenReview: (recordId: string) => Promise<boolean>;
 }) {
   const queryClient = useQueryClient();
   const [staffTab, setStaffTab] = useState<'queue' | 'catalog' | 'public'>('public');
@@ -228,10 +228,13 @@ export function StaffPortal({
   [catalog, staffRole]);
   const publicPermits = records.filter(record => record.sourceUrl && !record.synthetic);
 
-  const handleReopen = (id: string) => {
-    onReopenReview(id);
+  const handleReopen = async (id: string) => {
+    const reopened = await onReopenReview(id);
+    if (!reopened) return false;
+
     setStaffTab('queue');
     setExpandedPlans(prev => Array.from(new Set([...prev, id])));
+    return true;
   };
 
   const toggleExpand = (id: string) => {

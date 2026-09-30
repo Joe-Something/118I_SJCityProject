@@ -168,6 +168,7 @@ test('reviewer decisions survive completion, reopening, another session refresh,
   };
 
   let reviewerUpdates = 0;
+  let reopenAttempts = 0;
   let firstQueueReads = 0;
   let secondQueueReads = 0;
   const installApplicationApi = async (page: Page, countQueueRead: () => void) => {
@@ -181,6 +182,12 @@ test('reviewer decisions survive completion, reopening, another session refresh,
       if (pathname === `/api/applications/${applicationId}/review` && method === 'PATCH') {
         const body = route.request().postDataJSON() as { plan: Record<string, unknown> };
         const status = String(body.plan.status);
+        if (status === 'In Review (Re-opened)') {
+          reopenAttempts++;
+          if (reopenAttempts === 1) {
+            return route.fulfill({ status: 503, json: { error: 'Review could not be saved' } });
+          }
+        }
         application = {
           ...application,
           status,
@@ -259,6 +266,17 @@ test('reviewer decisions survive completion, reopening, another session refresh,
     await expect(catalogRecord).toContainText('Use the updated neighborhood business registration checklist.');
     await expect(catalogRecord).toContainText('zoning-clearance: Rejected');
     await secondReviewer.getByTestId(`button-reopen-${applicationId}`).click();
+    await expect.poll(() => reopenAttempts).toBe(1);
+    await expect(catalogRecord.getByTestId(`reopen-error-${applicationId}`))
+      .toContainText("We couldn't save this plan's reopening");
+    await expect(catalogRecord.getByTestId(`reopen-error-${applicationId}`))
+      .toContainText('It remains in the review catalog');
+    await expect(catalogRecord).toContainText('Rejected');
+    await expect(secondReviewer.getByTestId(`active-plan-${applicationId}`)).toHaveCount(0);
+    await expect.poll(() => reviewerUpdates).toBe(4);
+
+    await secondReviewer.getByTestId(`button-reopen-${applicationId}`).click();
+    await expect.poll(() => reopenAttempts).toBe(2);
     await expect.poll(() => reviewerUpdates).toBe(5);
     const reopenedInSecondSession = secondReviewer.getByTestId(`active-plan-${applicationId}`);
     await expect(reopenedInSecondSession).toContainText('In Review (Re-opened)');

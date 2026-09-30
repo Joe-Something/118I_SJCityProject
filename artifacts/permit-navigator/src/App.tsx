@@ -326,7 +326,7 @@ function PortalWorkspace({ persona, userId, onLogout }: { persona: Persona; user
     }
   };
 
-  const saveStaffReview = async (planId: string, updates: Partial<ActivePlan>) => {
+  const saveStaffReview = async (planId: string, updates: Partial<ActivePlan>, showErrorToast = true) => {
     const current = plans.find(plan => plan.id === planId);
     if (!current) return false;
     try {
@@ -334,7 +334,9 @@ function PortalWorkspace({ persona, userId, onLogout }: { persona: Persona; user
       await refreshRows();
       return true;
     } catch {
-      toast({ title: 'Review not saved', description: 'Please retry your change.', variant: 'destructive' });
+      if (showErrorToast) {
+        toast({ title: 'Review not saved', description: 'Please retry your change.', variant: 'destructive' });
+      }
       return false;
     }
   };
@@ -345,9 +347,8 @@ function PortalWorkspace({ persona, userId, onLogout }: { persona: Persona; user
     });
   };
 
-  const handleStaffReopen = (planId: string) => {
-    void saveStaffReview(planId, { status: 'In Review (Re-opened)', updatedAt: Date.now() });
-  };
+  const handleStaffReopen = (planId: string) =>
+    saveStaffReview(planId, { status: 'In Review (Re-opened)', updatedAt: Date.now() }, false);
 
   const currentDraft = currentPlanId ? myPlans.find(p => p.id === currentPlanId && p.status === 'Draft') : null;
   const activePlan = currentPlanId ? myPlans.find(p => p.id === currentPlanId) : null;

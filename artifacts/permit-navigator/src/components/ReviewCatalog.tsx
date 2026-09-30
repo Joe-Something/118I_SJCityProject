@@ -3,9 +3,40 @@ import { Search, History, MapPin, Building2, CheckCircle2, Clock3, Pencil } from
 import { ActivePlan } from '../types';
 import { deriveDepartments } from '../utils/helpers';
 
-export function ReviewCatalog({ records, onReopen }: { records: ActivePlan[], onReopen: (id: string) => void }) {
+export function ReviewCatalog({ records, onReopen }: { records: ActivePlan[], onReopen: (id: string) => Promise<boolean> }) {
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<'All' | 'Approved' | 'Rejected' | 'Modified via Staff Override'>('All');
+  const [reopenErrors, setReopenErrors] = useState<Record<string, string>>({});
+  const [reopeningIds, setReopeningIds] = useState<Set<string>>(() => new Set());
+
+  const handleReopen = async (id: string) => {
+    setReopenErrors(current => {
+      const next = { ...current };
+      delete next[id];
+      return next;
+    });
+    setReopeningIds(current => new Set(current).add(id));
+    try {
+      const reopened = await onReopen(id);
+      if (!reopened) {
+        setReopenErrors(current => ({
+          ...current,
+          [id]: "We couldn't save this plan's reopening. It remains in the review catalog. Try again.",
+        }));
+      }
+    } catch {
+      setReopenErrors(current => ({
+        ...current,
+        [id]: "We couldn't save this plan's reopening. It remains in the review catalog. Try again.",
+      }));
+    } finally {
+      setReopeningIds(current => {
+        const next = new Set(current);
+        next.delete(id);
+        return next;
+      });
+    }
+  };
 
   const filteredRecords = records.filter(record => {
     if (filter !== 'All' && record.status !== filter) return false;
@@ -83,9 +114,22 @@ export function ReviewCatalog({ records, onReopen }: { records: ActivePlan[], on
                     {record.status === 'Approved' ? <CheckCircle2 size={12} /> : <Clock3 size={12} />}
                     {record.status}
                   </div>
-                  <button className="button-secondary" onClick={() => onReopen(record.id)} data-testid={`button-reopen-${record.id}`} style={{ padding: '6px 12px', fontSize: '12px' }}><Pencil size={13}/> Re-open for Review</button>
+                  <button
+                    className="button-secondary"
+                    onClick={() => void handleReopen(record.id)}
+                    disabled={reopeningIds.has(record.id)}
+                    data-testid={`button-reopen-${record.id}`}
+                    style={{ padding: '6px 12px', fontSize: '12px' }}
+                  >
+                    <Pencil size={13}/> {reopeningIds.has(record.id) ? 'Saving…' : reopenErrors[record.id] ? 'Retry Re-open for Review' : 'Re-open for Review'}
+                  </button>
                 </div>
               </div>
+              {reopenErrors[record.id] && (
+                <div role="alert" data-testid={`reopen-error-${record.id}`} style={{ padding: '10px 14px', color: 'hsl(var(--destructive))' }}>
+                  {reopenErrors[record.id]}
+                </div>
+              )}
               <div className="catalog-card-body">
                 <div className="catalog-detail">
                   <strong>Reviewed on:</strong> {record.completedAt ? new Date(record.completedAt).toLocaleString() : 'N/A'}

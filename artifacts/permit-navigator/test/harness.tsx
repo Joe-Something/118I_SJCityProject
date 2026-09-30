@@ -44,9 +44,14 @@ function StaffQueueHarness() {
 
   const saveReview = async (planId: string, updates: Partial<ActivePlan>) => {
     const current = plans.find(plan => plan.id === planId);
-    if (!current) return;
-    await reviewApplication(planId, { plan: JSON.parse(JSON.stringify({ ...current, ...updates })) });
-    await refreshRows();
+    if (!current) return false;
+    try {
+      await reviewApplication(planId, { plan: JSON.parse(JSON.stringify({ ...current, ...updates })) });
+      await refreshRows();
+      return true;
+    } catch {
+      return false;
+    }
   };
 
   return (
@@ -62,7 +67,7 @@ function StaffQueueHarness() {
       recordsRefreshWarning={recordsRefreshWarning}
       onCompleteReview={(id, status) => { void saveReview(id, { status, completedAt: Date.now(), updatedAt: Date.now() }); }}
       onUpdateActivePlan={(id, updates) => { void saveReview(id, updates); }}
-      onReopenReview={id => { void saveReview(id, { status: 'In Review (Re-opened)', updatedAt: Date.now() }); }}
+      onReopenReview={id => saveReview(id, { status: 'In Review (Re-opened)', updatedAt: Date.now() })}
     />
   );
 }
@@ -86,7 +91,7 @@ function Harness() {
       recordsRefreshWarning=""
       onCompleteReview={() => {}}
       onUpdateActivePlan={() => {}}
-      onReopenReview={() => {}}
+       onReopenReview={async () => false}
     />
   ) : (
     <>
