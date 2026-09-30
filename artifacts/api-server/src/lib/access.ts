@@ -1,7 +1,8 @@
 import { clerkClient, getAuth } from "@clerk/express";
 import type { Request, Response } from "express";
 
-const allowedDepartments = new Set(["Planning", "Building", "Fire", "Economic Development"]);
+export const allowedDepartments = ["Planning", "Building", "Fire", "Economic Development"] as const;
+const allowedDepartmentSet = new Set<string>(allowedDepartments);
 
 export function signedInUser(req: Request, res: Response): string | null {
   const id = getAuth(req).userId;
@@ -10,14 +11,31 @@ export function signedInUser(req: Request, res: Response): string | null {
 }
 
 /** Private Clerk user metadata is only assignable by an administrator, never the browser. */
-export async function authorizedStaff(req: Request, res: Response): Promise<{ id: string; department: string } | null> {
+export type AuthorizedStaff = {
+  id: string;
+  department: string;
+  administratorEnabled: boolean;
+};
+
+export function staffCanAccessDepartment(staff: AuthorizedStaff, department: string): boolean {
+  // Economic Development has historically had the citywide queue.
+  return staff.administratorEnabled || staff.department === "Economic Development" || staff.department === department;
+}
+
+export async function authorizedStaff(req: Request, res: Response): Promise<AuthorizedStaff | null> {
   const id = signedInUser(req, res);
   if (!id) return null;
-  const user = await clerkClient.users.getUser(id);
+  let user;
+  try {
+    user = await clerkClient.users.getUser(id);
+  } catch {
+    res.status(503).json({ error: "Staff permissions are temporarily unavailable. Please retry shortly." });
+    return null;
+  }
   const department = user.privateMetadata?.staffDepartment;
-  if (user.privateMetadata?.staffRole !== "reviewer" || typeof department !== "string" || !allowedDepartments.has(department)) {
+  if (user.privateMetadata?.staffRole !== "reviewer" || typeof department !== "string" || !allowedDepartmentSet.has(department)) {
     res.status(403).json({ error: "Staff access requires an administrator-assigned Clerk staff role." });
     return null;
   }
-  return { id, department };
+  return { id, department, administratorEnabled: user.privateMetadata?.staffAdministratorEnabled === true };
 }

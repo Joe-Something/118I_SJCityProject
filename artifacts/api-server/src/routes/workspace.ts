@@ -47,7 +47,7 @@ function escalationRecord(
 async function escalationStaff(req: Parameters<typeof authorizedStaff>[0], res: Parameters<typeof authorizedStaff>[1]) {
   const staff = await authorizedStaff(req, res);
   if (!staff) return null;
-  if (staff.department !== "Fire" && staff.department !== "Economic Development") {
+  if (!staff.administratorEnabled && staff.department !== "Fire" && staff.department !== "Economic Development") {
     res.status(403).json({ error: "This queue is restricted to authorized Fire or Economic Development reviewers." });
     return null;
   }

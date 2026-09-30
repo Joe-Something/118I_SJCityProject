@@ -43,6 +43,7 @@ const permittedApplicationFields = [
 let outputDir;
 let server;
 let baseUrl;
+let lastRouteError;
 
 function makePlan(id, ownerId, applicantKey, status, department) {
   return {
@@ -70,6 +71,7 @@ async function request(method, route, actor = "anonymous", body) {
     method,
     headers: {
       "x-test-actor": actor,
+      ...(method === "PUT" ? { origin: baseUrl } : {}),
       ...(body ? { "content-type": "application/json" } : {}),
     },
     ...(body ? { body: JSON.stringify(body) } : {}),
@@ -150,16 +152,27 @@ before(async () => {
         build.onResolve({ filter: /^@clerk\/express$/ }, () => ({ path: "clerk", namespace: "test" }));
         build.onLoad({ filter: /^clerk$/, namespace: "test" }, () => ({
           contents: `
+            const testStaff = {
+              building: { staffRole: "reviewer", staffDepartment: "Building", staffAdministratorEnabled: false },
+              fire: { staffRole: "reviewer", staffDepartment: "Fire", staffAdministratorEnabled: false },
+              economic: { staffRole: "reviewer", staffDepartment: "Economic Development", staffAdministratorEnabled: false },
+              unassigned: { staffRole: "reviewer" },
+              resident: {},
+              metadataFailure: { staffRole: "reviewer", staffDepartment: "Building", staffAdministratorEnabled: false },
+              lookupFailure: { staffRole: "reviewer", staffDepartment: "Building", staffAdministratorEnabled: false },
+            };
             export const getAuth = req => ({ userId: req.headers["x-test-actor"] === "anonymous" ? null : req.headers["x-test-actor"] });
-            export const clerkClient = { users: { getUser: async id => ({
-              privateMetadata: ({
-                building: { staffRole: "reviewer", staffDepartment: "Building" },
-                fire: { staffRole: "reviewer", staffDepartment: "Fire" },
-                economic: { staffRole: "reviewer", staffDepartment: "Economic Development" },
-                unassigned: { staffRole: "reviewer" },
-                resident: {},
-              })[id] ?? {}
-            }) } };
+            export const clerkClient = { users: {
+              getUser: async id => {
+                if (id === "lookupFailure") throw new Error("Injected Clerk lookup failure");
+                return { privateMetadata: testStaff[id] ?? {} };
+              },
+              updateUserMetadata: async (id, update) => {
+                if (id === "metadataFailure") throw new Error("Injected Clerk metadata service failure");
+                testStaff[id] = { ...testStaff[id], ...update.privateMetadata };
+                return { privateMetadata: testStaff[id] };
+              },
+            } };
           `,
           loader: "js",
         }));
@@ -170,6 +183,14 @@ before(async () => {
   const { default: router } = await import(pathToFileURL(outfile).href);
   const app = express();
   app.use(express.json());
+  app.use((req, _res, next) => {
+    req.log = {
+      error: fields => { lastRouteError = fields.err; },
+      warn: () => undefined,
+      info: () => undefined,
+    };
+    next();
+  });
   app.use("/api", router);
   app.use(apiErrorHandler);
   server = await new Promise(resolve => {
@@ -267,6 +288,175 @@ test("reviewer list is department-scoped and omits applicant identity fields", a
     assert.equal(denied.status, 403);
     assert.doesNotMatch(JSON.stringify(denied.body), new RegExp(privateValues.plan));
   }
+});
+
+test("approved reviewers can persist server administrator access, then restore assigned access", async () => {
+  const initial = await request("GET", "/staff/access", "building");
+  assert.equal(initial.status, 200);
+  assert.deepEqual(initial.body, {
+    administratorEnabled: false,
+    assignedDepartment: "Building",
+    accessibleDepartments: ["Building"],
+  });
+
+  const unauthorizedActors = [
+    ["anonymous", 401],
+    ["resident", 403],
+    ["unassigned", 403],
+  ];
+  for (const [actor, expectedStatus] of unauthorizedActors) {
+    const denied = await request("PUT", "/staff/access", actor, { administratorEnabled: true });
+    assert.equal(denied.status, expectedStatus);
+  }
+  const unavailableProfile = await request("GET", "/staff/access", "lookupFailure");
+  assert.equal(unavailableProfile.status, 503);
+
+  const malformed = await request("PUT", "/staff/access", "building", { administratorEnabled: "true" });
+  assert.equal(malformed.status, 400);
+  const extraField = await request("PUT", "/staff/access", "building", {
+    administratorEnabled: true,
+    userId: "resident",
+  });
+  assert.equal(extraField.status, 400);
+
+  for (const authorization of ["Bearer attacker-token", "bearer attacker-token"]) {
+    const crossOrigin = await fetch(`${baseUrl}/api/staff/access`, {
+      method: "PUT",
+      headers: {
+        "x-test-actor": "building",
+        authorization,
+        origin: "https://attacker.invalid",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ administratorEnabled: true }),
+    });
+    assert.equal(crossOrigin.status, 403);
+  }
+
+  const wrongScheme = await fetch(`${baseUrl}/api/staff/access`, {
+    method: "PUT",
+    headers: {
+      "x-test-actor": "building",
+      origin: baseUrl.replace("http://", "https://"),
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({ administratorEnabled: true }),
+  });
+  assert.equal(wrongScheme.status, 403);
+
+  const bearerWithoutOrigin = await fetch(`${baseUrl}/api/staff/access`, {
+    method: "PUT",
+    headers: {
+      "x-test-actor": "building",
+      authorization: "Bearer attacker-token",
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({ administratorEnabled: true }),
+  });
+  assert.equal(bearerWithoutOrigin.status, 403);
+  const bearerMutation = await fetch(`${baseUrl}/api/staff/access`, {
+    method: "PUT",
+    headers: {
+      "x-test-actor": "fire",
+      authorization: "Bearer verified-test-token",
+      origin: baseUrl,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({ administratorEnabled: true }),
+  });
+  assert.equal(bearerMutation.status, 200);
+  assert.deepEqual((await bearerMutation.json()).accessibleDepartments, ["Planning", "Building", "Fire", "Economic Development"]);
+  const bearerModeReset = await request("PUT", "/staff/access", "fire", { administratorEnabled: false });
+  assert.equal(bearerModeReset.status, 200);
+
+  const clerkFailure = await request("PUT", "/staff/access", "metadataFailure", { administratorEnabled: true });
+  assert.equal(clerkFailure.status, 503);
+  assert.deepEqual(clerkFailure.body, {
+    error: "Staff permissions could not be updated. Your current permissions remain unchanged.",
+  });
+
+  const deniedBeforeGrant = await request("GET", `/applications/staff?applicationId=${fireId}`, "building");
+  assert.deepEqual(deniedBeforeGrant.body, []);
+  const enabled = await request("PUT", "/staff/access", "building", { administratorEnabled: true });
+  assert.equal(enabled.status, 200);
+  assert.deepEqual(enabled.body, {
+    administratorEnabled: true,
+    assignedDepartment: "Building",
+    accessibleDepartments: ["Planning", "Building", "Fire", "Economic Development"],
+  });
+
+  const crossDepartmentList = await request("GET", `/applications/staff?applicationId=${fireId}`, "building");
+  assert.equal(crossDepartmentList.status, 200);
+  assert.deepEqual(crossDepartmentList.body.map(row => row.id), [fireId]);
+  assert.equal(crossDepartmentList.body[0].ownerId, undefined);
+  assert.equal(crossDepartmentList.body[0].applicantKey, undefined);
+
+  const originalQuery = pool.query;
+  let outageFailures = 0;
+  pool.query = function (query, ...args) {
+    const text = typeof query === "string" ? query : query?.text;
+    if (/select[\s\S]*from\s+"?permit_applications"?/i.test(text ?? "") && outageFailures < 2) {
+      outageFailures += 1;
+      const error = new Error("temporary database connection interruption");
+      error.code = "ECONNRESET";
+      return Promise.reject(error);
+    }
+    return originalQuery.call(this, query, ...args);
+  };
+  try {
+    const fallback = await request("GET", "/applications?applicationId=DEMO-D2-0002", "building");
+    assert.equal(fallback.status, 200);
+    assert.equal(fallback.body.length, 1);
+    assert.equal(fallback.body[0].plan._dataSource, "sample-fallback");
+    const rejectedSampleWrite = await request("POST", `/applications/${fallback.body[0].id}/response`, "building", {
+      text: "A sample must remain read-only even for administrators.",
+    });
+    assert.equal(rejectedSampleWrite.status, 409);
+  } finally {
+    pool.query = originalQuery;
+  }
+
+  const crossDepartmentHistory = await request("GET", `/applications/${fireId}/history`, "building");
+  assert.equal(crossDepartmentHistory.status, 200);
+  const crossDepartmentDocuments = await request("GET", `/applications/${fireId}/documents`, "building");
+  assert.equal(crossDepartmentDocuments.status, 200);
+  assert.deepEqual(crossDepartmentDocuments.body, []);
+
+  const fireRecord = crossDepartmentList.body[0];
+  const reviewed = await request("PATCH", `/applications/${fireId}/review`, "building", {
+    plan: { ...fireRecord.plan, status: "Approved" },
+  });
+  assert.equal(reviewed.status, 200);
+  assert.equal(reviewed.body.status, "Approved");
+  const crossDepartmentResponse = await request("POST", `/applications/${fireId}/response`, "building", {
+    text: "Please provide a corrected site drawing for review.",
+  });
+  assert.equal(crossDepartmentResponse.status, 200, JSON.stringify({
+    stack: lastRouteError?.stack,
+    cause: lastRouteError?.cause,
+    causeMessage: lastRouteError?.cause?.message,
+  }));
+  assert.equal(
+    crossDepartmentResponse.body.plan.notes._staff_response,
+    "Please provide a corrected site drawing for review.",
+  );
+
+  // Administrator privileges do not alter applicant ownership checks.
+  const otherApplicantsRecords = await request("GET", `/applications/mine?applicantKey=${applicantKeyB}`, "building");
+  assert.deepEqual(otherApplicantsRecords.body, []);
+
+  const disabled = await request("PUT", "/staff/access", "building", { administratorEnabled: false });
+  assert.deepEqual(disabled.body, {
+    administratorEnabled: false,
+    assignedDepartment: "Building",
+    accessibleDepartments: ["Building"],
+  });
+  const deniedAfterDisable = await request("GET", `/applications/staff?applicationId=${fireId}`, "building");
+  assert.deepEqual(deniedAfterDisable.body, []);
+  const deniedDocumentsAfterDisable = await request("GET", `/applications/${fireId}/documents`, "building");
+  assert.equal(deniedDocumentsAfterDisable.status, 404);
+  const deniedHistoryAfterDisable = await request("GET", `/applications/${fireId}/history`, "building");
+  assert.equal(deniedHistoryAfterDisable.status, 403);
 });
 
 test("staff queue falls back only for transient database failures and recovers on the next request", async () => {

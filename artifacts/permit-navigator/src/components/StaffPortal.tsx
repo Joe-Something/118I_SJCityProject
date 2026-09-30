@@ -7,6 +7,7 @@ import { AlertCircle, ClipboardCheck, Building2, CheckCircle2, Check, X, Plus, P
 import { copy } from '../copy';
 import { RequirementId, BusinessType, Modification } from '../requirements';
 import { deriveDepartments } from '../utils/helpers';
+import { matchesStaffDepartmentView } from '../utils/staffAccess';
 import { StaffDesk } from '../prototypeStore';
 import { StaffSearchFilters, type StaffApplicationFilters } from './StaffSearchFilters';
 import { getListWorkspaceEscalationsQueryKey, useAcknowledgeWorkspaceEscalation, useListWorkspaceEscalations, type ApplicationRecord } from '@workspace/api-client-react';
@@ -154,7 +155,8 @@ export type StaffRole = 'Master City Queue' | 'Planning' | 'Building' | 'Fire' |
 export function StaffPortal({ 
   desk,
   selectedDepartment,
-  simulateAdmin,
+  administratorEnabled,
+  assignedDepartment,
   activeQueue, 
   catalog,
   records,
@@ -172,8 +174,9 @@ export function StaffPortal({
   onReopenReview
 }: { 
   desk: StaffDesk;
-  selectedDepartment: Exclude<StaffRole, 'Master City Queue'>;
-  simulateAdmin: boolean;
+  selectedDepartment: StaffRole;
+  administratorEnabled: boolean;
+  assignedDepartment: string;
   activeQueue: ActivePlan[];
   catalog: ActivePlan[];
   records: ApplicationRecord[];
@@ -196,14 +199,14 @@ export function StaffPortal({
   const [ackError, setAckError] = useState('');
   const acknowledge = useAcknowledgeWorkspaceEscalation();
   
-  const staffRole: StaffRole = simulateAdmin ? 'Master City Queue' : selectedDepartment;
+  const staffRole: StaffRole = selectedDepartment;
   const escalations = useListWorkspaceEscalations({ query: {
-    enabled: staffRole === 'Fire' || staffRole === 'Master City Queue',
+    enabled: administratorEnabled || staffRole === 'Fire' || staffRole === 'Economic Development',
     queryKey: getListWorkspaceEscalationsQueryKey(),
     refetchInterval: 30_000,
   } });
   const [reviewerFilter, setReviewerFilter] = useState<string>('All');
-  useEffect(() => { setReviewerFilter('All'); setExpandedPlans([]); setStaffTab('queue'); }, [selectedDepartment, simulateAdmin]);
+  useEffect(() => { setReviewerFilter('All'); setExpandedPlans([]); setStaffTab('queue'); }, [selectedDepartment, administratorEnabled]);
 
   const availableReviewers = useMemo(() => {
     if (staffRole === 'Master City Queue') return ['All', ...Object.values(STAFF_REVIEWERS).flat()];
@@ -214,12 +217,10 @@ export function StaffPortal({
     let filtered = activeQueue;
     
     // Filter by department role
-    if (staffRole !== 'Master City Queue') {
-      filtered = filtered.filter(p => {
-        const deps = p.departments || deriveDepartments(p.intake, p.matched);
-          return deps.includes(staffRole as Department) || (staffRole === 'Economic Development' && deps.includes('Environmental Services'));
-      });
-    }
+    filtered = filtered.filter(plan => matchesStaffDepartmentView(
+      plan.departments || deriveDepartments(plan.intake, plan.matched),
+      staffRole,
+    ));
 
     // Filter by reviewer
     if (reviewerFilter !== 'All') {
@@ -233,11 +234,13 @@ export function StaffPortal({
     return filtered;
   }, [activeQueue, staffRole, reviewerFilter]);
 
-  const visibleCatalog = useMemo(() => staffRole === 'Master City Queue'
-    ? catalog
-    : catalog.filter(plan => (plan.departments || deriveDepartments(plan.intake, plan.matched)).includes(staffRole as Department) || (staffRole === 'Economic Development' && (plan.departments || deriveDepartments(plan.intake, plan.matched)).includes('Environmental Services'))),
+  const visibleCatalog = useMemo(() => catalog.filter(plan => matchesStaffDepartmentView(
+    plan.departments || deriveDepartments(plan.intake, plan.matched),
+    staffRole,
+  )),
   [catalog, staffRole]);
-  const publicPermits = records.filter(record => record.sourceUrl && !record.synthetic);
+  const publicPermits = records.filter(record => record.sourceUrl && !record.synthetic
+    && matchesStaffDepartmentView([record.assignedDepartment], staffRole));
 
   const handleReopen = async (id: string) => {
     if (recordsReadOnly) return false;
@@ -262,13 +265,13 @@ export function StaffPortal({
       
       <div className="staff-banner">
         <div>
-           <strong data-testid="staff-role-label">Selected view: {staffRole === 'Master City Queue' ? 'Administrator overview (UI test only)' : staffRole}</strong>
+           <strong data-testid="staff-role-label">Selected view: {staffRole === 'Master City Queue' ? 'All-department administrator overview' : staffRole}</strong>
           <span>Reviewing {filteredQueue.length} active plans</span>
         </div>
         <span className="catalog-badge" data-testid="staff-desk-label">{desk} desk</span>
       </div>
-      {simulateAdmin && <p className="verification-notice" role="status">Administrator Role is a development-only UI simulation. It does not change your server permissions or grant access to other departments. Server access is always checked independently.</p>}
-      {(staffRole === 'Fire' || staffRole === 'Master City Queue') && (
+      {administratorEnabled && <p className="verification-notice" role="status" data-testid="administrator-access-notice">Administrator access is enabled for this account on the server. The account’s assigned department is {assignedDepartment}; the current queue view is {staffRole === 'Master City Queue' ? 'all departments' : staffRole}.</p>}
+      {(administratorEnabled || staffRole === 'Fire' || staffRole === 'Economic Development') && (
         <section className="verification-notice" aria-label="High-urgency review queue">
           <AlertCircle size={18} />
           <div>

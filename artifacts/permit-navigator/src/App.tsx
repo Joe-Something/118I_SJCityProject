@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ClerkProvider, Show, useUser, useClerk } from '@clerk/react';
 import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
 import { publishableKeyFromHost } from '@clerk/react/internal';
@@ -26,10 +26,11 @@ import { RequirementCard } from './components/RequirementCard';
 import { AIWorkspace, PublicWorkspace } from './components/AIWorkspace';
 import { StaffApplicationFilters } from './components/StaffSearchFilters';
 import { applicantId, readPersona, personaKey, PENDING_PERSONA_KEY, readPlans, Persona } from './prototypeStore';
-import { createApplication, getListApplicationHistoryQueryKey, postApplicationResponse, reviewApplication, updateMyApplication } from '@workspace/api-client-react';
+import { createApplication, getListApplicationHistoryQueryKey, getStaffAccess, postApplicationResponse, reviewApplication, updateMyApplication, updateStaffAccess, type StaffAccess as StaffAccessProfile } from '@workspace/api-client-react';
 import { saveAndRefresh, useApplicationRecords } from './hooks/useApplicationRecords';
 import { isStaleWrite } from './utils/writeErrors';
 import { isDemoSeedApplicationId } from './utils/applicationResilience';
+import { shouldApplyStaffAccessResponse, staffPermissionsChanged } from './utils/staffAccess';
 
 const clerkPubKey = publishableKeyFromHost(
   window.location.hostname,
@@ -39,6 +40,19 @@ const clerkPubKey = publishableKeyFromHost(
 const clerkProxyUrl = import.meta.env.VITE_CLERK_PROXY_URL;
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
 const queryClient = new QueryClient();
+const staffDepartments = ['Planning', 'Building', 'Fire', 'Economic Development'] as const;
+type StaffDepartment = typeof staffDepartments[number];
+type StaffDepartmentView = StaffDepartment | 'Master City Queue';
+type StaffAccess = StaffAccessProfile;
+
+function isStaffAccess(value: unknown): value is StaffAccess {
+  if (!value || typeof value !== 'object') return false;
+  const access = value as Record<string, unknown>;
+  return typeof access.administratorEnabled === 'boolean'
+    && staffDepartments.includes(access.assignedDepartment as StaffDepartment)
+    && Array.isArray(access.accessibleDepartments)
+    && access.accessibleDepartments.every(department => staffDepartments.includes(department as StaffDepartment));
+}
 
 function stripBase(path: string): string {
   return basePath && path.startsWith(basePath)
@@ -117,7 +131,128 @@ function PortalWorkspace({ persona, userId, onLogout }: { persona: Persona; user
   const { signOut } = useClerk();
   const { toast } = useToast();
   const applicationQueryClient = useQueryClient();
-  const [staffDepartment, setStaffDepartment] = useState<'Planning' | 'Building' | 'Fire' | 'Economic Development'>(() => persona.kind === 'staff' && persona.desk === 'Building Code Reviewer' ? 'Building' : persona.kind === 'staff' && persona.desk === 'Fire Prevention' ? 'Fire' : 'Economic Development');
+  const [staffDepartment, setStaffDepartment] = useState<StaffDepartmentView>(() => persona.kind === 'staff' && persona.desk === 'Building Code Reviewer' ? 'Building' : persona.kind === 'staff' && persona.desk === 'Fire Prevention' ? 'Fire' : 'Economic Development');
+  const [staffAccess, setStaffAccess] = useState<StaffAccess | null>(null);
+  const [staffAccessLoading, setStaffAccessLoading] = useState(persona.kind === 'staff');
+  const [staffAccessSaving, setStaffAccessSaving] = useState(false);
+  const [staffAccessError, setStaffAccessError] = useState('');
+  const accessRequestId = useRef(0);
+  const staffAccessController = useRef<AbortController | null>(null);
+  const staffAccessMutationInProgress = useRef(false);
+  const staffAccessSnapshot = useRef<StaffAccess | null>(null);
+
+  const clearStaffScopedQueries = useCallback(() => {
+    const isStaffScopedQuery = (query: { queryKey: readonly unknown[] }) =>
+      typeof query.queryKey[0] === 'string'
+      && (query.queryKey[0].startsWith('/api/applications/')
+        || query.queryKey[0].startsWith('/api/workspace/'));
+    applicationQueryClient.removeQueries({ predicate: isStaffScopedQuery });
+    void applicationQueryClient.invalidateQueries({ predicate: isStaffScopedQuery });
+  }, [applicationQueryClient]);
+
+  const cancelPendingStaffAccessRead = useCallback(() => {
+    const pending = staffAccessController.current;
+    if (pending) pending.abort();
+    staffAccessController.current = null;
+  }, []);
+
+  const loadStaffAccess = useCallback(async (signal?: AbortSignal) => {
+    if (staffAccessMutationInProgress.current) return;
+    staffAccessController.current?.abort();
+    const controller = new AbortController();
+    staffAccessController.current = controller;
+    if (signal?.aborted) controller.abort();
+    else signal?.addEventListener('abort', () => controller.abort(), { once: true });
+    const requestId = ++accessRequestId.current;
+    try {
+      const value: unknown = await getStaffAccess({ signal: controller.signal });
+      if (!isStaffAccess(value)) throw new Error('The server returned an invalid staff access profile.');
+      if (!shouldApplyStaffAccessResponse(requestId, accessRequestId.current, staffAccessMutationInProgress.current, controller.signal.aborted)) return;
+      if (staffPermissionsChanged(staffAccessSnapshot.current, value)) clearStaffScopedQueries();
+      staffAccessSnapshot.current = value;
+      setStaffAccess(value);
+      setStaffDepartment(current => (
+        current === 'Master City Queue' && value.administratorEnabled
+          || value.accessibleDepartments.includes(current as StaffDepartment)
+          ? current
+          : value.assignedDepartment
+      ));
+      setStaffAccessError('');
+    } catch (error) {
+      if (!shouldApplyStaffAccessResponse(requestId, accessRequestId.current, staffAccessMutationInProgress.current, controller.signal.aborted)) return;
+      staffAccessSnapshot.current = null;
+      setStaffAccess(null);
+      const status = error && typeof error === 'object' && 'status' in error ? error.status : undefined;
+      setStaffAccessError(status === 403
+        ? 'Staff access requires an administrator-approved reviewer account.'
+        : status === 401 ? 'Your sign-in has expired. Sign in again.'
+          : status === 503 ? 'The server could not verify your permissions. The staff workspace is temporarily unavailable; retry before changing access.'
+            : error instanceof Error ? error.message : 'Could not verify your staff permissions. Try again.');
+      clearStaffScopedQueries();
+    } finally {
+      if (staffAccessController.current === controller) staffAccessController.current = null;
+      if (!controller.signal.aborted && requestId === accessRequestId.current) setStaffAccessLoading(false);
+    }
+  }, [cancelPendingStaffAccessRead, clearStaffScopedQueries]);
+
+  useEffect(() => {
+    if (persona.kind !== 'staff') {
+      setStaffAccess(null);
+      setStaffAccessLoading(false);
+      return;
+    }
+    setStaffAccessLoading(true);
+    void loadStaffAccess();
+    const refreshOnFocus = () => void loadStaffAccess();
+    const interval = window.setInterval(refreshOnFocus, 30_000);
+    window.addEventListener('focus', refreshOnFocus);
+    return () => {
+      staffAccessController.current?.abort();
+      accessRequestId.current += 1;
+      window.clearInterval(interval);
+      window.removeEventListener('focus', refreshOnFocus);
+    };
+  }, [loadStaffAccess, persona.kind, userId]);
+
+  const updateAdministratorMode = async () => {
+    if (!staffAccess || staffAccessLoading || staffAccessSaving) return;
+    let refreshPermissionState = false;
+    staffAccessMutationInProgress.current = true;
+    setStaffAccessSaving(true);
+    setStaffAccessError('');
+    cancelPendingStaffAccessRead();
+    accessRequestId.current += 1;
+    try {
+      const value: unknown = await updateStaffAccess({ administratorEnabled: !staffAccess.administratorEnabled });
+      if (!isStaffAccess(value)) throw new Error('The server returned an invalid staff access profile.');
+      accessRequestId.current += 1;
+      cancelPendingStaffAccessRead();
+      staffAccessSnapshot.current = value;
+      setStaffAccess(value);
+      setStaffDepartment(value.administratorEnabled
+        ? (staffDepartment === 'Master City Queue' || value.accessibleDepartments.includes(staffDepartment) ? staffDepartment : value.assignedDepartment)
+        : value.assignedDepartment);
+      setFilters(current => ({ ...current, assignedDepartment: '' }));
+      clearStaffScopedQueries();
+      toast({
+        title: value.administratorEnabled ? 'Administrator access enabled' : 'Administrator access disabled',
+        description: value.administratorEnabled
+          ? 'The server now authorizes your account to review across all departments.'
+          : `Administrator mode is off. Standard ${value.assignedDepartment} reviewer access is restored.`,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Administrator access could not be updated.';
+      setStaffAccessError(message);
+      toast({ title: 'Permission update failed', description: message, variant: 'destructive' });
+      refreshPermissionState = true;
+    } finally {
+      staffAccessMutationInProgress.current = false;
+      accessRequestId.current += 1;
+      cancelPendingStaffAccessRead();
+      setStaffAccessSaving(false);
+      if (refreshPermissionState) void loadStaffAccess();
+    }
+  };
 
   useEffect(() => () => {
     applicationQueryClient.removeQueries({
@@ -140,7 +275,11 @@ function PortalWorkspace({ persona, userId, onLogout }: { persona: Persona; user
     recordsLastConfirmedAt,
     refreshRows,
     acceptRecord,
-  } = useApplicationRecords(persona, filters, `${userId}:${persona.kind === 'staff' ? staffDepartment : ''}`);
+  } = useApplicationRecords(
+    persona,
+    filters,
+    `${userId}:${persona.kind === 'staff' ? `${staffDepartment}:${staffAccess?.administratorEnabled ? 'administrator' : 'reviewer'}:${staffAccess?.accessibleDepartments.join(',') ?? 'unverified'}` : ''}`,
+  );
 
   const plans: ActivePlan[] = records.map(record => ({
     ...(record.plan as unknown as ActivePlan),
@@ -174,8 +313,6 @@ function PortalWorkspace({ persona, userId, onLogout }: { persona: Persona; user
   const onDocumentStatus = useCallback((next: DocumentStatus) => {
     setDocumentStatus(current => current?.id === next.id && current.busy === next.busy && current.pending === next.pending && current.ready === next.ready ? current : next);
   }, []);
-  const [simulateAdmin, setSimulateAdmin] = useState(false);
-
   const t = copy[language === 'other' ? 'en' : language];
 
   useEffect(() => {
@@ -483,9 +620,30 @@ function PortalWorkspace({ persona, userId, onLogout }: { persona: Persona; user
             {persona.kind === 'applicant' ? `Applicant · ${persona.key}` : `City Staff · ${persona.desk}`}
           </div>
            {persona.kind === 'staff' && <div className="staff-context-controls">
-             {import.meta.env.DEV && <button type="button" className="button-tertiary" aria-pressed={simulateAdmin} title="UI-only test view. This cannot grant server access or change your Clerk role." onClick={() => setSimulateAdmin(value => !value)} data-testid="button-administrator-role">Administrator Role · {simulateAdmin ? 'On' : 'Off'}</button>}
-             <label htmlFor="staff-department">Department <select id="staff-department" value={staffDepartment} onChange={event => setStaffDepartment(event.target.value as typeof staffDepartment)} data-testid="select-staff-department">
-               <option value="Planning">Planning &amp; Zoning</option><option value="Building">Building Safety</option><option value="Fire">Fire Prevention</option><option value="Economic Development">Economic Development</option>
+             <button
+               type="button"
+               className="button-tertiary"
+               aria-pressed={staffAccess?.administratorEnabled ?? false}
+               disabled={staffAccessLoading || staffAccessSaving || !staffAccess}
+               title={staffAccess?.administratorEnabled
+                 ? 'Turn off server-authorized access to all departments.'
+                 : 'Turn on server-authorized access to all departments.'}
+               onClick={() => void updateAdministratorMode()}
+               data-testid="button-administrator-role"
+             >
+               {staffAccessLoading ? 'Checking permissions…' : staffAccessSaving ? 'Updating access…' : `Administrator Role · ${staffAccess?.administratorEnabled ? 'On' : 'Off'}`}
+             </button>
+             <label htmlFor="staff-department">Department <select
+               id="staff-department"
+               value={staffDepartment}
+               disabled={staffAccessLoading || !staffAccess || staffAccess.accessibleDepartments.length <= 1}
+               onChange={event => setStaffDepartment(event.target.value as StaffDepartmentView)}
+               data-testid="select-staff-department"
+             >
+               {staffAccess?.administratorEnabled && <option value="Master City Queue">All departments</option>}
+               {staffAccess?.accessibleDepartments.map(department => (
+                 <option key={department} value={department}>{department === 'Planning' ? 'Planning & Zoning' : department === 'Building' ? 'Building Safety' : department === 'Fire' ? 'Fire Prevention' : 'Economic Development'}</option>
+               ))}
              </select></label>
            </div>}
           
@@ -534,11 +692,20 @@ function PortalWorkspace({ persona, userId, onLogout }: { persona: Persona; user
         </div>
       )}
 
-      {persona.kind === 'staff' ? (
+      {persona.kind === 'staff' && (staffAccessLoading || !staffAccess) ? (
+        <main className="plan-shell">
+          <div className="verification-notice" role={staffAccessError ? 'alert' : 'status'} data-testid="staff-access-status">
+            {staffAccessLoading ? 'Verifying your server-assigned staff permissions…' : staffAccessError || 'Staff access is unavailable until the server confirms your role.'}
+          </div>
+          {!staffAccessLoading && <button className="button-secondary" type="button" onClick={() => { setStaffAccessLoading(true); void loadStaffAccess(); }} data-testid="button-retry-staff-access">Retry permission check</button>}
+        </main>
+      ) : persona.kind === 'staff' ? (
         <StaffPortal 
+          key={`${userId}:${staffAccess?.assignedDepartment}:${staffAccess?.administratorEnabled}:${staffAccess?.accessibleDepartments.join(',')}:${staffDepartment}`}
           desk={persona.desk}
            selectedDepartment={staffDepartment}
-           simulateAdmin={import.meta.env.DEV && simulateAdmin}
+           administratorEnabled={Boolean(staffAccess?.administratorEnabled)}
+           assignedDepartment={staffAccess?.assignedDepartment ?? staffDepartment}
           activeQueue={activeQueue} 
           catalog={catalog}
           records={records}

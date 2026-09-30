@@ -36,6 +36,8 @@ import type {
   ListWorkspaceRecordsParams,
   SearchStaffApplications503,
   SearchStaffApplicationsParams,
+  StaffAccess,
+  StaffAccessUpdate,
   StatusEvent,
   WorkspaceConversation,
   WorkspaceConversationInput,
@@ -73,6 +75,171 @@ const withQueryKey = <T extends object, K>(query: T, queryKey: K): T & { queryKe
   }
   return result;
 };
+
+export const getGetStaffAccessUrl = () => {
+
+
+
+
+  return `/api/staff/access`
+}
+
+/**
+ * @summary Read administrator access for the signed-in staff reviewer
+ */
+export const getStaffAccess = async ( options?: Parameters<typeof customFetch>[1]): Promise<StaffAccess> => {
+
+  return customFetch<StaffAccess>(getGetStaffAccessUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetStaffAccessQueryKey = () => {
+    return [
+    `/api/staff/access`
+    ] as const;
+    }
+
+
+export const getGetStaffAccessQueryOptions = <TData = Awaited<ReturnType<typeof getStaffAccess>>, TError = ErrorType<void>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getStaffAccess>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetStaffAccessQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getStaffAccess>>> = ({ signal }) => getStaffAccess({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getStaffAccess>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetStaffAccessQueryResult = NonNullable<Awaited<ReturnType<typeof getStaffAccess>>>
+export type GetStaffAccessQueryError = ErrorType<void>
+
+
+/**
+ * @summary Read administrator access for the signed-in staff reviewer
+ */
+
+export function useGetStaffAccess<TData = Awaited<ReturnType<typeof getStaffAccess>>, TError = ErrorType<void>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getStaffAccess>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetStaffAccessQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getUpdateStaffAccessUrl = () => {
+
+
+
+
+  return `/api/staff/access`
+}
+
+/**
+ * @summary Enable or disable cross-department administrator access for the signed-in reviewer
+ */
+export const updateStaffAccess = async (staffAccessUpdate: StaffAccessUpdate, options?: Parameters<typeof customFetch>[1]): Promise<StaffAccess> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<StaffAccess>(getUpdateStaffAccessUrl(),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(staffAccessUpdate)
+  }
+);}
+
+
+
+
+
+export const getUpdateStaffAccessMutationKey = () => ['updateStaffAccess'] as const;
+
+export const getUpdateStaffAccessMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateStaffAccess>>, TError,UpdateStaffAccessMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateStaffAccess>>, TError,UpdateStaffAccessMutationVariables, TContext> => {
+
+const mutationKey = getUpdateStaffAccessMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateStaffAccess>>, UpdateStaffAccessMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  updateStaffAccess(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateStaffAccessMutationResult = NonNullable<Awaited<ReturnType<typeof updateStaffAccess>>>
+    export type UpdateStaffAccessMutationBody = BodyType<StaffAccessUpdate>
+    export type UpdateStaffAccessMutationError = ErrorType<void>
+    export type UpdateStaffAccessMutationVariables = {data: BodyType<StaffAccessUpdate>}
+
+    /**
+ * @summary Enable or disable cross-department administrator access for the signed-in reviewer
+ */
+export const useUpdateStaffAccess = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateStaffAccess>>, TError,UpdateStaffAccessMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateStaffAccess>>,
+        TError,
+        UpdateStaffAccessMutationVariables,
+        TContext
+      > => {
+      return useMutation(getUpdateStaffAccessMutationOptions(options));
+    }
 
 export const getListWorkspacePrototypeSourcesUrl = () => {
 

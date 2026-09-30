@@ -1,8 +1,10 @@
 import { Router, type IRouter, type Request, type Response } from "express";
 import { and, count, desc, eq, gte, ilike, inArray, isNotNull, lt, lte, or, sql, type SQL } from "drizzle-orm";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
+import { clerkClient } from "@clerk/express";
 import { db, applicationsTable, applicationDocumentsTable, applicationDocumentAuditTable, statusHistoryTable, type Application } from "@workspace/db";
-import { authorizedStaff, signedInUser } from "../lib/access";
+import { allowedDepartments, authorizedStaff, signedInUser, staffCanAccessDepartment } from "../lib/access";
+import { getClerkProxyHost } from "../middlewares/clerkProxyMiddleware";
 import { applicationDocumentStorage } from "../lib/applicationDocumentStorage";
 import { cleanupApplicationDocuments, cleanupDocumentObject } from "../lib/applicationDocumentMaintenance";
 import { databaseErrorCode, isDatabaseUnavailable, withDatabaseRetry } from "../lib/databaseResilience";
@@ -21,6 +23,7 @@ import {
   SearchStaffApplicationsQueryParams, SearchStaffApplicationsResponse,
   UpdateMyApplicationBody, UpdateMyApplicationParams, UpdateMyApplicationResponse,
   ReviewApplicationBody, ReviewApplicationParams, ReviewApplicationResponse,
+  GetStaffAccessResponse, UpdateStaffAccessBody, UpdateStaffAccessResponse,
 } from "@workspace/api-zod";
 
 const router: IRouter = Router();
@@ -32,6 +35,81 @@ const completed = new Set(["Approved", "Rejected", "Modified via Staff Override"
 
 const currentUser = signedInUser;
 const documentTypes = new Set(["application/pdf", "image/png", "image/jpeg"]);
+
+function staffAccessResponse(staff: { administratorEnabled: boolean; department: string }) {
+  return {
+    administratorEnabled: staff.administratorEnabled,
+    assignedDepartment: staff.department,
+    accessibleDepartments: staff.administratorEnabled || staff.department === "Economic Development"
+      ? [...allowedDepartments]
+      : [staff.department],
+  };
+}
+
+function sameOriginCookieMutation(req: Request): boolean {
+  const origin = req.get("origin");
+  const trustedHost = getClerkProxyHost(req);
+  if (!origin || !trustedHost) return false;
+  try {
+    const parsed = new URL(origin);
+    const forwardedProtocol = req.headers["x-forwarded-proto"];
+    const firstForwardedProtocol = (Array.isArray(forwardedProtocol)
+      ? forwardedProtocol[0]
+      : forwardedProtocol)?.split(",")[0]?.trim().toLowerCase();
+    const trustedProtocol = firstForwardedProtocol || req.protocol.toLowerCase();
+    return (trustedProtocol === "https" || trustedProtocol === "http")
+      && parsed.protocol === `${trustedProtocol}:`
+      && parsed.host.toLowerCase() === trustedHost.toLowerCase()
+      && parsed.origin === origin;
+  } catch {
+    return false;
+  }
+}
+
+router.get("/staff/access", async (req, res): Promise<void> => {
+  const staff = await authorizedStaff(req, res);
+  if (!staff) return;
+  res.setHeader("Cache-Control", "no-store");
+  res.json(GetStaffAccessResponse.parse(staffAccessResponse(staff)));
+});
+
+router.put("/staff/access", async (req, res): Promise<void> => {
+  const staff = await authorizedStaff(req, res);
+  if (!staff) return;
+  if (!sameOriginCookieMutation(req)) {
+    res.status(403).json({ error: "Administrator access changes require a same-origin request." });
+    return;
+  }
+  const body = UpdateStaffAccessBody.safeParse(req.body);
+  if (!body.success || !req.body || typeof req.body !== "object" || Array.isArray(req.body) ||
+      Object.keys(req.body).some(key => key !== "administratorEnabled")) {
+    res.status(400).json({ error: "Set administratorEnabled to true or false." });
+    return;
+  }
+
+  try {
+    await clerkClient.users.updateUserMetadata(staff.id, {
+      privateMetadata: { staffAdministratorEnabled: body.data.administratorEnabled },
+    });
+  } catch {
+    req.log?.warn({ staffUserId: staff.id, department: staff.department }, "Could not update staff administrator access");
+    res.status(503).json({ error: "Staff permissions could not be updated. Your current permissions remain unchanged." });
+    return;
+  }
+  req.log?.info({
+    staffUserId: staff.id,
+    department: staff.department,
+    administratorEnabled: body.data.administratorEnabled,
+  }, "Staff administrator access changed");
+  res.setHeader("Cache-Control", "no-store");
+  res.json(UpdateStaffAccessResponse.parse({
+    administratorEnabled: body.data.administratorEnabled,
+    assignedDepartment: staff.department,
+    accessibleDepartments: body.data.administratorEnabled || staff.department === "Economic Development"
+      ? [...allowedDepartments]
+      : [staff.department],
+  }));
+});
 
 function documentView(document: typeof applicationDocumentsTable.$inferSelect) {
   return {
@@ -90,8 +168,8 @@ async function readableApplication(req: Request, res: Response, applicationId: s
   const staff = await authorizedStaff(req, res);
   if (!staff) return null;
   if (!application.submittedAt ||
-      (staff.department !== "Economic Development" &&
-        !application.assignedDepartment.split(",").some(department => department.trim() === staff.department))) {
+      !application.assignedDepartment.split(",").some(department =>
+        staffCanAccessDepartment(staff, department.trim()))) {
     res.status(404).json({ error: "Submitted application not found for this department." });
     return null;
   }
@@ -485,11 +563,11 @@ router.get(["/applications/staff", "/applications"], async (req, res): Promise<v
       ? { submissionDate: query.data.submissionDate.toISOString().slice(0, 10) }
       : {}),
   } as Record<string, string | undefined>;
-  res.locals["authorizedStaffDepartment"] = staff.department;
+  res.locals["authorizedStaffDepartment"] = staff.administratorEnabled ? "Economic Development" : staff.department;
   res.locals["validatedStaffFilters"] = filters;
   // Staff queue contains submitted applications only; unsent drafts stay private.
   const conditions: SQL[] = [or(isNotNull(applicationsTable.submittedAt), isNotNull(applicationsTable.sourceUrl))!];
-  if (staff.department !== "Economic Development") {
+  if (!staff.administratorEnabled && staff.department !== "Economic Development") {
     conditions.push(or(
       ilike(applicationsTable.assignedDepartment, `%${staff.department}%`),
       isNotNull(applicationsTable.sourceUrl),
@@ -637,8 +715,8 @@ router.patch("/applications/:id/review", async (req, res): Promise<void> => {
     const [existing] = await tx.select().from(applicationsTable)
       .where(eq(applicationsTable.id, params.data.id)).for("update");
     if (!existing || !existing.submittedAt || !!existing.sourceUrl ||
-        (staff.department !== "Economic Development" &&
-          !existing.assignedDepartment.split(",").some(department => department.trim() === staff.department))) {
+        !existing.assignedDepartment.split(",").some(department =>
+          staffCanAccessDepartment(staff, department.trim()))) {
       return { kind: "not-assigned" as const };
     }
     if (body.data.expectedUpdatedAt && existing.updatedAt.getTime() !== body.data.expectedUpdatedAt.getTime()) {
@@ -700,7 +778,8 @@ router.post("/applications/:id/response", async (req, res): Promise<void> => {
   }
   const [existing] = await db.select().from(applicationsTable).where(eq(applicationsTable.id, params.data.id));
   if (!existing || !existing.submittedAt || !!existing.sourceUrl ||
-      (staff.department !== "Economic Development" && !existing.assignedDepartment.includes(staff.department))) {
+      !existing.assignedDepartment.split(",").some(department =>
+        staffCanAccessDepartment(staff, department.trim()))) {
     res.status(404).json({ error: "Submitted application not found for this department." }); return;
   }
   const text = body.data.text.trim();
@@ -709,7 +788,7 @@ router.post("/applications/:id/response", async (req, res): Promise<void> => {
       plan: sql<Record<string, unknown>>`jsonb_set(${applicationsTable.plan}, '{notes}',
         (CASE WHEN jsonb_typeof(${applicationsTable.plan}->'notes') = 'object'
           THEN ${applicationsTable.plan}->'notes' ELSE '{}'::jsonb END) ||
-        jsonb_build_object('_staff_response', ${text}), true)`,
+        jsonb_build_object('_staff_response', ${text}::text), true)`,
       updatedAt: new Date(),
     }).where(eq(applicationsTable.id, existing.id)).returning();
     await tx.insert(statusHistoryTable).values({
@@ -739,7 +818,8 @@ router.get("/applications/:id/history", async (req, res): Promise<void> => {
     if (!application.submittedAt) {
       res.status(403).json({ error: "Only submitted application history is available to staff." }); return;
     }
-    if (staff.department !== "Economic Development" && !application.assignedDepartment.includes(staff.department)) {
+    if (!application.assignedDepartment.split(",").some(department =>
+      staffCanAccessDepartment(staff, department.trim()))) {
       res.status(403).json({ error: "Not assigned to this department." }); return;
     }
   }

@@ -5,6 +5,36 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+export type StaffAccessAssignedDepartment = typeof StaffAccessAssignedDepartment[keyof typeof StaffAccessAssignedDepartment];
+
+
+export const StaffAccessAssignedDepartment = {
+  Planning: 'Planning',
+  Building: 'Building',
+  Fire: 'Fire',
+  Economic_Development: 'Economic Development',
+} as const;
+
+export type StaffAccessAccessibleDepartmentsItem = typeof StaffAccessAccessibleDepartmentsItem[keyof typeof StaffAccessAccessibleDepartmentsItem];
+
+
+export const StaffAccessAccessibleDepartmentsItem = {
+  Planning: 'Planning',
+  Building: 'Building',
+  Fire: 'Fire',
+  Economic_Development: 'Economic Development',
+} as const;
+
+export interface StaffAccess {
+  administratorEnabled: boolean;
+  assignedDepartment: StaffAccessAssignedDepartment;
+  accessibleDepartments: StaffAccessAccessibleDepartmentsItem[];
+}
+
+export interface StaffAccessUpdate {
+  administratorEnabled: boolean;
+}
+
 export interface WorkspaceEscalation {
   ticketId: string;
   status: string;
