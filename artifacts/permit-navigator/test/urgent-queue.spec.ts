@@ -206,6 +206,10 @@ test('submitted review status refreshes in another open staff queue', async ({ b
   const secondReviewer = await secondSession.newPage();
   await secondReviewer.clock.install();
   await installApplicationApi(secondReviewer, () => { secondQueueReads++; });
+  let firstDocumentLoads = 0;
+  firstReviewer.on('request', request => {
+    if (request.isNavigationRequest()) firstDocumentLoads++;
+  });
   let secondDocumentLoads = 0;
   secondReviewer.on('request', request => {
     if (request.isNavigationRequest()) secondDocumentLoads++;
@@ -238,6 +242,17 @@ test('submitted review status refreshes in another open staff queue', async ({ b
     await expect(secondReviewer.getByText('Queue Empty')).toBeVisible();
     await secondReviewer.getByTestId('tab-staff-catalog').click();
     await expect(secondReviewer.getByTestId(`catalog-record-${applicationId}`)).toContainText('Approved');
+    await secondReviewer.getByTestId(`button-reopen-${applicationId}`).click();
+    await expect.poll(() => reviewerUpdates).toBe(2);
+    await expect(secondReviewer.getByTestId(`active-plan-${applicationId}`)).toContainText('In Review (Re-opened)');
+
+    // Reopening in the catalog returns the plan to the other session's queue on its regular poll.
+    await expect(firstReviewer.getByText('Queue Empty')).toBeVisible();
+    const firstReadsBeforeReopenPolling = firstQueueReads;
+    await firstReviewer.clock.fastForward(15_000);
+    await expect.poll(() => firstQueueReads).toBeGreaterThan(firstReadsBeforeReopenPolling);
+    await expect(firstQueue).toContainText('In Review (Re-opened)');
+    expect(firstDocumentLoads).toBe(1);
     expect(secondDocumentLoads).toBe(1);
   } finally {
     await Promise.all([firstSession.close(), secondSession.close()]);
