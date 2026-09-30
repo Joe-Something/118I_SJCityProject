@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ClerkProvider, Show, useUser, useClerk } from '@clerk/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { publishableKeyFromHost } from '@clerk/react/internal';
@@ -24,7 +24,8 @@ import { RequirementCard } from './components/RequirementCard';
 import { AIWorkspace, PublicWorkspace } from './components/AIWorkspace';
 import { StaffApplicationFilters } from './components/StaffSearchFilters';
 import { applicantId, readPersona, personaKey, PENDING_PERSONA_KEY, readPlans, Persona } from './prototypeStore';
-import { createApplication, listMyApplications, reviewApplication, searchStaffApplications, updateMyApplication, type ApplicationRecord } from '@workspace/api-client-react';
+import { createApplication, reviewApplication, updateMyApplication } from '@workspace/api-client-react';
+import { useApplicationRecords } from './hooks/useApplicationRecords';
 
 const clerkPubKey = publishableKeyFromHost(
   window.location.hostname,
@@ -112,44 +113,12 @@ function PortalWorkspace({ persona, userId, onLogout }: { persona: Persona; user
   const { signOut } = useClerk();
   const { toast } = useToast();
 
-  const [records, setRecords] = useState<ApplicationRecord[]>([]);
-  const [recordsLoading, setRecordsLoading] = useState(true);
-  const [recordsError, setRecordsError] = useState('');
   const [filters, setFilters] = useState<StaffApplicationFilters>({
     search: '', applicationId: '', businessName: '', businessCategory: '',
     requestType: '', status: '', assignedDepartment: '', applicantLanguage: '',
     submissionDate: '', descriptionOrNotes: '',
   });
-  const refreshRows = useCallback(async () => {
-    const rows = persona.kind === 'applicant'
-      ? await listMyApplications({ applicantKey: persona.key })
-      : await searchStaffApplications(Object.fromEntries(Object.entries(filters).filter(([, value]) => value.trim())) as Partial<StaffApplicationFilters>);
-    setRecords(rows);
-    setRecordsError('');
-  }, [persona, filters]);
-
-  useEffect(() => {
-    let mounted = true;
-    const load = async () => {
-      try {
-        const rows = persona.kind === 'applicant'
-          ? await listMyApplications({ applicantKey: persona.key })
-          : await searchStaffApplications(Object.fromEntries(Object.entries(filters).filter(([, value]) => value.trim())) as Partial<StaffApplicationFilters>);
-        if (mounted) { setRecords(rows); setRecordsError(''); }
-      } catch (error) {
-        if (mounted) setRecordsError(persona.kind === 'staff' && error && typeof error === 'object' && 'status' in error && error.status === 403
-          ? 'Staff access requires an administrator-assigned Clerk role and department. Selecting a desk does not grant access.'
-          : 'Could not load applications from the database. Please try again.');
-      } finally {
-        if (mounted) setRecordsLoading(false);
-      }
-    };
-    setRecordsLoading(true);
-    void load();
-    const interval = window.setInterval(load, 15000);
-    window.addEventListener('focus', load);
-    return () => { mounted = false; window.clearInterval(interval); window.removeEventListener('focus', load); };
-  }, [persona, filters]);
+  const { records, recordsLoading, recordsError, refreshRows } = useApplicationRecords(persona, filters);
 
   const plans: ActivePlan[] = records.map(record => ({
     ...(record.plan as unknown as ActivePlan),

@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import type { ApplicationRecord } from '@workspace/api-client-react';
 
 const ticketId = '12345678-1234-4234-8234-123456789abc';
 const conversationId = '87654321-4321-4321-8321-abcdefabcdef';
@@ -116,6 +117,130 @@ test('urgent queue refreshes when another reviewer acknowledges a ticket', async
     await expect(firstQueue.getByRole('button', { name: 'Acknowledge in prototype queue' })).toHaveCount(0);
   } finally {
     await context.close();
+  }
+});
+
+test('submitted review status refreshes in another open staff queue', async ({ browser }) => {
+  const applicationId = 'SUBMITTED-BUILDING-REVIEW-01';
+  const submittedAt = '2026-09-15T12:00:00.000Z';
+  const createdAt = '2026-09-15T11:00:00.000Z';
+  let application: ApplicationRecord = {
+    id: applicationId,
+    businessName: 'Shared Queue Test Cafe',
+    businessCategory: 'restaurant',
+    requestType: 'Building Permit',
+    status: 'Draft — Requires Review',
+    assignedDepartment: 'Building, Planning',
+    applicantLanguage: 'English',
+    submittedAt,
+    description: 'Interior renovation for a neighborhood cafe.',
+    synthetic: true,
+    plan: {
+      id: applicationId,
+      userId: 'test-applicant',
+      departments: ['Building', 'Planning'],
+      departmentAssignees: { Building: 'Marcus Johnson (Building)' },
+      intake: {
+        businessName: 'Shared Queue Test Cafe',
+        businessType: 'restaurant',
+        businessOther: '',
+        address: '123 Test Street',
+        zip: '95112',
+        description: 'Interior renovation for a neighborhood cafe.',
+        modifications: ['walls'],
+        modificationOther: '',
+        files: [],
+      },
+      language: 'en',
+      customLanguage: '',
+      simplified: false,
+      createdAt: Date.parse(createdAt),
+      updatedAt: Date.parse(createdAt),
+      submittedAt: Date.parse(submittedAt),
+      status: 'Draft — Requires Review',
+      notes: {},
+      overrides: {},
+      rejected: [],
+      matched: ['building-permits', 'business-registration', 'zoning-clearance'],
+    },
+    createdAt,
+    updatedAt: createdAt,
+  };
+
+  let reviewerUpdates = 0;
+  let firstQueueReads = 0;
+  let secondQueueReads = 0;
+  const installApplicationApi = async (page: Page, countQueueRead: () => void) => {
+    await page.route('**/api/**', async route => {
+      const { pathname } = new URL(route.request().url());
+      const method = route.request().method();
+      if (pathname === '/api/applications/staff' && method === 'GET') {
+        countQueueRead();
+        return route.fulfill({ json: [application] });
+      }
+      if (pathname === `/api/applications/${applicationId}/review` && method === 'PATCH') {
+        const body = route.request().postDataJSON() as { plan: Record<string, unknown> };
+        const status = String(body.plan.status);
+        application = {
+          ...application,
+          status,
+          plan: { ...application.plan, ...body.plan },
+          updatedAt: '2026-09-15T12:10:00.000Z',
+        };
+        reviewerUpdates++;
+        return route.fulfill({ json: application });
+      }
+      if (pathname === `/api/applications/${applicationId}/history` && method === 'GET') {
+        return route.fulfill({ json: [] });
+      }
+      throw new Error(`Unexpected request: ${method} ${pathname}`);
+    });
+  };
+
+  const firstSession = await browser.newContext();
+  const firstReviewer = await firstSession.newPage();
+  await firstReviewer.clock.install();
+  await installApplicationApi(firstReviewer, () => { firstQueueReads++; });
+
+  const secondSession = await browser.newContext();
+  const secondReviewer = await secondSession.newPage();
+  await secondReviewer.clock.install();
+  await installApplicationApi(secondReviewer, () => { secondQueueReads++; });
+  let secondDocumentLoads = 0;
+  secondReviewer.on('request', request => {
+    if (request.isNavigationRequest()) secondDocumentLoads++;
+  });
+
+  try {
+    await firstReviewer.goto('/test/harness.html?queue=staff');
+    const firstQueue = firstReviewer.getByTestId('active-plan-SUBMITTED-BUILDING-REVIEW-01');
+    await firstReviewer.getByTestId('tab-staff-queue').click();
+    await expect(firstQueue).toContainText('Draft — Requires Review');
+
+    await secondReviewer.goto('/test/harness.html?queue=staff');
+    const secondQueue = secondReviewer.getByTestId('active-plan-SUBMITTED-BUILDING-REVIEW-01');
+    await secondReviewer.getByTestId('tab-staff-queue').click();
+    await expect(secondQueue).toContainText('Draft — Requires Review');
+    expect(firstQueueReads).toBeGreaterThan(0);
+    expect(secondQueueReads).toBeGreaterThan(0);
+
+    await firstQueue.getByRole('button', { name: 'Review Plan' }).click();
+    await firstQueue.getByRole('button', { name: 'Complete Review' }).click();
+    await expect.poll(() => reviewerUpdates).toBe(1);
+    await expect(firstReviewer.getByText('Queue Empty')).toBeVisible();
+
+    // The other session remains unchanged until its production polling interval runs.
+    await expect(secondQueue).toContainText('Draft — Requires Review');
+    const readsBeforePolling = secondQueueReads;
+    await secondReviewer.clock.fastForward(15_000);
+    await expect.poll(() => secondQueueReads).toBeGreaterThan(readsBeforePolling);
+
+    await expect(secondReviewer.getByText('Queue Empty')).toBeVisible();
+    await secondReviewer.getByTestId('tab-staff-catalog').click();
+    await expect(secondReviewer.getByTestId(`catalog-record-${applicationId}`)).toContainText('Approved');
+    expect(secondDocumentLoads).toBe(1);
+  } finally {
+    await Promise.all([firstSession.close(), secondSession.close()]);
   }
 });
 
