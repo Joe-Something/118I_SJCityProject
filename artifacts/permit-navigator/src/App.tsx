@@ -532,7 +532,7 @@ function PortalWorkspace({ persona, userId, onLogout }: { persona: Persona; user
         </Link>
 
         <div className="top-actions">
-          <Link href="/workspace" className="portal-workspace-link" data-testid="link-workspace-topbar"><Sparkles size={15} /> AI Workspace <ArrowUpRight size={14}/></Link>
+          {persona.kind === 'applicant' && <Link href="/workspace" className="portal-workspace-link" data-testid="link-workspace-topbar"><Sparkles size={15} /> AI Workspace <ArrowUpRight size={14}/></Link>}
           {persona.kind === 'applicant' && (
             <div className="language-controls">
               <Languages size={15} className="text-muted-foreground" />
@@ -808,9 +808,9 @@ function PortalWorkspace({ persona, userId, onLogout }: { persona: Persona; user
         ) : null
       ) : null}
 
-      <Link href="/workspace" className="chatbot-fab" data-testid="link-open-workspace" aria-label="Open full AI Workspace">
+      {persona.kind === 'applicant' && <Link href="/workspace" className="chatbot-fab" data-testid="link-open-workspace" aria-label="Open full AI Workspace">
         <Sparkles size={18}/><span className="chatbot-fab-text">Open AI Workspace</span><ArrowUpRight size={15}/>
-      </Link>
+      </Link>}
       <Toaster />
     </div>
   );
