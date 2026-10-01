@@ -51,6 +51,29 @@ function staffQueueApplication(applicationId: string): ApplicationRecord {
   };
 }
 
+function reviewedStaffApplication(
+  applicationId: string,
+  status: 'Approved' | 'Rejected',
+  businessName: string,
+  address: string,
+  businessType: string,
+  businessOther = '',
+): ApplicationRecord {
+  const record = staffQueueApplication(applicationId);
+  const intake = record.plan.intake as Record<string, unknown>;
+  return {
+    ...record,
+    businessName,
+    businessCategory: businessType,
+    status,
+    plan: {
+      ...record.plan,
+      status,
+      intake: { ...intake, businessName, address, businessType, businessOther },
+    },
+  };
+}
+
 function queueItem(acknowledged: boolean, acknowledgedBy: string | null = null) {
   return {
     ticketId, createdAt,
@@ -63,6 +86,66 @@ function queueItem(acknowledged: boolean, acknowledgedBy: string | null = null) 
     testRecipient: null,
   };
 }
+
+test('review catalog search matches full and partial application IDs alongside existing filters', async ({ page }) => {
+  const approvedId = 'SJ-REVIEW-APPLICATION-1001';
+  const rejectedId = 'SJ-REVIEW-APPLICATION-2002';
+  const applications = [
+    reviewedStaffApplication(
+      approvedId,
+      'Approved',
+      'Cedar Cafe',
+      '123 Cedar Street',
+      'restaurant',
+    ),
+    reviewedStaffApplication(
+      rejectedId,
+      'Rejected',
+      'Juniper Bakery',
+      '456 Juniper Avenue',
+      'other',
+      'Bakery',
+    ),
+  ];
+
+  await page.route('**/api/**', async route => {
+    const { pathname } = new URL(route.request().url());
+    if (pathname === '/api/applications/staff' && route.request().method() === 'GET') {
+      return route.fulfill({ json: applications });
+    }
+    throw new Error(`Unexpected request: ${route.request().method()} ${pathname}`);
+  });
+
+  await page.goto('/test/harness.html?queue=staff');
+  await page.getByTestId('tab-staff-catalog').click();
+
+  const approvedCard = page.getByTestId(`catalog-record-${approvedId}`);
+  const rejectedCard = page.getByTestId(`catalog-record-${rejectedId}`);
+  const search = page.getByTestId('input-catalog-search');
+  await expect(approvedCard).toBeVisible();
+  await expect(rejectedCard).toBeVisible();
+
+  await search.fill(approvedId);
+  await expect(approvedCard).toBeVisible();
+  await expect(rejectedCard).toHaveCount(0);
+
+  await search.fill('2002');
+  await expect(rejectedCard).toBeVisible();
+  await expect(approvedCard).toHaveCount(0);
+
+  await search.fill('456 Juniper Avenue');
+  await expect(rejectedCard).toBeVisible();
+  await expect(approvedCard).toHaveCount(0);
+
+  await search.fill('bakery');
+  await expect(rejectedCard).toBeVisible();
+  await expect(approvedCard).toHaveCount(0);
+
+  await search.clear();
+  await page.getByTestId('select-catalog-filter').selectOption('Rejected');
+  await expect(rejectedCard).toBeVisible();
+  await expect(approvedCard).toHaveCount(0);
+});
 
 for (const desk of ['Fire Prevention', 'Economic Development'] as const) {
   test(`${desk}: queue loading, error, retry, acknowledgement and refreshed state`, async ({ page }) => {

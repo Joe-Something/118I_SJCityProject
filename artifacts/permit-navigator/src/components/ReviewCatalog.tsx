@@ -50,11 +50,12 @@ export function ReviewCatalog({ records, onReopen, renderDetail, readOnly = fals
     if (filter !== 'All' && record.status !== filter) return false;
     
     if (search.trim()) {
-      const q = search.toLowerCase();
+      const q = search.trim().toLowerCase();
+      const applicationIdMatch = record.id.toLowerCase().includes(q);
       const addrMatch = record.intake.address.toLowerCase().includes(q);
       const bizTypeMatch = record.intake.businessType.toLowerCase().includes(q);
       const bizOtherMatch = record.intake.businessOther.toLowerCase().includes(q);
-      if (!addrMatch && !bizTypeMatch && !bizOtherMatch) return false;
+      if (!applicationIdMatch && !addrMatch && !bizTypeMatch && !bizOtherMatch) return false;
     }
     
     return true;
@@ -72,7 +73,7 @@ export function ReviewCatalog({ records, onReopen, renderDetail, readOnly = fals
             <Search size={16} />
             <input 
               type="text" 
-              placeholder="Search address or category..." 
+              placeholder="Search application ID, address, or category..."
               value={search}
               onChange={e => setSearch(e.target.value)}
               data-testid="input-catalog-search"
