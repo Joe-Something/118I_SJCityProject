@@ -29,6 +29,7 @@ import type {
   ApplicationReview,
   DownloadApplicationDocumentParams,
   HealthStatus,
+  ListApplicationDocuments503,
   ListMyApplications503,
   ListMyApplicationsParams,
   ListStaffApplications503,
@@ -923,7 +924,7 @@ export const getListApplicationDocumentsQueryKey = (id: string,) => {
     }
 
 
-export const getListApplicationDocumentsQueryOptions = <TData = Awaited<ReturnType<typeof listApplicationDocuments>>, TError = ErrorType<unknown>>(id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listApplicationDocuments>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+export const getListApplicationDocumentsQueryOptions = <TData = Awaited<ReturnType<typeof listApplicationDocuments>>, TError = ErrorType<ListApplicationDocuments503>>(id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listApplicationDocuments>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
@@ -942,11 +943,11 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 }
 
 export type ListApplicationDocumentsQueryResult = NonNullable<Awaited<ReturnType<typeof listApplicationDocuments>>>
-export type ListApplicationDocumentsQueryError = ErrorType<unknown>
+export type ListApplicationDocumentsQueryError = ErrorType<ListApplicationDocuments503>
 
 
 
-export function useListApplicationDocuments<TData = Awaited<ReturnType<typeof listApplicationDocuments>>, TError = ErrorType<unknown>>(
+export function useListApplicationDocuments<TData = Awaited<ReturnType<typeof listApplicationDocuments>>, TError = ErrorType<ListApplicationDocuments503>>(
  id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listApplicationDocuments>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {

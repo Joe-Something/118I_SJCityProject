@@ -21,6 +21,7 @@ export * from './applicationReview';
 export * from './applicationReviewPlan';
 export * from './downloadApplicationDocumentParams';
 export * from './healthStatus';
+export * from './listApplicationDocuments503';
 export * from './listMyApplications503';
 export * from './listMyApplicationsParams';
 export * from './listStaffApplications503';

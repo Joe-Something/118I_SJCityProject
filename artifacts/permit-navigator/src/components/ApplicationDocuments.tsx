@@ -101,7 +101,7 @@ export function ApplicationDocuments({ id, editable = false, pending = [], onPen
     <section className="document-controls" aria-label="Application documents" data-testid={`documents-${id}`}>
       <h3>Documents</h3>
       {documents.isLoading ? <div role="status" aria-label="Loading documents"><div className="staff-application-detail__skeleton" /><div className="staff-application-detail__skeleton" /></div>
-        : documents.isError ? <p role="alert">Documents could not be loaded; submission is paused. <button type="button" className="button-secondary" onClick={() => void documents.refetch()} data-testid={`button-retry-documents-${id}`}>Retry</button></p>
+        : documents.isError ? <p role="alert">Documents could not be confirmed.{editable ? ' Submission is paused.' : ' Preview and download are unavailable until verification succeeds.'} <button type="button" className="button-secondary" onClick={() => void documents.refetch()} data-testid={`button-retry-documents-${id}`}>Retry</button></p>
         : !rows.length ? <p className="staff-application-detail__muted">No documents have been uploaded.</p>
         : <ul className="document-list">{rows.map(doc => {
           const url = `/api/applications/${encodeURIComponent(id)}/documents/${encodeURIComponent(doc.id)}/content`;

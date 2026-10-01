@@ -191,6 +191,7 @@ function safeDisposition(name: string, download: boolean): string {
 }
 
 router.get("/applications/:id/documents", async (req, res): Promise<void> => {
+  res.setHeader("Cache-Control", "no-store");
   const params = ListApplicationDocumentsParams.safeParse(req.params);
   if (!params.success) { res.status(400).json({ error: "Invalid application ID." }); return; }
   const access = await readableApplication(req, res, params.data.id);
@@ -200,6 +201,22 @@ router.get("/applications/:id/documents", async (req, res): Promise<void> => {
     eq(applicationDocumentsTable.applicationId, access.application.id),
     inArray(applicationDocumentsTable.state, ["pending", "ready"]),
   ));
+  try {
+    for (const document of rows) {
+      if (document.state !== "ready") continue;
+      await applicationDocumentStorage.verifyFinal(
+        document.finalObjectId,
+        document.finalGeneration,
+        document.id,
+        document.size,
+        document.contentType,
+      );
+    }
+  } catch (error) {
+    req.log.error({ err: error, applicationId: access.application.id }, "Could not verify ready application documents");
+    res.status(503).json({ error: "Ready document storage could not be verified. Please retry shortly." });
+    return;
+  }
   await auditDocument(access.application.id, null, access.actorId, "list", access.department);
   res.json(ListApplicationDocumentsResponse.parse(rows.map(documentView)));
 });
@@ -429,7 +446,12 @@ router.get("/applications/:id/documents/:documentId/content", async (req, res): 
   stream.on("error", error => {
     req.log.error({ err: error, documentId: document.id }, "Failed to stream protected application document");
     if (res.headersSent) res.destroy(error);
-    else res.status(404).json({ error: "Document content is unavailable." });
+    else {
+      res.removeHeader("Content-Length");
+      res.removeHeader("Content-Disposition");
+      res.removeHeader("Content-Type");
+      res.status(404).json({ error: "Document content is unavailable." });
+    }
   });
   stream.pipe(res);
 });

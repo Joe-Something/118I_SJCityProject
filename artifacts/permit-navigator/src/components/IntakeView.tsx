@@ -78,6 +78,14 @@ export function IntakeForm({ intake, setIntake, onGenerate, language, setLanguag
       setErrors({ files: t.errorFileFormat || 'Please choose PDF, PNG, or JPG files only.' });
       return;
     }
+    if (selected.some(file => file.size === 0 || file.size > 10_485_760)) {
+      setErrors({ files: 'Choose files between 1 byte and 10 MB.' });
+      return;
+    }
+    if (intake.files.length + selected.length > 20) {
+      setErrors({ files: 'An application can have at most 20 documents.' });
+      return;
+    }
     setErrors((current) => ({ ...current, files: '' }));
     update('files', [...intake.files, ...selected]);
   };

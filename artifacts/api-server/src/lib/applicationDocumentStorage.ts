@@ -101,6 +101,26 @@ export const applicationDocumentStorage = {
     return String(metadata.generation);
   },
 
+  async verifyFinal(
+    finalObjectId: string,
+    finalGeneration: string | null,
+    documentId: string,
+    expectedSize: number,
+    expectedContentType: string,
+  ): Promise<void> {
+    if (!finalGeneration) throw new Error("Ready document has no final storage generation.");
+    const file = getObjectFile(finalObjectId, "final", finalGeneration);
+    const [metadata] = await file.getMetadata();
+    const actualSize = Number(metadata.size);
+    if (String(metadata.generation ?? "") !== finalGeneration ||
+        metadata.metadata?.documentId !== documentId ||
+        !Number.isSafeInteger(actualSize) ||
+        actualSize !== expectedSize ||
+        metadata.contentType !== expectedContentType) {
+      throw new Error("Final document generation metadata did not match its ready document.");
+    }
+  },
+
   open(finalObjectId: string, finalGeneration: string) {
     return getObjectFile(finalObjectId, "final", finalGeneration).createReadStream();
   },

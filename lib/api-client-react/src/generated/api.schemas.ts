@@ -320,6 +320,10 @@ export const ListWorkspaceRecordsMode = {
   live: 'live',
 } as const;
 
+export type ListApplicationDocuments503 = {
+  error: string;
+};
+
 export type DownloadApplicationDocumentParams = {
 download?: boolean;
 };

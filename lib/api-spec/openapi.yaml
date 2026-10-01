@@ -180,6 +180,15 @@ paths:
               schema:
                 type: array
                 items: { $ref: "#/components/schemas/ApplicationDocument" }
+        "503":
+          description: A ready document's immutable final storage generation could not be verified; no document list is returned and the request may be retried
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [error]
+                properties:
+                  error: { type: string }
   /applications/{id}/documents/upload-url:
     post:
       operationId: requestApplicationDocumentUpload

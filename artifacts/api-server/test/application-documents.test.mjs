@@ -25,7 +25,8 @@ const lockedRaceId = randomUUID();
 const capId = randomUUID();
 const expiryRaceId = randomUUID();
 const expiryWinsId = randomUUID();
-const applicationIds = [draftId, otherDraftId, submittedId, cityId, raceId, lockedRaceId, capId, expiryRaceId, expiryWinsId];
+const storageIntegrityId = randomUUID();
+const applicationIds = [draftId, otherDraftId, submittedId, cityId, raceId, lockedRaceId, capId, expiryRaceId, expiryWinsId, storageIntegrityId];
 let outputDir;
 let server;
 let baseUrl;
@@ -78,7 +79,8 @@ function stageUpload({
 
 before(async () => {
   globalThis.__applicationDocumentStorageMock = {
-    objects: new Map(), lastObjectId: null, deleteStagingCalls: new Map(), promoteHook: null, inspectHook: null,
+    objects: new Map(), lastObjectId: null, deleteStagingCalls: new Map(),
+    promoteHook: null, inspectHook: null, verifyFinalHook: null, openHook: null,
   };
   outputDir = await mkdtemp(new URL("./.application-documents-", import.meta.url).pathname);
   const outfile = path.join(outputDir, "applications.mjs");
@@ -116,7 +118,8 @@ before(async () => {
             import { Readable } from "node:stream";
             import { randomUUID } from "node:crypto";
             const mock = globalThis.__applicationDocumentStorageMock ??= {
-              objects: new Map(), lastObjectId: null, deleteStagingCalls: new Map(), promoteHook: null, inspectHook: null,
+              objects: new Map(), lastObjectId: null, deleteStagingCalls: new Map(),
+              promoteHook: null, inspectHook: null, verifyFinalHook: null, openHook: null,
             };
             export const SIGNED_UPLOAD_URL_TTL_MS = 15 * 60 * 1000;
             export const SIGNED_UPLOAD_IN_FLIGHT_GRACE_MS = 15 * 60 * 1000;
@@ -151,9 +154,22 @@ before(async () => {
                 mock.objects.set(finalObjectId, destination);
                 return generation;
               },
+              async verifyFinal(finalObjectId, generation, documentId, expectedSize, expectedContentType) {
+                if (mock.verifyFinalHook) await mock.verifyFinalHook();
+                const final = mock.objects.get(finalObjectId)?.final;
+                if (!final || final.generation !== generation || final.documentId !== documentId ||
+                    final.size !== expectedSize || final.contentType !== expectedContentType) {
+                  throw new Error("mock final generation or metadata mismatch");
+                }
+              },
               open(finalObjectId, generation) {
                 const final = mock.objects.get(finalObjectId)?.final;
                 if (!final || final.generation !== generation) throw new Error("mock final generation mismatch");
+                if (mock.openHook) {
+                  const stream = new Readable({ read() {} });
+                  process.nextTick(() => stream.destroy(new Error("mock final stream failed")));
+                  return stream;
+                }
                 return Readable.from([final.bytes]);
               },
               async deleteStaging(stagingObjectId) {
@@ -193,6 +209,7 @@ before(async () => {
     { ...base, id: capId, ownerId: "owner", applicantKey: "cap-key", status: "Draft", submittedAt: null, plan: planFor("Draft") },
     { ...base, id: expiryRaceId, ownerId: "owner", applicantKey: "expiry-race-key", status: "Draft", submittedAt: null, plan: planFor("Draft") },
     { ...base, id: expiryWinsId, ownerId: "owner", applicantKey: "expiry-wins-key", status: "Draft", submittedAt: null, plan: planFor("Draft") },
+    { ...base, id: storageIntegrityId, ownerId: "owner", applicantKey: "storage-integrity-key", status: "Draft", submittedAt: null, plan: planFor("Draft") },
     {
       ...base, id: cityId, ownerId: null, applicantKey: null, status: "Issued", submittedAt: now,
       sourceUrl: "https://data.sanjoseca.gov/dataset/last-30-days-building-permits",
@@ -270,6 +287,7 @@ test("a valid upload is verified, listed, streamed, and removed through protecte
 
   const listed = await request("GET", `/applications/${draftId}/documents`, "owner");
   assert.equal(listed.status, 200);
+  assert.equal(listed.headers.get("cache-control"), "no-store");
   const documents = await listed.json();
   assert.equal(documents.length, 1);
   assert.equal(documents[0].id, ready.id);
@@ -299,6 +317,87 @@ test("a valid upload is verified, listed, streamed, and removed through protecte
     eq(applicationDocumentAuditTable.action, "list"),
   ));
   assert.ok(listAudit.length > 0, "list audits are application-scoped rather than document-specific");
+});
+
+test("ready document lists fail closed when the exact final object cannot be verified, then recover", async () => {
+  const documentId = randomUUID();
+  const finalObjectId = randomUUID();
+  const finalGeneration = "fixture-final-generation";
+  await db.insert(applicationDocumentsTable).values({
+    id: documentId, applicationId: storageIntegrityId, name: "verified.pdf", size: 9,
+    contentType: "application/pdf", stagingObjectId: randomUUID(), finalObjectId, finalGeneration,
+    state: "ready", uploadExpiresAt: new Date(Date.now() + 86_400_000),
+    uploadUrlExpiresAt: new Date(Date.now() + 15 * 60_000), stagingCleanedAt: new Date(),
+    uploadedAt: new Date(),
+  });
+  const mock = globalThis.__applicationDocumentStorageMock;
+  const final = {
+    size: 9, contentType: "application/pdf", signature: Buffer.from("%PDF-1.7\n"),
+    bytes: Buffer.from("%PDF-1.7\n"), generation: finalGeneration, documentId,
+  };
+  const storeFinal = () => mock.objects.set(finalObjectId, {
+    stagingVersions: new Map(), nextGeneration: 0, final,
+  });
+
+  const missingFinal = await request("GET", `/applications/${storageIntegrityId}/documents`, "owner");
+  assert.equal(missingFinal.status, 503);
+  assert.equal(missingFinal.headers.get("cache-control"), "no-store");
+  const missingBody = await missingFinal.json();
+  assert.match(missingBody.error, /could not be verified/);
+  assert.doesNotMatch(JSON.stringify(missingBody), /objectId|objectPath|signed-upload|preview/);
+  const [stillReadyAfterMissing] = await db.select().from(applicationDocumentsTable)
+    .where(eq(applicationDocumentsTable.id, documentId));
+  assert.equal(stillReadyAfterMissing.state, "ready", "missing storage must not mutate the database row");
+
+  storeFinal();
+  await db.update(applicationDocumentsTable).set({ finalGeneration: "wrong-generation" })
+    .where(eq(applicationDocumentsTable.id, documentId));
+  const wrongGeneration = await request("GET", `/applications/${storageIntegrityId}/documents`, "owner");
+  assert.equal(wrongGeneration.status, 503);
+  assert.equal(wrongGeneration.headers.get("cache-control"), "no-store");
+  assert.doesNotMatch(JSON.stringify(await wrongGeneration.json()), /objectId|objectPath|signed-upload|preview/);
+  await db.update(applicationDocumentsTable).set({ finalGeneration })
+    .where(eq(applicationDocumentsTable.id, documentId));
+
+  for (const [key, invalidValue] of [
+    ["documentId", randomUUID()],
+    ["size", 10],
+    ["contentType", "image/png"],
+  ]) {
+    final[key] = invalidValue;
+    const mismatchedMetadata = await request("GET", `/applications/${storageIntegrityId}/documents`, "owner");
+    assert.equal(mismatchedMetadata.status, 503, `mismatched final ${key} must fail closed`);
+    final[key] = key === "documentId" ? documentId : key === "size" ? 9 : "application/pdf";
+  }
+
+  storeFinal();
+  mock.verifyFinalHook = async () => { throw new Error("mock storage outage"); };
+  const storageOutage = await request("GET", `/applications/${storageIntegrityId}/documents`, "owner");
+  assert.equal(storageOutage.status, 503);
+  assert.equal(storageOutage.headers.get("cache-control"), "no-store");
+  assert.match((await storageOutage.json()).error, /could not be verified/);
+  const [stillReadyAfterOutage] = await db.select().from(applicationDocumentsTable)
+    .where(eq(applicationDocumentsTable.id, documentId));
+  assert.equal(stillReadyAfterOutage.state, "ready", "storage outages must preserve ready database rows");
+
+  mock.verifyFinalHook = null;
+  const restored = await request("GET", `/applications/${storageIntegrityId}/documents`, "owner");
+  assert.equal(restored.status, 200);
+  assert.equal(restored.headers.get("cache-control"), "no-store");
+  assert.deepEqual((await restored.json()).map(row => row.id), [documentId]);
+
+  mock.openHook = true;
+  const unavailableContent = await request(
+    "GET", `/applications/${storageIntegrityId}/documents/${documentId}/content`, "owner",
+  );
+  assert.equal(unavailableContent.status, 404);
+  assert.deepEqual(await unavailableContent.json(), { error: "Document content is unavailable." });
+  assert.match(unavailableContent.headers.get("content-type"), /application\/json/);
+  assert.equal(unavailableContent.headers.get("content-disposition"), null);
+  mock.openHook = null;
+  await db.delete(applicationDocumentAuditTable).where(eq(applicationDocumentAuditTable.applicationId, storageIntegrityId));
+  await db.delete(applicationDocumentsTable).where(eq(applicationDocumentsTable.id, documentId));
+  mock.objects.delete(finalObjectId);
 });
 
 test("completion rejects mismatched size, content type, and file signature", async () => {
