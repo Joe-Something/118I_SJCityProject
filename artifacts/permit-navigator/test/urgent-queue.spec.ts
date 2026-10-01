@@ -245,6 +245,9 @@ test('reviewer decisions survive completion, reopening, another session refresh,
       if (pathname === `/api/applications/${applicationId}/history` && method === 'GET') {
         return route.fulfill({ json: [] });
       }
+      if (pathname === `/api/applications/${applicationId}/documents` && method === 'GET') {
+        return route.fulfill({ json: [] });
+      }
       throw new Error(`Unexpected request: ${method} ${pathname}`);
     });
   };
@@ -293,7 +296,7 @@ test('reviewer decisions survive completion, reopening, another session refresh,
 
     await firstQueue.getByTestId(`button-reject-${applicationId}-zoning-clearance`).click();
     await expect.poll(() => reviewerUpdates).toBe(3);
-    await firstQueue.getByRole('button', { name: 'Complete Review' }).click();
+    await firstQueue.getByTestId(`button-complete-review-${applicationId}`).click();
     await expect.poll(() => reviewerUpdates).toBe(4);
     await expect(firstReviewer.getByText('Queue Empty')).toBeVisible();
 
@@ -347,7 +350,32 @@ test('reviewer decisions survive completion, reopening, another session refresh,
     await expect(firstReviewer.getByTestId(`text-staff-note-${applicationId}-building-permits`)).toContainText('Confirm the accessible entrance clearance.');
     await expect(refreshedQueue).toContainText('Use the updated neighborhood business registration checklist.');
     await expect(firstReviewer.getByTestId(`button-reapprove-${applicationId}-zoning-clearance`)).toBeVisible();
-    expect(firstDocumentLoads).toBe(2);
+
+    await firstReviewer.getByTestId(`button-override-${applicationId}-business-registration`).click();
+    await firstReviewer.getByTestId(`button-clear-override-${applicationId}-business-registration`).click();
+    await expect.poll(() => reviewerUpdates).toBe(6);
+    expect(application.plan.overrides['business-registration']).toBeUndefined();
+    await expect(firstReviewer.getByTestId(`text-original-recommendation-${applicationId}-business-registration`))
+      .toContainText('Most new businesses start by registering the business name and structure before opening.');
+    await expect(refreshedQueue).not.toContainText('Use the updated neighborhood business registration checklist.');
+
+    // The other reviewer sees the cleared override after its next queue refresh.
+    const secondReadsBeforeClearPolling = secondQueueReads;
+    await secondReviewer.clock.fastForward(15_000);
+    await expect.poll(() => secondQueueReads).toBeGreaterThan(secondReadsBeforeClearPolling);
+    await expect(secondReviewer.getByTestId(`text-original-recommendation-${applicationId}-business-registration`))
+      .toContainText('Most new businesses start by registering the business name and structure before opening.');
+
+    // The cleared value remains absent after a full reload and reopening the active review.
+    await firstReviewer.reload();
+    await firstReviewer.getByTestId('tab-staff-queue').click();
+    const reloadedQueue = firstReviewer.getByTestId(`active-plan-${applicationId}`);
+    await reloadedQueue.getByRole('button', { name: 'Review Plan' }).click();
+    await expect(firstReviewer.getByTestId(`text-original-recommendation-${applicationId}-business-registration`))
+      .toContainText('Most new businesses start by registering the business name and structure before opening.');
+    await expect(reloadedQueue).not.toContainText('Use the updated neighborhood business registration checklist.');
+
+    expect(firstDocumentLoads).toBe(3);
     expect(secondDocumentLoads).toBe(1);
   } finally {
     await Promise.all([firstSession.close(), secondSession.close()]);

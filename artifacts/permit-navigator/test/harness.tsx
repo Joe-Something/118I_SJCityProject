@@ -75,6 +75,9 @@ function StaffQueueHarness() {
     <>
       <StaffPortal
         desk="Building Code Reviewer"
+        selectedDepartment="Building"
+        administratorEnabled={false}
+        assignedDepartment="Building"
         activeQueue={activeQueue}
         catalog={catalog}
         records={records}
@@ -83,6 +86,9 @@ function StaffQueueHarness() {
         recordsLoading={recordsLoading}
         recordsError={recordsError}
         recordsRefreshWarning={recordsRefreshWarning}
+        recordsReadOnly={false}
+        recordsLastConfirmedAt={null}
+        onRefreshRecords={async () => refreshRows()}
         onCompleteReview={(id, status) => {
           void saveReview(id, { status, completedAt: Date.now(), updatedAt: Date.now() }).then(({ saved, refreshed }) => {
             if (saved && refreshed) toast({ title: 'Review Completed', description: `Plan has been marked as ${status}.` });

@@ -57,6 +57,13 @@ function StaffPlanReview({
     return persist({ overrides: { ...plan.overrides, [reqId]: val } });
   };
 
+  const clearOverride = (reqId: string) => {
+    const overrides = Object.fromEntries(
+      Object.entries(plan.overrides).filter(([id]) => id !== reqId),
+    );
+    return persist({ overrides });
+  };
+
   const toggleReject = (reqId: RequirementId) => {
     if (plan.rejected.includes(reqId)) {
       return persist({ rejected: plan.rejected.filter(id => id !== reqId) });
@@ -136,12 +143,18 @@ function StaffPlanReview({
                     <textarea value={overrideText} onChange={e => setOverrideText(e.target.value)} style={{ width: '100%', minHeight: '60px', padding: '8px', marginTop: '4px' }} data-testid={`textarea-override-${plan.id}-${reqId}`} />
                     <div className="staff-edit-actions">
                        <button className="button-primary" disabled={!overrideText.trim() || saving} style={{ width: 'auto', marginTop: 0 }} onClick={async () => { if (await updateOverrides(reqId, overrideText)) setOverrideFor(null); }} data-testid={`button-save-override-${plan.id}-${reqId}`}>{saving ? 'Saving…' : 'Save Override'}</button>
+                       {plan.overrides[reqId] && <button className="button-secondary" disabled={saving} style={{ width: 'auto', marginTop: 0 }} onClick={async () => { if (await clearOverride(reqId)) { setOverrideFor(null); setOverrideText(defaultDesc); } }} data-testid={`button-clear-override-${plan.id}-${reqId}`}>{saving ? 'Clearing…' : 'Clear Override'}</button>}
                     </div>
                   </div>
                 )}
                 
                 {!overrideFor && plan.overrides[reqId] && (
                   <div className="modified-notice" style={{ marginTop: '10px' }}><CheckCircle2 size={13} style={{ verticalAlign: 'middle', marginRight: 4 }} /> Overridden: {plan.overrides[reqId]}</div>
+                )}
+                {!overrideFor && !plan.overrides[reqId] && (
+                  <p style={{ margin: '10px 0 0', color: 'hsl(var(--muted-foreground))' }} data-testid={`text-original-recommendation-${plan.id}-${reqId}`}>
+                    Original recommendation: {defaultDesc}
+                  </p>
                 )}
               </div>
             );
