@@ -384,6 +384,36 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ApplicationRecord" }
+  /applications/{id}/contact:
+    patch:
+      operationId: updateApplicationContact
+      tags: [applications]
+      summary: Update contact details and notification consent for an owned application
+      description: Available to the owner for genuine applications in any status, including submitted and completed. Omitted contact fields are unchanged; supplied contact strings are trimmed and validated only when changed. Name is limited to 200 characters, email to 254 characters and valid email format, and phone to 40 characters, common phone punctuation, and 7–15 digits. Unchanged legacy values are retained so consent can be withdrawn without erasing them. notificationConsent must be a boolean; true requires a valid nonempty email address or phone number. Consent only records permission for possible future application updates; no external delivery provider is configured. Sample and source records cannot be changed.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ApplicationContactInput" }
+      responses:
+        "200":
+          description: Updated owned application; only intake contact details and consent are changed
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ApplicationRecord" }
+        "400":
+          description: Invalid contact details, consent, or applicant key
+        "401":
+          description: Sign in required
+        "404":
+          description: Application not found for this owner and applicant key
+        "409":
+          description: Application changed since it was last loaded, or is a sample/source record
   /applications/{id}/review:
     patch:
       operationId: reviewApplication
@@ -525,7 +555,7 @@ components:
         updatedAt: { type: string, format: date-time }
     ApplicationRecord:
       type: object
-      required: [id, businessName, businessCategory, requestType, status, assignedDepartment, applicantLanguage, description, synthetic, plan, createdAt, updatedAt]
+      required: [id, businessName, businessCategory, requestType, status, assignedDepartment, applicantLanguage, description, synthetic, plan, externalDeliveryStatus, createdAt, updatedAt]
       properties:
         id: { type: string }
         businessName: { type: string }
@@ -542,7 +572,11 @@ components:
         description: { type: string }
         notes: { type: ["string", "null"] }
         synthetic: { type: boolean }
-        plan: { type: object, additionalProperties: true, description: "Application-specific plan data; sample fallback staff results include _dataSource: sample-fallback inside this object" }
+        plan: { $ref: "#/components/schemas/ApplicationRecordPlan" }
+        externalDeliveryStatus:
+          type: string
+          enum: [not_configured]
+          description: Server-owned status. Always not_configured; no external notification delivery is configured.
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
     ApplicationDocument:
@@ -573,13 +607,64 @@ components:
       required: [applicantKey, plan]
       properties:
         applicantKey: { type: string, minLength: 1, maxLength: 200 }
-        plan: { type: object, additionalProperties: true }
+        plan: { $ref: "#/components/schemas/ApplicationInputPlan" }
         expectedUpdatedAt: { type: string, format: date-time, description: Version returned by the last application read; stale writes are rejected with 409 }
+    ApplicationContactInput:
+      type: object
+      required: [applicantKey, notificationConsent]
+      properties:
+        applicantKey: { type: string, minLength: 1, maxLength: 200 }
+        expectedUpdatedAt: { type: string, format: date-time, description: Version returned by the last application read; stale writes are rejected with 409 }
+        applicantName: { type: string, description: "Optional. When changed, trim and limit to 200 characters." }
+        applicantEmail: { type: string, description: "Optional. When changed, trim, limit to 254 characters, and validate email format. An unchanged legacy value may be retained." }
+        applicantPhone: { type: string, description: "Optional. When changed, trim, limit to 40 characters, use only digits, spaces, +, parentheses, periods, or hyphens, and include 7–15 digits. An unchanged legacy value may be retained." }
+        notificationConsent: { type: boolean, description: "Must be a strict boolean. True requires a valid nonempty email or phone; records permission for possible future application updates only." }
+    ApplicationInputPlan:
+      type: object
+      additionalProperties: {}
+      description: "Plan supplied to create/draft writes. Intake contact strings are trimmed; name is limited to 200 characters, email to 254 characters and valid format when nonempty, phone to 40 characters and 7–15 digits using common phone punctuation when nonempty. notificationConsent defaults to false and true requires a valid nonempty email or phone."
+      properties:
+        intake:
+          type: object
+          additionalProperties: {}
+          description: Intake properties remain extensible; create and draft writes use strict contact validation.
+          properties:
+            applicantName: { type: string, maxLength: 200 }
+            applicantEmail: { type: string, maxLength: 254, pattern: '^(?:[^\s@]+@[^\s@]+\.[^\s@]+)?$' }
+            applicantPhone: { type: string, maxLength: 40, pattern: "^[0-9+(). -]*$" }
+            notificationConsent: { type: boolean, default: false }
+    ApplicationReviewPlan:
+      type: object
+      additionalProperties: {}
+      description: Staff review plan updates are extensible and preserve stored contact values, including legacy strings that predate strict contact validation.
+      properties:
+        intake:
+          type: object
+          additionalProperties: {}
+          properties:
+            applicantName: { type: string }
+            applicantEmail: { type: string }
+            applicantPhone: { type: string }
+            notificationConsent: { type: boolean }
+    ApplicationRecordPlan:
+      type: object
+      additionalProperties: {}
+      description: "Application-specific stored plan data; sample fallback staff results include _dataSource: sample-fallback inside this object. Stored contact strings are returned permissively for compatibility with legacy values."
+      properties:
+        intake:
+          type: object
+          additionalProperties: {}
+          description: Extensible stored intake. Legacy email and phone strings are returned unchanged; new writes use strict contact validation.
+          properties:
+            applicantName: { type: string }
+            applicantEmail: { type: string }
+            applicantPhone: { type: string }
+            notificationConsent: { type: boolean, default: false }
     ApplicationReview:
       type: object
       required: [plan]
       properties:
-        plan: { type: object, additionalProperties: true }
+        plan: { $ref: "#/components/schemas/ApplicationReviewPlan" }
         expectedUpdatedAt: { type: string, format: date-time, description: Version returned by the last application read; stale review writes are rejected with 409 }
     ApplicationResponseInput:
       type: object

@@ -73,6 +73,7 @@ export const emptyIntake: Intake = {
   applicantName: '',
   applicantEmail: '',
   applicantPhone: '',
+  notificationConsent: false,
   businessType: '',
   businessOther: '',
   address: '',

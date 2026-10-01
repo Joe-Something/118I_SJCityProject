@@ -11,6 +11,7 @@ export type Intake = {
   applicantName?: string;
   applicantEmail?: string;
   applicantPhone?: string;
+  notificationConsent?: boolean;
   businessType: BusinessType | '';
   businessOther: string;
   address: string;

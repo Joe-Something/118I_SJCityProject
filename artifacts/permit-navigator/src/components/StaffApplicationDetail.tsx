@@ -181,6 +181,8 @@ export function StaffApplicationDetail({
                  <div><dt>Applicant name</dt><dd data-testid={`text-detail-applicant-${plan.id}`}>{provided(plan.intake.applicantName)}</dd></div>
                  <div><dt>Email</dt><dd data-testid={`text-detail-email-${plan.id}`}>{provided(plan.intake.applicantEmail)}</dd></div>
                  <div><dt>Phone</dt><dd data-testid={`text-detail-phone-${plan.id}`}>{provided(plan.intake.applicantPhone)}</dd></div>
+                 <div><dt>Permission for application updates</dt><dd data-testid={`text-detail-notification-consent-${plan.id}`}>{plan.intake.notificationConsent ? 'Granted' : 'Not granted'}</dd></div>
+                 <div><dt>External email / SMS / push delivery</dt><dd data-testid={`text-detail-external-delivery-${plan.id}`}>Not configured. Consent does not send or dispatch messages.</dd></div>
                 <div><dt>Location</dt><dd data-testid={`text-detail-location-${plan.id}`}>{provided(location)}</dd></div>
                  <div><dt>Preferred language</dt><dd data-testid={`text-detail-language-${plan.id}`}>{provided(plan.language === 'other' ? plan.customLanguage : (record?.applicantLanguage || plan.language))}</dd></div>
                  <div><dt>Plain-language guidance requested</dt><dd>{plan.simplified ? 'Yes' : 'No'}</dd></div>
@@ -339,8 +341,9 @@ export function StaffApplicationDetail({
             {postFeedback && <p role="status" className="staff-application-detail__subtitle" data-testid={`feedback-detail-post-${plan.id}`}>{postFeedback}</p>}
             {plan.notes?._staff_response && (
               <div className="staff-application-detail__posted" data-testid={`text-detail-posted-response-${plan.id}`}>
-                <strong>Response currently visible on the applicant’s plan</strong>
+                <strong>Response currently posted in the applicant’s plan</strong>
                 <p>{plan.notes._staff_response}</p>
+                <small>This in-app response is separate from email, SMS, or push notification delivery, which is not configured.</small>
               </div>
             )}
           </div>

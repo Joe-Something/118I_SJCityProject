@@ -39,8 +39,9 @@ const permittedApplicationFields = [
   "id", "businessName", "businessCategory", "requestType", "status",
   "assignedDepartment", "applicantLanguage", "submittedAt", "sourceUrl",
   "sourceDataset", "sourceDate", "sourceImportedAt", "description", "notes",
-  "synthetic", "plan", "createdAt", "updatedAt",
+  "synthetic", "plan", "externalDeliveryStatus", "createdAt", "updatedAt",
 ].sort();
+const createdApplicationIds = [];
 let outputDir;
 let server;
 let baseUrl;
@@ -209,6 +210,20 @@ before(async () => {
     saveApplication(fireId, ownerB, applicantKeyB, "Draft — Requires Review", "Fire", submittedAt),
     saveApplication(reviewId, ownerB, applicantKeyB, "Draft — Requires Review", "Building", submittedAt),
   ]);
+  for (const applicationId of [buildingId, reviewId]) {
+    const [legacyRow] = await db.select().from(applicationsTable).where(eq(applicationsTable.id, applicationId));
+    await db.update(applicationsTable).set({
+      plan: {
+        ...legacyRow.plan,
+        intake: {
+          ...legacyRow.plan.intake,
+          applicantEmail: "  legacy.applicant@example.com  ",
+          applicantPhone: "408-555-0199 ext 22",
+          notificationConsent: true,
+        },
+      },
+    }).where(eq(applicationsTable.id, applicationId));
+  }
   await db.insert(statusHistoryTable).values(ids.map((applicationId, index) => ({
     id: `PRIVACY-HISTORY-${fixture}-${index}`,
     applicationId,
@@ -221,6 +236,10 @@ before(async () => {
 after(async () => {
   if (server) await new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
   await db.delete(statusHistoryTable).where(inArray(statusHistoryTable.applicationId, ids));
+  if (createdApplicationIds.length) {
+    await db.delete(statusHistoryTable).where(inArray(statusHistoryTable.applicationId, createdApplicationIds));
+    await db.delete(applicationsTable).where(inArray(applicationsTable.id, createdApplicationIds));
+  }
   await db.delete(applicationsTable).where(inArray(applicationsTable.id, ids));
   if (outputDir) await rm(outputDir, { recursive: true, force: true });
   await pool.end();
@@ -230,6 +249,7 @@ test("applicant list returns only rows owned by that user and applicant key", as
   const ownerResponse = await request("GET", `/applications/mine?applicantKey=${applicantKeyA}`, ownerA);
   assert.equal(ownerResponse.status, 200);
   assert.deepEqual(new Set(ownerResponse.body.map(row => row.id)), new Set([draftId, buildingId]));
+  assert.ok(ownerResponse.body.every(row => row.externalDeliveryStatus === "not_configured"));
   assert.equal(ownerResponse.body[0].plan.userId, `${ownerA}:${applicantKeyA}`);
   assert.doesNotMatch(JSON.stringify(ownerResponse.body), /ownerId|applicantKey/);
 
@@ -241,6 +261,14 @@ test("applicant list returns only rows owned by that user and applicant key", as
   const differentApplicantKey = await request("GET", `/applications/mine?applicantKey=${applicantKeyB}`, ownerA);
   assert.equal(differentApplicantKey.status, 200);
   assert.deepEqual(differentApplicantKey.body, []);
+
+  const legacyOwnerRecords = await request("GET", `/applications/mine?applicantKey=${applicantKeyB}`, ownerB);
+  assert.equal(legacyOwnerRecords.status, 200);
+  const legacyOwnerRecord = legacyOwnerRecords.body.find(row => row.id === reviewId);
+  assert.ok(legacyOwnerRecord);
+  assert.equal(legacyOwnerRecord.plan.intake.applicantEmail, "  legacy.applicant@example.com  ");
+  assert.equal(legacyOwnerRecord.plan.intake.applicantPhone, "408-555-0199 ext 22");
+  assert.equal(legacyOwnerRecord.externalDeliveryStatus, "not_configured");
 });
 
 test("history detail is limited to the owner and an authorized staff reviewer", async () => {
@@ -269,6 +297,11 @@ test("staff reviewers can access every department without exposing applicant ide
   const buildingRecord = buildingReviewer.body[0];
   assert.equal(buildingRecord.id, buildingId);
   assert.deepEqual(Object.keys(buildingRecord).sort(), permittedApplicationFields);
+  assert.equal(buildingRecord.externalDeliveryStatus, "not_configured");
+  const legacyStaffRecords = await request("GET", `/applications/staff?applicationId=${reviewId}`, "building");
+  assert.equal(legacyStaffRecords.status, 200);
+  assert.equal(legacyStaffRecords.body[0].plan.intake.applicantEmail, "  legacy.applicant@example.com  ");
+  assert.equal(legacyStaffRecords.body[0].plan.intake.applicantPhone, "408-555-0199 ext 22");
   assert.equal(buildingRecord.notes, privateValues.notes);
   assert.equal(buildingRecord.plan.notes.building, privateValues.notes);
   assert.equal("ownerId" in buildingRecord, false);
@@ -379,6 +412,7 @@ test("reviewers automatically receive server administrator access across departm
     cause: lastRouteError?.cause,
     causeMessage: lastRouteError?.cause?.message,
   }));
+  assert.equal(crossDepartmentResponse.body.externalDeliveryStatus, "not_configured");
   assert.equal(
     crossDepartmentResponse.body.plan.notes._staff_response,
     "Please provide a corrected site drawing for review.",
@@ -479,15 +513,30 @@ test("reviewer notes, overrides, and rejections persist through completion and r
   const savedDecision = await request("PATCH", `/applications/${reviewId}/review`, "building", {
     plan: {
       status: "Draft — Requires Review",
+      intake: {
+        applicantEmail: "  legacy.applicant@example.com  ",
+        applicantPhone: "408-555-0199 ext 22",
+        notificationConsent: true,
+      },
       notes: { "building-permits": reviewerNote },
       overrides: { "business-registration": override },
       rejected: [rejectedItem],
     },
   });
   assert.equal(savedDecision.status, 200);
+  assert.equal(savedDecision.body.plan.intake.applicantEmail, "  legacy.applicant@example.com  ");
+  assert.equal(savedDecision.body.plan.intake.applicantPhone, "408-555-0199 ext 22");
   assert.equal(savedDecision.body.plan.notes["building-permits"], reviewerNote);
   assert.equal(savedDecision.body.plan.overrides["business-registration"], override);
   assert.deepEqual(savedDecision.body.plan.rejected, [rejectedItem]);
+
+  const legacyStaffResponse = await request("POST", `/applications/${reviewId}/response`, "building", {
+    text: "A legacy contact value remains untouched while staff respond.",
+  });
+  assert.equal(legacyStaffResponse.status, 200);
+  assert.equal(legacyStaffResponse.body.externalDeliveryStatus, "not_configured");
+  assert.equal(legacyStaffResponse.body.plan.intake.applicantEmail, "  legacy.applicant@example.com  ");
+  assert.equal(legacyStaffResponse.body.plan.intake.applicantPhone, "408-555-0199 ext 22");
 
   const completed = await request("PATCH", `/applications/${reviewId}/review`, "building", {
     plan: { status: "Rejected" },
@@ -691,4 +740,208 @@ test("only the owning applicant can update a draft or its private plan", async (
   const persisted = (await db.select().from(applicationsTable).where(eq(applicationsTable.id, draftId)))[0];
   assert.equal(persisted.ownerId, ownerA);
   assert.equal(persisted.applicantKey, applicantKeyA);
+});
+
+test("created intake contacts are trimmed and notification consent defaults to false", async () => {
+  const created = await request("POST", "/applications", ownerA, {
+    applicantKey: applicantKeyA,
+    externalDeliveryStatus: "delivered",
+    plan: {
+      status: "Draft",
+      language: "en",
+      matched: ["building-permits"],
+      departments: ["Building"],
+      intake: {
+        address: "101 Test Avenue",
+        businessName: "Contact Test Shop",
+        description: "A new retail space",
+        businessType: "retail",
+        modifications: [],
+        applicantName: "  Intake Applicant  ",
+        applicantEmail: "   ",
+        retainedIntakeField: "keep this",
+      },
+      retainedPlanField: "keep this too",
+    },
+  });
+  assert.equal(created.status, 201);
+  assert.equal(created.body.externalDeliveryStatus, "not_configured");
+  assert.equal(created.body.plan.intake.applicantName, "Intake Applicant");
+  assert.equal(created.body.plan.intake.applicantEmail, "");
+  assert.equal(created.body.plan.intake.notificationConsent, false);
+  assert.equal(created.body.plan.intake.retainedIntakeField, "keep this");
+  assert.equal(created.body.plan.retainedPlanField, "keep this too");
+  assert.equal(created.body.externalDeliveryStatus, "not_configured", "client-supplied delivery status is ignored");
+  createdApplicationIds.push(created.body.id);
+  const [stored] = await db.select().from(applicationsTable).where(eq(applicationsTable.id, created.body.id));
+  assert.equal(stored.plan.intake.notificationConsent, false);
+  assert.equal(stored.plan.intake.applicantName, "Intake Applicant");
+
+  const invalidConsent = await request("POST", "/applications", ownerA, {
+    applicantKey: applicantKeyA,
+    plan: {
+      ...created.body.plan,
+      intake: {
+        ...created.body.plan.intake,
+        applicantEmail: "",
+        applicantPhone: "",
+        notificationConsent: true,
+      },
+    },
+  });
+  assert.equal(invalidConsent.status, 400, "intake consent requires a valid contact method");
+  const invalidIntakeValues = [
+    { applicantName: "n".repeat(201) },
+    { applicantEmail: "not-an-email" },
+    { applicantPhone: "408-555" },
+    { applicantPhone: "4085550199 ext" },
+    { notificationConsent: "true" },
+  ];
+  for (const invalidIntake of invalidIntakeValues) {
+    const invalid = await request("POST", "/applications", ownerA, {
+      applicantKey: applicantKeyA,
+      plan: {
+        ...created.body.plan,
+        intake: { ...created.body.plan.intake, ...invalidIntake },
+      },
+    });
+    assert.equal(invalid.status, 400, JSON.stringify(invalidIntake));
+  }
+});
+
+test("owners can update and withdraw contact consent on a completed application", async () => {
+  const submittedList = await request("GET", `/applications/mine?applicantKey=${applicantKeyA}`, ownerA);
+  const submittedRecord = submittedList.body.find(row => row.id === buildingId);
+  assert.ok(submittedRecord);
+  const submittedContact = await request("PATCH", `/applications/${buildingId}/contact`, ownerA, {
+    applicantKey: applicantKeyA,
+    expectedUpdatedAt: submittedRecord.updatedAt,
+    applicantName: "Submitted Applicant",
+    notificationConsent: false,
+  });
+  assert.equal(submittedContact.status, 200);
+  assert.equal(submittedContact.body.status, "Draft — Requires Review");
+  assert.equal(submittedContact.body.plan.intake.applicantName, "Submitted Applicant");
+  assert.equal(submittedContact.body.plan.intake.applicantEmail, "  legacy.applicant@example.com  ");
+  assert.equal(submittedContact.body.plan.intake.applicantPhone, "408-555-0199 ext 22");
+  assert.equal(submittedContact.body.plan.intake.notificationConsent, false);
+
+  const completed = await request("PATCH", `/applications/${buildingId}/review`, "building", {
+    plan: { status: "Approved" },
+  });
+  assert.equal(completed.status, 200);
+  assert.equal(completed.body.status, "Approved");
+  assert.equal(completed.body.externalDeliveryStatus, "not_configured");
+
+  const beforeList = await request("GET", `/applications/mine?applicantKey=${applicantKeyA}`, ownerA);
+  const current = beforeList.body.find(row => row.id === buildingId);
+  assert.ok(current);
+  const beforeNotes = current.notes;
+  const beforePlanNotes = current.plan.notes;
+  const contact = await request("PATCH", `/applications/${buildingId}/contact`, ownerA, {
+    applicantKey: applicantKeyA,
+    expectedUpdatedAt: current.updatedAt,
+    applicantName: "  Ada Applicant  ",
+    applicantEmail: "  ada@example.com ",
+    applicantPhone: " +1 (408) 555-0123 ",
+    notificationConsent: true,
+    externalDeliveryStatus: "sent",
+  });
+  assert.equal(contact.status, 200, JSON.stringify(contact.body));
+  assert.equal(contact.body.externalDeliveryStatus, "not_configured");
+  assert.equal(contact.body.status, "Approved");
+  assert.equal(contact.body.plan.intake.applicantName, "Ada Applicant");
+  assert.equal(contact.body.plan.intake.applicantEmail, "ada@example.com");
+  assert.equal(contact.body.plan.intake.applicantPhone, "+1 (408) 555-0123");
+  assert.equal(contact.body.plan.intake.notificationConsent, true);
+  assert.equal(contact.body.notes, beforeNotes);
+  assert.deepEqual(contact.body.plan.notes, beforePlanNotes);
+
+  // Staff review bodies cannot overwrite contact details or permission.
+  const staffReview = await request("PATCH", `/applications/${buildingId}/review`, "building", {
+    plan: {
+      status: "In Review (Re-opened)",
+      intake: {
+        applicantName: "Reviewer overwrite",
+        applicantEmail: "reviewer@example.com",
+        applicantPhone: "4085550199",
+        notificationConsent: false,
+      },
+    },
+  });
+  assert.equal(staffReview.status, 200);
+  assert.equal(staffReview.body.externalDeliveryStatus, "not_configured");
+  assert.equal(staffReview.body.plan.intake.applicantName, "Ada Applicant");
+  assert.equal(staffReview.body.plan.intake.applicantEmail, "ada@example.com");
+  assert.equal(staffReview.body.plan.intake.applicantPhone, "+1 (408) 555-0123");
+  assert.equal(staffReview.body.plan.intake.notificationConsent, true);
+
+  // A user outside the owner account, including an unassigned staff account, cannot change this record.
+  for (const actor of [ownerB, "building", "unassigned"]) {
+    const denied = await request("PATCH", `/applications/${buildingId}/contact`, actor, {
+      applicantKey: applicantKeyA,
+      applicantName: "Unauthorized",
+      notificationConsent: false,
+    });
+    assert.equal(denied.status, 404);
+  }
+
+  const stale = await request("PATCH", `/applications/${buildingId}/contact`, ownerA, {
+    applicantKey: applicantKeyA,
+    expectedUpdatedAt: new Date(Date.parse(contact.body.updatedAt) - 60_000).toISOString(),
+    notificationConsent: false,
+  });
+  assert.equal(stale.status, 409, "stale optimistic-concurrency versions are rejected");
+
+  const withdrawal = await request("PATCH", `/applications/${buildingId}/contact`, ownerA, {
+    applicantKey: applicantKeyA,
+    expectedUpdatedAt: staffReview.body.updatedAt,
+    notificationConsent: false,
+  });
+  assert.equal(withdrawal.status, 200);
+  assert.equal(withdrawal.body.status, "In Review (Re-opened)");
+  assert.equal(withdrawal.body.plan.intake.applicantName, "Ada Applicant");
+  assert.equal(withdrawal.body.plan.intake.applicantEmail, "ada@example.com");
+  assert.equal(withdrawal.body.plan.intake.applicantPhone, "+1 (408) 555-0123");
+  assert.equal(withdrawal.body.plan.intake.notificationConsent, false);
+  assert.equal(withdrawal.body.externalDeliveryStatus, "not_configured");
+  const [persistedWithdrawal] = await db.select().from(applicationsTable)
+    .where(eq(applicationsTable.id, buildingId));
+  assert.equal(persistedWithdrawal.plan.intake.notificationConsent, false);
+  assert.equal(persistedWithdrawal.plan.intake.applicantEmail, "ada@example.com");
+  assert.equal(persistedWithdrawal.status, "In Review (Re-opened)");
+
+  const invalidRequests = [
+    { applicantEmail: "not-an-email", notificationConsent: false },
+    { applicantPhone: "123-456", notificationConsent: false },
+    { applicantPhone: "4085550199 ext", notificationConsent: false },
+    { applicantPhone: "1234567890123456", notificationConsent: false },
+    { applicantName: "n".repeat(201), notificationConsent: false },
+    { applicantEmail: `${"x".repeat(250)}@a.co`, notificationConsent: false },
+    { notificationConsent: "true" },
+    { applicantEmail: "", applicantPhone: "", notificationConsent: true },
+  ];
+  for (const invalidContact of invalidRequests) {
+    const invalid = await request("PATCH", `/applications/${buildingId}/contact`, ownerA, {
+      applicantKey: applicantKeyA,
+      notificationConsent: false,
+      ...invalidContact,
+    });
+    assert.equal(invalid.status, 400, JSON.stringify(invalidContact));
+  }
+
+  const sampleWrite = await request("PATCH", "/applications/DEMO-D2-0002/contact", ownerA, {
+    applicantKey: applicantKeyA,
+    notificationConsent: false,
+  });
+  assert.equal(sampleWrite.status, 409);
+
+  await db.update(applicationsTable).set({ sourceUrl: "https://source.example.test/record" })
+    .where(eq(applicationsTable.id, draftId));
+  const sourceWrite = await request("PATCH", `/applications/${draftId}/contact`, ownerA, {
+    applicantKey: applicantKeyA,
+    notificationConsent: false,
+  });
+  assert.equal(sourceWrite.status, 409);
+  await db.update(applicationsTable).set({ sourceUrl: null }).where(eq(applicationsTable.id, draftId));
 });

@@ -26,12 +26,13 @@ import { RequirementCard } from './components/RequirementCard';
 import { AIWorkspace, PublicWorkspace } from './components/AIWorkspace';
 import { StaffApplicationFilters } from './components/StaffSearchFilters';
 import { applicantId, readPersona, personaKey, PENDING_PERSONA_KEY, readPlans, Persona } from './prototypeStore';
-import { createApplication, enterStaffWorkspace, getListApplicationHistoryQueryKey, getStaffAccess, postApplicationResponse, reviewApplication, updateMyApplication, type StaffAccess as StaffAccessProfile } from '@workspace/api-client-react';
+import { createApplication, enterStaffWorkspace, getListApplicationHistoryQueryKey, getStaffAccess, postApplicationResponse, reviewApplication, updateApplicationContact, updateMyApplication, type StaffAccess as StaffAccessProfile } from '@workspace/api-client-react';
 import { saveAndRefresh, useApplicationRecords } from './hooks/useApplicationRecords';
 import { isStaleWrite } from './utils/writeErrors';
 import { isDemoSeedApplicationId } from './utils/applicationResilience';
 import { readOrEnterStaffWorkspace, shouldApplyStaffAccessResponse, staffPermissionsChanged } from './utils/staffAccess';
 import { normalizeApplicationPlan } from './utils/newplan-normalizer';
+import { normalizeContactValues } from './utils/contact';
 
 const clerkPubKey = publishableKeyFromHost(
   window.location.hostname,
@@ -338,6 +339,7 @@ function PortalWorkspace({ persona, userId, onLogout }: { persona: Persona; user
       applicantName: 'Sample applicant',
       applicantEmail: '',
       applicantPhone: '',
+      notificationConsent: false,
       businessType: 'restaurant',
       businessOther: '',
       address: '150 South First Street, San Jose, CA',
@@ -390,10 +392,10 @@ function PortalWorkspace({ persona, userId, onLogout }: { persona: Persona; user
     }
   };
 
-  const handleGeneratePlan = async () => {
+  const handleGeneratePlan = async (normalizedIntake?: Intake) => {
     if (!currentApplicantId) return;
     const ownerId = currentApplicantId;
-    const draftIntake = intake;
+    const draftIntake = normalizedIntake ?? intake;
     const draftLanguage = language;
     const draftCustomLanguage = customLanguage;
     const draftSimplified = simplified;
@@ -519,6 +521,11 @@ function PortalWorkspace({ persona, userId, onLogout }: { persona: Persona; user
   const currentDraft = currentPlanId ? myPlans.find(p => p.id === currentPlanId && p.status === 'Draft') : null;
   const activePlan = currentPlanId ? myPlans.find(p => p.id === currentPlanId) : null;
   const planToShow = applicantView === 'draft-review' ? currentDraft : (applicantView === 'plan-detail' ? activePlan : null);
+  const contactRecord = planToShow ? records.find(record => record.id === planToShow.id) : undefined;
+  const canEditContact = persona.kind === 'applicant'
+    && Boolean(contactRecord)
+    && contactRecord?.plan._dataSource !== 'sample-fallback'
+    && Boolean(planToShow && !isDemoSeedApplicationId(planToShow.id));
 
   const activeQueue = plans.filter(p => p.submittedAt && ['Draft — Requires Review', 'In Review (Re-opened)'].includes(p.status));
   const catalog = plans.filter(p => p.submittedAt && ['Approved', 'Rejected', 'Modified via Staff Override'].includes(p.status));
@@ -698,12 +705,18 @@ function PortalWorkspace({ persona, userId, onLogout }: { persona: Persona; user
               </section>
             )}
              <ApplicationDocuments key={`documents-${planToShow.id}`} id={planToShow.id} editable={planToShow.status === 'Draft'} pending={failedFiles} onPendingChange={setFailedFiles} onStatusChange={onDocumentStatus} />
-             {staleDraft && <div className="verification-notice" role="alert" data-testid="warning-stale-draft">This draft changed elsewhere. Review the newest version before saving again. <button className="button-secondary" type="button" onClick={async () => { try { await refreshRows(); setStaleDraft(false); } catch { toast({ title: 'Refresh failed', description: 'Your local edits remain visible. Retry refreshing before saving.', variant: 'destructive' }); } }} data-testid="button-refresh-stale-draft">Refresh application</button></div>}
-             {planToShow.status === 'Draft' && <DraftContactDetails key={`contact-${planToShow.id}`} plan={planToShow} onBusyChange={setContactBusy} onSave={async values => {
-               try {
-                 const saved = await updateMyApplication(planToShow.id, { applicantKey: persona.key, expectedUpdatedAt: new Date(planToShow.updatedAt).toISOString(), plan: JSON.parse(JSON.stringify({ ...planToShow, intake: { ...planToShow.intake, ...values, files: [] } })) });
-                 acceptRecord(saved);
-                 try { await refreshRows(); } catch { toast({ title: 'Contact saved', description: 'The application list could not refresh. Reload to confirm the latest information.' }); }
+             {staleDraft && <div className="verification-notice" role="alert" data-testid="warning-stale-draft">This application changed elsewhere. Review the newest version before saving again. <button className="button-secondary" type="button" onClick={async () => { try { await refreshRows(); setStaleDraft(false); } catch { toast({ title: 'Refresh failed', description: 'Your local edits remain visible. Retry refreshing before saving.', variant: 'destructive' }); } }} data-testid="button-refresh-stale-draft">Refresh application</button></div>}
+             {canEditContact && (planToShow.status === 'Draft' || contactRecord) && <DraftContactDetails key={`contact-${planToShow.id}`} plan={planToShow} onBusyChange={setContactBusy} onSave={async values => {
+                if (persona.kind !== 'applicant' || !contactRecord) return false;
+                const contact = values;
+                try {
+                  const saved = await updateApplicationContact(planToShow.id, {
+                      applicantKey: persona.key,
+                      expectedUpdatedAt: new Date(planToShow.updatedAt).toISOString(),
+                      ...contact,
+                    });
+                  acceptRecord(saved);
+                  try { await refreshRows(); } catch { toast({ title: 'Contact saved', description: 'The application list could not refresh. Reload to confirm the latest information.' }); }
                  return true;
                } catch (error) { if (isStaleWrite(error)) { setStaleDraft(true); throw error; } return false; }
              }} />}

@@ -184,9 +184,34 @@ export interface StatusEvent {
 }
 
 /**
- * Application-specific plan data; sample fallback staff results include _dataSource: sample-fallback inside this object
+ * Server-owned status. Always not_configured; no external notification delivery is configured.
  */
-export type ApplicationRecordPlan = { [key: string]: unknown };
+export type ApplicationRecordExternalDeliveryStatus = typeof ApplicationRecordExternalDeliveryStatus[keyof typeof ApplicationRecordExternalDeliveryStatus];
+
+
+export const ApplicationRecordExternalDeliveryStatus = {
+  not_configured: 'not_configured',
+} as const;
+
+/**
+ * Extensible stored intake. Legacy email and phone strings are returned unchanged; new writes use strict contact validation.
+ */
+export type ApplicationRecordPlanIntake = {
+  applicantName?: string;
+  applicantEmail?: string;
+  applicantPhone?: string;
+  notificationConsent?: boolean;
+  [key: string]: unknown;
+};
+
+/**
+ * Application-specific stored plan data; sample fallback staff results include _dataSource: sample-fallback inside this object. Stored contact strings are returned permissively for compatibility with legacy values.
+ */
+export interface ApplicationRecordPlan {
+  /** Extensible stored intake. Legacy email and phone strings are returned unchanged; new writes use strict contact validation. */
+  intake?: ApplicationRecordPlanIntake;
+  [key: string]: unknown;
+}
 
 export interface ApplicationRecord {
   id: string;
@@ -210,8 +235,9 @@ export interface ApplicationRecord {
   /** @nullable */
   notes?: string | null;
   synthetic: boolean;
-  /** Application-specific plan data; sample fallback staff results include _dataSource: sample-fallback inside this object */
   plan: ApplicationRecordPlan;
+  /** Server-owned status. Always not_configured; no external notification delivery is configured. */
+  externalDeliveryStatus: ApplicationRecordExternalDeliveryStatus;
   createdAt: string;
   updatedAt: string;
 }
@@ -271,7 +297,34 @@ export interface ApplicationDocumentUpload {
   document: ApplicationDocument;
 }
 
-export type ApplicationInputPlan = { [key: string]: unknown };
+/**
+ * Intake properties remain extensible; create and draft writes use strict contact validation.
+ */
+export type ApplicationInputPlanIntake = {
+  /** @maxLength 200 */
+  applicantName?: string;
+  /**
+     * @maxLength 254
+     * @pattern ^(?:[^\s@]+@[^\s@]+\.[^\s@]+)?$
+     */
+  applicantEmail?: string;
+  /**
+     * @maxLength 40
+     * @pattern ^[0-9+(). -]*$
+     */
+  applicantPhone?: string;
+  notificationConsent?: boolean;
+  [key: string]: unknown;
+};
+
+/**
+ * Plan supplied to create/draft writes. Intake contact strings are trimmed; name is limited to 200 characters, email to 254 characters and valid format when nonempty, phone to 40 characters and 7–15 digits using common phone punctuation when nonempty. notificationConsent defaults to false and true requires a valid nonempty email or phone.
+ */
+export interface ApplicationInputPlan {
+  /** Intake properties remain extensible; create and draft writes use strict contact validation. */
+  intake?: ApplicationInputPlanIntake;
+  [key: string]: unknown;
+}
 
 export interface ApplicationInput {
   /**
@@ -284,7 +337,39 @@ export interface ApplicationInput {
   expectedUpdatedAt?: string;
 }
 
-export type ApplicationReviewPlan = { [key: string]: unknown };
+export interface ApplicationContactInput {
+  /**
+     * @minLength 1
+     * @maxLength 200
+     */
+  applicantKey: string;
+  /** Version returned by the last application read; stale writes are rejected with 409 */
+  expectedUpdatedAt?: string;
+  /** Optional. When changed, trim and limit to 200 characters. */
+  applicantName?: string;
+  /** Optional. When changed, trim, limit to 254 characters, and validate email format. An unchanged legacy value may be retained. */
+  applicantEmail?: string;
+  /** Optional. When changed, trim, limit to 40 characters, use only digits, spaces, +, parentheses, periods, or hyphens, and include 7–15 digits. An unchanged legacy value may be retained. */
+  applicantPhone?: string;
+  /** Must be a strict boolean. True requires a valid nonempty email or phone; records permission for possible future application updates only. */
+  notificationConsent: boolean;
+}
+
+export type ApplicationReviewPlanIntake = {
+  applicantName?: string;
+  applicantEmail?: string;
+  applicantPhone?: string;
+  notificationConsent?: boolean;
+  [key: string]: unknown;
+};
+
+/**
+ * Staff review plan updates are extensible and preserve stored contact values, including legacy strings that predate strict contact validation.
+ */
+export interface ApplicationReviewPlan {
+  intake?: ApplicationReviewPlanIntake;
+  [key: string]: unknown;
+}
 
 export interface ApplicationReview {
   plan: ApplicationReviewPlan;

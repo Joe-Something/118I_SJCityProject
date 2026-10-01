@@ -287,6 +287,8 @@ export const PostApplicationResponseBody = zod.object({
   "text": zod.string().min(1).max(postApplicationResponseBodyTextMax)
 })
 
+export const postApplicationResponseResponsePlanIntakeNotificationConsentDefault = false;
+
 export const PostApplicationResponseResponse = zod.object({
   "id": zod.string(),
   "businessName": zod.string(),
@@ -303,7 +305,15 @@ export const PostApplicationResponseResponse = zod.object({
   "description": zod.string(),
   "notes": zod.string().nullish(),
   "synthetic": zod.boolean(),
-  "plan": zod.record(zod.string(), zod.unknown()).describe('Application-specific plan data; sample fallback staff results include _dataSource: sample-fallback inside this object'),
+  "plan": zod.object({
+  "intake": zod.object({
+  "applicantName": zod.string().optional(),
+  "applicantEmail": zod.string().optional(),
+  "applicantPhone": zod.string().optional(),
+  "notificationConsent": zod.boolean().default(postApplicationResponseResponsePlanIntakeNotificationConsentDefault)
+}).optional().describe('Extensible stored intake. Legacy email and phone strings are returned unchanged; new writes use strict contact validation.')
+}).describe('Application-specific stored plan data; sample fallback staff results include _dataSource: sample-fallback inside this object. Stored contact strings are returned permissively for compatibility with legacy values.'),
+  "externalDeliveryStatus": zod.enum(['not_configured']).describe('Server-owned status. Always not_configured; no external notification delivery is configured.'),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
 })
@@ -315,6 +325,8 @@ export const PostApplicationResponseResponse = zod.object({
 export const ListMyApplicationsQueryParams = zod.object({
   "applicantKey": zod.coerce.string().min(1)
 })
+
+export const listMyApplicationsResponsePlanIntakeNotificationConsentDefault = false;
 
 export const ListMyApplicationsResponseItem = zod.object({
   "id": zod.string(),
@@ -332,7 +344,15 @@ export const ListMyApplicationsResponseItem = zod.object({
   "description": zod.string(),
   "notes": zod.string().nullish(),
   "synthetic": zod.boolean(),
-  "plan": zod.record(zod.string(), zod.unknown()).describe('Application-specific plan data; sample fallback staff results include _dataSource: sample-fallback inside this object'),
+  "plan": zod.object({
+  "intake": zod.object({
+  "applicantName": zod.string().optional(),
+  "applicantEmail": zod.string().optional(),
+  "applicantPhone": zod.string().optional(),
+  "notificationConsent": zod.boolean().default(listMyApplicationsResponsePlanIntakeNotificationConsentDefault)
+}).optional().describe('Extensible stored intake. Legacy email and phone strings are returned unchanged; new writes use strict contact validation.')
+}).describe('Application-specific stored plan data; sample fallback staff results include _dataSource: sample-fallback inside this object. Stored contact strings are returned permissively for compatibility with legacy values.'),
+  "externalDeliveryStatus": zod.enum(['not_configured']).describe('Server-owned status. Always not_configured; no external notification delivery is configured.'),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
 })
@@ -352,6 +372,8 @@ export const SearchStaffApplicationsQueryParams = zod.object({
   "descriptionOrNotes": zod.coerce.string().optional()
 })
 
+export const searchStaffApplicationsResponsePlanIntakeNotificationConsentDefault = false;
+
 export const SearchStaffApplicationsResponseItem = zod.object({
   "id": zod.string(),
   "businessName": zod.string(),
@@ -368,7 +390,15 @@ export const SearchStaffApplicationsResponseItem = zod.object({
   "description": zod.string(),
   "notes": zod.string().nullish(),
   "synthetic": zod.boolean(),
-  "plan": zod.record(zod.string(), zod.unknown()).describe('Application-specific plan data; sample fallback staff results include _dataSource: sample-fallback inside this object'),
+  "plan": zod.object({
+  "intake": zod.object({
+  "applicantName": zod.string().optional(),
+  "applicantEmail": zod.string().optional(),
+  "applicantPhone": zod.string().optional(),
+  "notificationConsent": zod.boolean().default(searchStaffApplicationsResponsePlanIntakeNotificationConsentDefault)
+}).optional().describe('Extensible stored intake. Legacy email and phone strings are returned unchanged; new writes use strict contact validation.')
+}).describe('Application-specific stored plan data; sample fallback staff results include _dataSource: sample-fallback inside this object. Stored contact strings are returned permissively for compatibility with legacy values.'),
+  "externalDeliveryStatus": zod.enum(['not_configured']).describe('Server-owned status. Always not_configured; no external notification delivery is configured.'),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
 })
@@ -388,6 +418,8 @@ export const ListStaffApplicationsQueryParams = zod.object({
   "descriptionOrNotes": zod.coerce.string().optional()
 })
 
+export const listStaffApplicationsResponsePlanIntakeNotificationConsentDefault = false;
+
 export const ListStaffApplicationsResponseItem = zod.object({
   "id": zod.string(),
   "businessName": zod.string(),
@@ -404,7 +436,15 @@ export const ListStaffApplicationsResponseItem = zod.object({
   "description": zod.string(),
   "notes": zod.string().nullish(),
   "synthetic": zod.boolean(),
-  "plan": zod.record(zod.string(), zod.unknown()).describe('Application-specific plan data; sample fallback staff results include _dataSource: sample-fallback inside this object'),
+  "plan": zod.object({
+  "intake": zod.object({
+  "applicantName": zod.string().optional(),
+  "applicantEmail": zod.string().optional(),
+  "applicantPhone": zod.string().optional(),
+  "notificationConsent": zod.boolean().default(listStaffApplicationsResponsePlanIntakeNotificationConsentDefault)
+}).optional().describe('Extensible stored intake. Legacy email and phone strings are returned unchanged; new writes use strict contact validation.')
+}).describe('Application-specific stored plan data; sample fallback staff results include _dataSource: sample-fallback inside this object. Stored contact strings are returned permissively for compatibility with legacy values.'),
+  "externalDeliveryStatus": zod.enum(['not_configured']).describe('Server-owned status. Always not_configured; no external notification delivery is configured.'),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
 })
@@ -413,13 +453,32 @@ export const ListStaffApplicationsResponse = zod.array(ListStaffApplicationsResp
 
 export const createApplicationBodyApplicantKeyMax = 200;
 
+export const createApplicationBodyPlanIntakeApplicantNameMax = 200;
 
+export const createApplicationBodyPlanIntakeApplicantEmailMax = 254;
+
+
+export const createApplicationBodyPlanIntakeApplicantEmailRegExp = new RegExp('^(?:[^\\s@]+@[^\\s@]+\\.[^\\s@]+)?$');
+export const createApplicationBodyPlanIntakeApplicantPhoneMax = 40;
+
+
+export const createApplicationBodyPlanIntakeApplicantPhoneRegExp = new RegExp('^[0-9+(). -]*$');
+export const createApplicationBodyPlanIntakeNotificationConsentDefault = false;
 
 export const CreateApplicationBody = zod.object({
   "applicantKey": zod.string().min(1).max(createApplicationBodyApplicantKeyMax),
-  "plan": zod.record(zod.string(), zod.unknown()),
+  "plan": zod.object({
+  "intake": zod.object({
+  "applicantName": zod.string().max(createApplicationBodyPlanIntakeApplicantNameMax).optional(),
+  "applicantEmail": zod.string().max(createApplicationBodyPlanIntakeApplicantEmailMax).regex(createApplicationBodyPlanIntakeApplicantEmailRegExp).optional(),
+  "applicantPhone": zod.string().max(createApplicationBodyPlanIntakeApplicantPhoneMax).regex(createApplicationBodyPlanIntakeApplicantPhoneRegExp).optional(),
+  "notificationConsent": zod.boolean().default(createApplicationBodyPlanIntakeNotificationConsentDefault)
+}).optional().describe('Intake properties remain extensible; create and draft writes use strict contact validation.')
+}).describe('Plan supplied to create/draft writes. Intake contact strings are trimmed; name is limited to 200 characters, email to 254 characters and valid format when nonempty, phone to 40 characters and 7–15 digits using common phone punctuation when nonempty. notificationConsent defaults to false and true requires a valid nonempty email or phone.'),
   "expectedUpdatedAt": zod.coerce.date().optional().describe('Version returned by the last application read; stale writes are rejected with 409')
 })
+
+export const createApplicationResponsePlanIntakeNotificationConsentDefault = false;
 
 export const CreateApplicationResponse = zod.object({
   "id": zod.string(),
@@ -437,7 +496,15 @@ export const CreateApplicationResponse = zod.object({
   "description": zod.string(),
   "notes": zod.string().nullish(),
   "synthetic": zod.boolean(),
-  "plan": zod.record(zod.string(), zod.unknown()).describe('Application-specific plan data; sample fallback staff results include _dataSource: sample-fallback inside this object'),
+  "plan": zod.object({
+  "intake": zod.object({
+  "applicantName": zod.string().optional(),
+  "applicantEmail": zod.string().optional(),
+  "applicantPhone": zod.string().optional(),
+  "notificationConsent": zod.boolean().default(createApplicationResponsePlanIntakeNotificationConsentDefault)
+}).optional().describe('Extensible stored intake. Legacy email and phone strings are returned unchanged; new writes use strict contact validation.')
+}).describe('Application-specific stored plan data; sample fallback staff results include _dataSource: sample-fallback inside this object. Stored contact strings are returned permissively for compatibility with legacy values.'),
+  "externalDeliveryStatus": zod.enum(['not_configured']).describe('Server-owned status. Always not_configured; no external notification delivery is configured.'),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
 })
@@ -449,13 +516,32 @@ export const UpdateMyApplicationParams = zod.object({
 
 export const updateMyApplicationBodyApplicantKeyMax = 200;
 
+export const updateMyApplicationBodyPlanIntakeApplicantNameMax = 200;
 
+export const updateMyApplicationBodyPlanIntakeApplicantEmailMax = 254;
+
+
+export const updateMyApplicationBodyPlanIntakeApplicantEmailRegExp = new RegExp('^(?:[^\\s@]+@[^\\s@]+\\.[^\\s@]+)?$');
+export const updateMyApplicationBodyPlanIntakeApplicantPhoneMax = 40;
+
+
+export const updateMyApplicationBodyPlanIntakeApplicantPhoneRegExp = new RegExp('^[0-9+(). -]*$');
+export const updateMyApplicationBodyPlanIntakeNotificationConsentDefault = false;
 
 export const UpdateMyApplicationBody = zod.object({
   "applicantKey": zod.string().min(1).max(updateMyApplicationBodyApplicantKeyMax),
-  "plan": zod.record(zod.string(), zod.unknown()),
+  "plan": zod.object({
+  "intake": zod.object({
+  "applicantName": zod.string().max(updateMyApplicationBodyPlanIntakeApplicantNameMax).optional(),
+  "applicantEmail": zod.string().max(updateMyApplicationBodyPlanIntakeApplicantEmailMax).regex(updateMyApplicationBodyPlanIntakeApplicantEmailRegExp).optional(),
+  "applicantPhone": zod.string().max(updateMyApplicationBodyPlanIntakeApplicantPhoneMax).regex(updateMyApplicationBodyPlanIntakeApplicantPhoneRegExp).optional(),
+  "notificationConsent": zod.boolean().default(updateMyApplicationBodyPlanIntakeNotificationConsentDefault)
+}).optional().describe('Intake properties remain extensible; create and draft writes use strict contact validation.')
+}).describe('Plan supplied to create/draft writes. Intake contact strings are trimmed; name is limited to 200 characters, email to 254 characters and valid format when nonempty, phone to 40 characters and 7–15 digits using common phone punctuation when nonempty. notificationConsent defaults to false and true requires a valid nonempty email or phone.'),
   "expectedUpdatedAt": zod.coerce.date().optional().describe('Version returned by the last application read; stale writes are rejected with 409')
 })
+
+export const updateMyApplicationResponsePlanIntakeNotificationConsentDefault = false;
 
 export const UpdateMyApplicationResponse = zod.object({
   "id": zod.string(),
@@ -473,7 +559,68 @@ export const UpdateMyApplicationResponse = zod.object({
   "description": zod.string(),
   "notes": zod.string().nullish(),
   "synthetic": zod.boolean(),
-  "plan": zod.record(zod.string(), zod.unknown()).describe('Application-specific plan data; sample fallback staff results include _dataSource: sample-fallback inside this object'),
+  "plan": zod.object({
+  "intake": zod.object({
+  "applicantName": zod.string().optional(),
+  "applicantEmail": zod.string().optional(),
+  "applicantPhone": zod.string().optional(),
+  "notificationConsent": zod.boolean().default(updateMyApplicationResponsePlanIntakeNotificationConsentDefault)
+}).optional().describe('Extensible stored intake. Legacy email and phone strings are returned unchanged; new writes use strict contact validation.')
+}).describe('Application-specific stored plan data; sample fallback staff results include _dataSource: sample-fallback inside this object. Stored contact strings are returned permissively for compatibility with legacy values.'),
+  "externalDeliveryStatus": zod.enum(['not_configured']).describe('Server-owned status. Always not_configured; no external notification delivery is configured.'),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
+ * Available to the owner for genuine applications in any status, including submitted and completed. Omitted contact fields are unchanged; supplied contact strings are trimmed and validated only when changed. Name is limited to 200 characters, email to 254 characters and valid email format, and phone to 40 characters, common phone punctuation, and 7–15 digits. Unchanged legacy values are retained so consent can be withdrawn without erasing them. notificationConsent must be a boolean; true requires a valid nonempty email address or phone number. Consent only records permission for possible future application updates; no external delivery provider is configured. Sample and source records cannot be changed.
+ * @summary Update contact details and notification consent for an owned application
+ */
+export const UpdateApplicationContactParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const updateApplicationContactBodyApplicantKeyMax = 200;
+
+
+
+export const UpdateApplicationContactBody = zod.object({
+  "applicantKey": zod.string().min(1).max(updateApplicationContactBodyApplicantKeyMax),
+  "expectedUpdatedAt": zod.coerce.date().optional().describe('Version returned by the last application read; stale writes are rejected with 409'),
+  "applicantName": zod.string().optional().describe('Optional. When changed, trim and limit to 200 characters.'),
+  "applicantEmail": zod.string().optional().describe('Optional. When changed, trim, limit to 254 characters, and validate email format. An unchanged legacy value may be retained.'),
+  "applicantPhone": zod.string().optional().describe('Optional. When changed, trim, limit to 40 characters, use only digits, spaces, +, parentheses, periods, or hyphens, and include 7–15 digits. An unchanged legacy value may be retained.'),
+  "notificationConsent": zod.boolean().describe('Must be a strict boolean. True requires a valid nonempty email or phone; records permission for possible future application updates only.')
+})
+
+export const updateApplicationContactResponsePlanIntakeNotificationConsentDefault = false;
+
+export const UpdateApplicationContactResponse = zod.object({
+  "id": zod.string(),
+  "businessName": zod.string(),
+  "businessCategory": zod.string(),
+  "requestType": zod.string(),
+  "status": zod.string(),
+  "assignedDepartment": zod.string(),
+  "applicantLanguage": zod.string(),
+  "submittedAt": zod.coerce.date().nullish(),
+  "sourceUrl": zod.string().nullish(),
+  "sourceDataset": zod.string().nullish(),
+  "sourceDate": zod.coerce.date().nullish(),
+  "sourceImportedAt": zod.coerce.date().nullish(),
+  "description": zod.string(),
+  "notes": zod.string().nullish(),
+  "synthetic": zod.boolean(),
+  "plan": zod.object({
+  "intake": zod.object({
+  "applicantName": zod.string().optional(),
+  "applicantEmail": zod.string().optional(),
+  "applicantPhone": zod.string().optional(),
+  "notificationConsent": zod.boolean().default(updateApplicationContactResponsePlanIntakeNotificationConsentDefault)
+}).optional().describe('Extensible stored intake. Legacy email and phone strings are returned unchanged; new writes use strict contact validation.')
+}).describe('Application-specific stored plan data; sample fallback staff results include _dataSource: sample-fallback inside this object. Stored contact strings are returned permissively for compatibility with legacy values.'),
+  "externalDeliveryStatus": zod.enum(['not_configured']).describe('Server-owned status. Always not_configured; no external notification delivery is configured.'),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
 })
@@ -484,9 +631,18 @@ export const ReviewApplicationParams = zod.object({
 })
 
 export const ReviewApplicationBody = zod.object({
-  "plan": zod.record(zod.string(), zod.unknown()),
+  "plan": zod.object({
+  "intake": zod.object({
+  "applicantName": zod.string().optional(),
+  "applicantEmail": zod.string().optional(),
+  "applicantPhone": zod.string().optional(),
+  "notificationConsent": zod.boolean().optional()
+}).optional()
+}).describe('Staff review plan updates are extensible and preserve stored contact values, including legacy strings that predate strict contact validation.'),
   "expectedUpdatedAt": zod.coerce.date().optional().describe('Version returned by the last application read; stale review writes are rejected with 409')
 })
+
+export const reviewApplicationResponsePlanIntakeNotificationConsentDefault = false;
 
 export const ReviewApplicationResponse = zod.object({
   "id": zod.string(),
@@ -504,7 +660,15 @@ export const ReviewApplicationResponse = zod.object({
   "description": zod.string(),
   "notes": zod.string().nullish(),
   "synthetic": zod.boolean(),
-  "plan": zod.record(zod.string(), zod.unknown()).describe('Application-specific plan data; sample fallback staff results include _dataSource: sample-fallback inside this object'),
+  "plan": zod.object({
+  "intake": zod.object({
+  "applicantName": zod.string().optional(),
+  "applicantEmail": zod.string().optional(),
+  "applicantPhone": zod.string().optional(),
+  "notificationConsent": zod.boolean().default(reviewApplicationResponsePlanIntakeNotificationConsentDefault)
+}).optional().describe('Extensible stored intake. Legacy email and phone strings are returned unchanged; new writes use strict contact validation.')
+}).describe('Application-specific stored plan data; sample fallback staff results include _dataSource: sample-fallback inside this object. Stored contact strings are returned permissively for compatibility with legacy values.'),
+  "externalDeliveryStatus": zod.enum(['not_configured']).describe('Server-owned status. Always not_configured; no external notification delivery is configured.'),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
 })

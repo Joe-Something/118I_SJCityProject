@@ -5,5 +5,13 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { ApplicationInputPlanIntake } from './applicationInputPlanIntake';
 
-export type ApplicationInputPlan = { [key: string]: unknown };
+/**
+ * Plan supplied to create/draft writes. Intake contact strings are trimmed; name is limited to 200 characters, email to 254 characters and valid format when nonempty, phone to 40 characters and 7–15 digits using common phone punctuation when nonempty. notificationConsent defaults to false and true requires a valid nonempty email or phone.
+ */
+export interface ApplicationInputPlan {
+  /** Intake properties remain extensible; create and draft writes use strict contact validation. */
+  intake?: ApplicationInputPlanIntake;
+  [key: string]: unknown;
+}

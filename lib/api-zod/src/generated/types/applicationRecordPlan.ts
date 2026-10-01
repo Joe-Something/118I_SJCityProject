@@ -5,8 +5,13 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { ApplicationRecordPlanIntake } from './applicationRecordPlanIntake';
 
 /**
- * Application-specific plan data; sample fallback staff results include _dataSource: sample-fallback inside this object
+ * Application-specific stored plan data; sample fallback staff results include _dataSource: sample-fallback inside this object. Stored contact strings are returned permissively for compatibility with legacy values.
  */
-export type ApplicationRecordPlan = { [key: string]: unknown };
+export interface ApplicationRecordPlan {
+  /** Extensible stored intake. Legacy email and phone strings are returned unchanged; new writes use strict contact validation. */
+  intake?: ApplicationRecordPlanIntake;
+  [key: string]: unknown;
+}

@@ -5,6 +5,7 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { ApplicationRecordExternalDeliveryStatus } from './applicationRecordExternalDeliveryStatus';
 import type { ApplicationRecordPlan } from './applicationRecordPlan';
 
 export interface ApplicationRecord {
@@ -29,8 +30,9 @@ export interface ApplicationRecord {
   /** @nullable */
   notes?: string | null;
   synthetic: boolean;
-  /** Application-specific plan data; sample fallback staff results include _dataSource: sample-fallback inside this object */
   plan: ApplicationRecordPlan;
+  /** Server-owned status. Always not_configured; no external notification delivery is configured. */
+  externalDeliveryStatus: ApplicationRecordExternalDeliveryStatus;
   createdAt: Date;
   updatedAt: Date;
 }

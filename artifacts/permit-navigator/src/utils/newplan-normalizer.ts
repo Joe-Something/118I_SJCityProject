@@ -64,6 +64,7 @@ export function normalizeApplicationPlan(
     applicantName: typeof rawIntake.applicantName === 'string' ? rawIntake.applicantName : undefined,
     applicantEmail: typeof rawIntake.applicantEmail === 'string' ? rawIntake.applicantEmail : undefined,
     applicantPhone: typeof rawIntake.applicantPhone === 'string' ? rawIntake.applicantPhone : undefined,
+    notificationConsent: typeof rawIntake.notificationConsent === 'boolean' ? rawIntake.notificationConsent : false,
     businessType,
     businessOther,
     address,

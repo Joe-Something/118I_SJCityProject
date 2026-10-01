@@ -5,5 +5,12 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { ApplicationReviewPlanIntake } from './applicationReviewPlanIntake';
 
-export type ApplicationReviewPlan = { [key: string]: unknown };
+/**
+ * Staff review plan updates are extensible and preserve stored contact values, including legacy strings that predate strict contact validation.
+ */
+export interface ApplicationReviewPlan {
+  intake?: ApplicationReviewPlanIntake;
+  [key: string]: unknown;
+}

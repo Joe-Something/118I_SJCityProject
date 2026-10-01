@@ -3,12 +3,13 @@ import { ArrowRight, FileText, ShieldCheck, Lightbulb, ClipboardCheck } from 'lu
 import { Intake, BusinessType, Modification } from '../requirements';
 import { Language, copy } from '../copy';
 import { checkLanguage, getLanguageBundle } from '../utils/language';
+import { normalizeContactValues, validateContactValues } from '../utils/contact';
 
-export function IntakeForm({ intake, setIntake, onGenerate, language, setLanguage, customLanguage, setCustomLanguage }: { intake: Intake; setIntake: (next: Intake) => void; onGenerate: () => void; language: Language; setLanguage: (l: Language) => void; customLanguage: string; setCustomLanguage: (v: string) => void }) {
+export function IntakeForm({ intake, setIntake, onGenerate, language, setLanguage, customLanguage, setCustomLanguage }: { intake: Intake; setIntake: (next: Intake) => void; onGenerate: (normalizedIntake?: Intake) => void; language: Language; setLanguage: (l: Language) => void; customLanguage: string; setCustomLanguage: (v: string) => void }) {
   const t = copy[language === 'other' ? 'en' : language];
   const [errors, setErrors] = useState<Record<string, string>>({});
   const fileRef = useRef<HTMLInputElement>(null);
-  const [languageCorrection, setLanguageCorrection] = useState<{ original: string, corrected: string, bundle: Language | 'other' } | null>(null);
+  const [languageCorrection, setLanguageCorrection] = useState<{ original: string, corrected: string, bundle: Language | 'other', intake: Intake } | null>(null);
   
   const update = (key: keyof Intake, value: Intake[keyof Intake]) => setIntake({ ...intake, [key]: value });
   const toggleModification = (mod: Modification) => update('modifications', intake.modifications.includes(mod) ? intake.modifications.filter((item) => item !== mod) : [...intake.modifications, mod]);
@@ -16,7 +17,7 @@ export function IntakeForm({ intake, setIntake, onGenerate, language, setLanguag
   const validateAndGenerate = () => {
     const next: Record<string, string> = {};
     if (!intake.businessName.trim()) next.businessName = 'Enter a business name.';
-    if (intake.applicantEmail?.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(intake.applicantEmail.trim())) next.applicantEmail = 'Enter a valid email address.';
+    Object.assign(next, validateContactValues(intake));
     if (!intake.businessType) next.business = t.errorBusiness;
     if (intake.businessType === 'other' && !intake.businessOther.trim()) next.businessOther = t.errorCustomBusiness;
     if (!intake.address.trim()) next.address = t.errorAddress;
@@ -37,11 +38,21 @@ export function IntakeForm({ intake, setIntake, onGenerate, language, setLanguag
 
     if (Object.keys(next).length) { setErrors(next); return; }
     setErrors({});
+    const normalizedContact = normalizeContactValues(intake);
+    const normalizedIntake: Intake = {
+      ...intake,
+      businessName: intake.businessName.trim(),
+      applicantName: normalizedContact.applicantName,
+      applicantEmail: normalizedContact.applicantEmail,
+      applicantPhone: normalizedContact.applicantPhone,
+      notificationConsent: normalizedContact.notificationConsent,
+    };
+    setIntake(normalizedIntake);
     
     if (language === 'other' && customLanguage.trim()) {
       const correction = checkLanguage(customLanguage);
       if (correction) {
-        setLanguageCorrection(correction);
+        setLanguageCorrection({ ...correction, intake: normalizedIntake });
         return;
       }
       const exactBundle = getLanguageBundle(customLanguage);
@@ -51,7 +62,7 @@ export function IntakeForm({ intake, setIntake, onGenerate, language, setLanguag
       }
     }
 
-    onGenerate();
+    onGenerate(normalizedIntake);
   };
 
   const handleConfirmCorrection = () => {
@@ -63,12 +74,14 @@ export function IntakeForm({ intake, setIntake, onGenerate, language, setLanguag
       setCustomLanguage(languageCorrection.corrected);
     }
     setLanguageCorrection(null);
-    onGenerate();
+    onGenerate(languageCorrection.intake);
   };
 
   const handleKeepOriginal = () => {
+    if (!languageCorrection) return;
+    const correctedIntake = languageCorrection.intake;
     setLanguageCorrection(null);
-    onGenerate();
+    onGenerate(correctedIntake);
   };
   
   const handleFiles = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -101,10 +114,30 @@ export function IntakeForm({ intake, setIntake, onGenerate, language, setLanguag
       {errors.businessName && <div className="field-error" role="alert">{errors.businessName}</div>}
     </div>
     <div className="input-row">
-      <div className="field"><label htmlFor="applicant-name">Applicant full name (optional)</label><input id="applicant-name" value={intake.applicantName || ''} onChange={event => update('applicantName', event.target.value)} data-testid="input-applicant-name" /></div>
-      <div className="field"><label htmlFor="applicant-phone">Phone (optional)</label><input id="applicant-phone" type="tel" value={intake.applicantPhone || ''} onChange={event => update('applicantPhone', event.target.value)} data-testid="input-applicant-phone" /></div>
+      <div className="field">
+        <label htmlFor="applicant-name">Applicant full name (optional)</label>
+        <input id="applicant-name" maxLength={200} value={intake.applicantName || ''} onChange={event => update('applicantName', event.target.value)} aria-invalid={!!errors.applicantName} aria-describedby={errors.applicantName ? 'error-applicant-name' : undefined} data-testid="input-applicant-name" />
+        {errors.applicantName && <p id="error-applicant-name" className="field-error" role="alert">{errors.applicantName}</p>}
+      </div>
+      <div className="field">
+        <label htmlFor="applicant-phone">Phone (optional)</label>
+        <input id="applicant-phone" type="tel" maxLength={40} value={intake.applicantPhone || ''} onChange={event => update('applicantPhone', event.target.value)} aria-invalid={!!errors.applicantPhone} aria-describedby={errors.applicantPhone ? 'error-applicant-phone' : undefined} data-testid="input-applicant-phone" />
+        {errors.applicantPhone && <p id="error-applicant-phone" className="field-error" role="alert">{errors.applicantPhone}</p>}
+      </div>
     </div>
-    <div className="field"><label htmlFor="applicant-email">Email (optional)</label><input id="applicant-email" type="email" value={intake.applicantEmail || ''} onChange={event => update('applicantEmail', event.target.value)} aria-invalid={!!errors.applicantEmail} data-testid="input-applicant-email" />{errors.applicantEmail && <p className="field-error" role="alert">{errors.applicantEmail}</p>}</div>
+    <div className="field">
+      <label htmlFor="applicant-email">Email (optional)</label>
+      <input id="applicant-email" type="email" maxLength={254} value={intake.applicantEmail || ''} onChange={event => update('applicantEmail', event.target.value)} aria-invalid={!!errors.applicantEmail} aria-describedby={errors.applicantEmail ? 'error-applicant-email' : undefined} data-testid="input-applicant-email" />
+      {errors.applicantEmail && <p id="error-applicant-email" className="field-error" role="alert">{errors.applicantEmail}</p>}
+    </div>
+    <div className="field">
+      <div className="choice">
+        <input id="applicant-notification-consent" type="checkbox" checked={intake.notificationConsent === true} onChange={event => update('notificationConsent', event.target.checked)} aria-invalid={!!errors.notificationConsent} aria-describedby={`applicant-notification-consent-help${errors.notificationConsent ? ' applicant-notification-consent-error' : ''}`} data-testid="checkbox-applicant-notification-consent" />
+        <label htmlFor="applicant-notification-consent">I give permission to contact me about application updates using the email or phone above.</label>
+      </div>
+      <p id="applicant-notification-consent-help">This records your preference for possible future notifications. Email, SMS, and push delivery are not configured, and this consent does not send anything.</p>
+      {errors.notificationConsent && <p id="applicant-notification-consent-error" className="field-error" role="alert">{errors.notificationConsent}</p>}
+    </div>
     
     <div className="field">
       <label htmlFor="business-type">{t.business} <span className="required">*</span></label>
@@ -180,7 +213,7 @@ export function IntakeView({
   intake, setIntake, onGenerate, language, setLanguage, 
   customLanguage, setCustomLanguage, onLoadSample, onGenerateRandom 
 }: { 
-  intake: Intake; setIntake: (next: Intake) => void; onGenerate: () => void; 
+  intake: Intake; setIntake: (next: Intake) => void; onGenerate: (normalizedIntake?: Intake) => void;
   language: Language; setLanguage: (l: Language) => void; 
   customLanguage: string; setCustomLanguage: (v: string) => void; 
   onLoadSample: () => void; onGenerateRandom: () => void 

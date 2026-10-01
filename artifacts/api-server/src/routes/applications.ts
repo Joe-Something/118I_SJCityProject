@@ -16,6 +16,7 @@ import {
   PostApplicationResponseBody, PostApplicationResponseParams, PostApplicationResponseResponse,
   RequestApplicationDocumentUploadBody, RequestApplicationDocumentUploadParams,
   RequestApplicationDocumentUploadResponse,
+  UpdateApplicationContactBody, UpdateApplicationContactParams, UpdateApplicationContactResponse,
 } from "@workspace/api-zod";
 import {
   CreateApplicationBody, CreateApplicationResponse,
@@ -456,17 +457,38 @@ router.get("/applications/:id/documents/:documentId/content", async (req, res): 
   stream.pipe(res);
 });
 
-function parsePlan(value: Record<string, unknown>): { intake: Record<string, unknown>; status: string; language: string; matched: string[]; departments: string[] } | null {
+function validApplicantEmail(value: string): boolean {
+  return value.length <= 254 && (!value || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value));
+}
+
+function validApplicantPhone(value: string): boolean {
+  const digits = value.match(/[0-9]/g)?.length ?? 0;
+  return value.length <= 40 && (!value || (/^[0-9+(). -]+$/.test(value) && digits >= 7 && digits <= 15));
+}
+
+function parsePlan(value: Record<string, unknown>, validateContactDetails = true): { intake: Record<string, unknown>; status: string; language: string; matched: string[]; departments: string[] } | null {
   const intake = value.intake;
   if (!intake || typeof intake !== "object" || Array.isArray(intake)) return null;
   const details = intake as Record<string, unknown>;
-  const contactLimits = { applicantName: 200, applicantEmail: 254, applicantPhone: 40 };
-  for (const [field, maxLength] of Object.entries(contactLimits)) {
-    const contact = details[field];
-    if (contact !== undefined && (typeof contact !== "string" || contact.length > maxLength)) return null;
+  const normalizedIntake = { ...details };
+  if (validateContactDetails) {
+    for (const [field, maxLength] of Object.entries({ applicantName: 200, applicantEmail: 254, applicantPhone: 40 })) {
+      const contact = details[field];
+      if (contact === undefined) continue;
+      if (typeof contact !== "string") return null;
+      const trimmed = contact.trim();
+      normalizedIntake[field] = trimmed;
+      if (trimmed.length > maxLength) return null;
+    }
+    const applicantEmail = normalizedIntake.applicantEmail as string | undefined;
+    const applicantPhone = normalizedIntake.applicantPhone as string | undefined;
+    if (applicantEmail && !validApplicantEmail(applicantEmail)) return null;
+    if (applicantPhone && !validApplicantPhone(applicantPhone)) return null;
+    const notificationConsent = details.notificationConsent === undefined ? false : details.notificationConsent;
+    if (typeof notificationConsent !== "boolean" ||
+        (notificationConsent && !applicantEmail && !applicantPhone)) return null;
+    normalizedIntake.notificationConsent = notificationConsent;
   }
-  if (typeof details.applicantEmail === "string" && details.applicantEmail.trim() &&
-      !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(details.applicantEmail.trim())) return null;
   if (typeof details.address !== "string" || typeof details.description !== "string" ||
       typeof details.businessType !== "string" || !Array.isArray(details.modifications) ||
       !details.modifications.every(modification => typeof modification === "string") ||
@@ -474,7 +496,7 @@ function parsePlan(value: Record<string, unknown>): { intake: Record<string, unk
       typeof value.status !== "string" || !statuses.has(value.status) ||
       typeof value.language !== "string") return null;
   return {
-    intake: details,
+    intake: normalizedIntake,
     status: value.status,
     language: value.language,
     matched: value.matched as string[],
@@ -482,8 +504,39 @@ function parsePlan(value: Record<string, unknown>): { intake: Record<string, unk
   };
 }
 
-function fieldsFromPlan(value: Record<string, unknown>) {
-  const parsed = parsePlan(value);
+function normalizedPlan(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const plan = value as Record<string, unknown>;
+  const parsed = parsePlan(plan);
+  return parsed ? { ...plan, intake: parsed.intake } : null;
+}
+
+function trimContactStrings(value: unknown): unknown {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return value;
+  const input = value as Record<string, unknown>;
+  const output = { ...input };
+  for (const field of ["applicantName", "applicantEmail", "applicantPhone"]) {
+    if (typeof output[field] === "string") output[field] = output[field].trim();
+  }
+  return output;
+}
+
+function trimPlanContactStrings(value: unknown): unknown {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return value;
+  const input = value as Record<string, unknown>;
+  if (!input.plan || typeof input.plan !== "object" || Array.isArray(input.plan)) return input;
+  const plan = input.plan as Record<string, unknown>;
+  return {
+    ...input,
+    plan: {
+      ...plan,
+      intake: trimContactStrings(plan.intake),
+    },
+  };
+}
+
+function fieldsFromPlan(value: Record<string, unknown>, validateContactDetails = true) {
+  const parsed = parsePlan(value, validateContactDetails);
   if (!parsed) return null;
   const { intake, matched, departments } = parsed;
   const businessName = typeof intake.businessName === "string" && intake.businessName.trim()
@@ -513,11 +566,25 @@ function fieldsFromPlan(value: Record<string, unknown>) {
 
 function respond(record: Application, includeApplicantPlanUserId = true) {
   const { ownerId: _ownerId, applicantKey: _applicantKey, ...publicRecord } = record;
-  if (includeApplicantPlanUserId) return publicRecord;
-  // Applicants use this composite value to identify their own plans; reviewers do not need it.
   const plan = { ...record.plan };
-  delete plan.userId;
-  return { ...publicRecord, plan };
+  const intake = plan.intake && typeof plan.intake === "object" && !Array.isArray(plan.intake)
+    ? plan.intake as Record<string, unknown>
+    : {};
+  plan.intake = {
+    ...intake,
+    notificationConsent: typeof intake.notificationConsent === "boolean" ? intake.notificationConsent : false,
+  };
+  if (!includeApplicantPlanUserId) {
+    // Applicants use this composite value to identify their own plans; reviewers do not need it.
+    delete plan.userId;
+  }
+  return { ...publicRecord, plan, externalDeliveryStatus: "not_configured" as const };
+}
+
+function validateApplicationRecords<T>(schema: { parse: (data: unknown) => T }, data: unknown): unknown {
+  // Validate generated response contracts without stripping extensible plan/intake properties.
+  schema.parse(data);
+  return data;
 }
 
 function reportDatabaseListFailure(req: Request, res: Response, error: unknown, mode: "mine" | "staff"): void {
@@ -539,7 +606,7 @@ function reportDatabaseListFailure(req: Request, res: Response, error: unknown, 
       }
       res.setHeader("X-Application-Data-Source", "sample-fallback");
       res.setHeader("Retry-After", "30");
-      res.status(200).json(SearchStaffApplicationsResponse.parse(rows));
+      res.status(200).json(validateApplicationRecords(SearchStaffApplicationsResponse, rows));
       return;
     }
     res.setHeader("Retry-After", "30");
@@ -561,7 +628,7 @@ router.get("/applications/mine", async (req, res): Promise<void> => {
     const rows = await withDatabaseRetry(() => db.select().from(applicationsTable).where(and(
       eq(applicationsTable.ownerId, userId), eq(applicationsTable.applicantKey, key),
     )).orderBy(desc(applicationsTable.updatedAt)).limit(100));
-    res.json(ListMyApplicationsResponse.parse(rows.map(row => respond(row))));
+    res.json(validateApplicationRecords(ListMyApplicationsResponse, rows.map(row => respond(row))));
   } catch (error) {
     reportDatabaseListFailure(req, res, error, "mine");
   }
@@ -629,7 +696,7 @@ router.get(["/applications/staff", "/applications"], async (req, res): Promise<v
   try {
     const rows = await withDatabaseRetry(() => db.select().from(applicationsTable).where(and(...conditions))
       .orderBy(desc(sql`coalesce(${applicationsTable.submittedAt}, ${applicationsTable.sourceDate})`)).limit(500));
-    res.json(SearchStaffApplicationsResponse.parse(rows.map(row => respond(row, false))));
+    res.json(validateApplicationRecords(SearchStaffApplicationsResponse, rows.map(row => respond(row, false))));
   } catch (error) {
     reportDatabaseListFailure(req, res, error, "staff");
   }
@@ -638,34 +705,45 @@ router.get(["/applications/staff", "/applications"], async (req, res): Promise<v
 router.post("/applications", async (req, res): Promise<void> => {
   const userId = currentUser(req, res);
   if (!userId) return;
-  const body = CreateApplicationBody.safeParse(req.body);
+  const normalizedBody = trimPlanContactStrings(req.body);
+  const body = CreateApplicationBody.safeParse(normalizedBody);
   if (!body.success) { res.status(400).json({ error: "Invalid application." }); return; }
-  const fields = fieldsFromPlan(body.data.plan);
-  if (!fields) { res.status(400).json({ error: "Incomplete application plan." }); return; }
+  const submittedPlan = normalizedBody && typeof normalizedBody === "object" && !Array.isArray(normalizedBody)
+    ? (normalizedBody as Record<string, unknown>).plan
+    : null;
+  const plan = normalizedPlan(submittedPlan);
+  const fields = plan && fieldsFromPlan(plan);
+  if (!plan || !fields) { res.status(400).json({ error: "Incomplete application plan." }); return; }
   const id = crypto.randomUUID();
   const now = new Date();
   const urgent = /\b(?:chemical spill|hazmat|toxic leak|gas leak|active fire|electrical fire|immediate danger|safety hazard|derrame qu[ií]mico|fuga de gas|incendio activo)\b/i.test(fields.description);
-  const plan = { ...body.data.plan, id, userId: `${userId}:${body.data.applicantKey.trim().toLowerCase()}`, intake: { ...(body.data.plan.intake as object), files: [] } };
+  const savedPlan = { ...plan, id, userId: `${userId}:${body.data.applicantKey.trim().toLowerCase()}`, intake: { ...(plan.intake as object), files: [] } };
   const [row] = await db.insert(applicationsTable).values({
     id, ownerId: userId, applicantKey: body.data.applicantKey.trim().toLowerCase(),
     ...fields, assignedDepartment: urgent ? "Fire" : fields.assignedDepartment,
-    synthetic: true, plan, submittedAt: fields.status === "Draft" && !urgent ? null : now,
+    synthetic: true, plan: savedPlan, submittedAt: fields.status === "Draft" && !urgent ? null : now,
   }).returning();
   await db.insert(statusHistoryTable).values({
     id: crypto.randomUUID(), applicationId: id, status: urgent ? "High Urgency — Human Review" : fields.status,
     actor: "Applicant", synthetic: true,
   });
-  res.status(201).json(CreateApplicationResponse.parse(respond(row)));
+  const response = respond(row);
+  res.status(201).json(validateApplicationRecords(CreateApplicationResponse, response));
 });
 
 router.patch("/applications/:id", async (req, res): Promise<void> => {
   const userId = currentUser(req, res);
   if (!userId) return;
   const params = UpdateMyApplicationParams.safeParse(req.params);
-  const body = UpdateMyApplicationBody.safeParse(req.body);
+  const normalizedBody = trimPlanContactStrings(req.body);
+  const body = UpdateMyApplicationBody.safeParse(normalizedBody);
   if (!params.success || !body.success) { res.status(400).json({ error: "Invalid application update." }); return; }
   const key = body.data.applicantKey.trim().toLowerCase();
-  const fields = fieldsFromPlan(body.data.plan);
+  const submittedPlan = normalizedBody && typeof normalizedBody === "object" && !Array.isArray(normalizedBody)
+    ? (normalizedBody as Record<string, unknown>).plan
+    : null;
+  const planInput = normalizedPlan(submittedPlan);
+  const fields = planInput && fieldsFromPlan(planInput);
   if (!fields || !["Draft", "Draft — Requires Review"].includes(fields.status)) {
     res.status(400).json({ error: "This application cannot be changed in its current status." }); return;
   }
@@ -690,7 +768,7 @@ router.patch("/applications/:id", async (req, res): Promise<void> => {
       ));
       if (pending.value > 0) return { kind: "pending-documents" as const };
     }
-    const proposed = body.data.plan;
+    const proposed = planInput!;
     const now = new Date();
     const plan = {
       ...existing.plan,
@@ -720,7 +798,96 @@ router.patch("/applications/:id", async (req, res): Promise<void> => {
   if (result.kind === "pending-documents") { res.status(409).json({ error: "Complete or remove pending document uploads before submitting this application." }); return; }
   if (result.kind === "not-editable") { res.status(409).json({ error: "This application is no longer an unsubmitted draft." }); return; }
   const { row } = result;
-  res.json(UpdateMyApplicationResponse.parse(respond(row)));
+  const response = respond(row);
+  res.json(validateApplicationRecords(UpdateMyApplicationResponse, response));
+});
+
+router.patch("/applications/:id/contact", async (req, res): Promise<void> => {
+  const userId = currentUser(req, res);
+  if (!userId) return;
+  const params = UpdateApplicationContactParams.safeParse(req.params);
+  const body = UpdateApplicationContactBody.safeParse(req.body);
+  if (!params.success || !body.success) {
+    res.status(400).json({ error: "Invalid contact details or notification consent." });
+    return;
+  }
+  const key = body.data.applicantKey.trim().toLowerCase();
+  if (!key) {
+    res.status(400).json({ error: "An applicant key is required." });
+    return;
+  }
+  if (isDemoApplicationId(params.data.id)) {
+    res.status(409).json({ error: "Sample fallback records are read-only." });
+    return;
+  }
+  const result = await db.transaction(async tx => {
+    const [existing] = await tx.select().from(applicationsTable).where(and(
+      eq(applicationsTable.id, params.data.id),
+      eq(applicationsTable.ownerId, userId),
+      eq(applicationsTable.applicantKey, key),
+    )).for("update");
+    if (!existing) return { kind: "missing" as const };
+    if (existing.sourceUrl) return { kind: "source" as const };
+    if (body.data.expectedUpdatedAt && existing.updatedAt.getTime() !== body.data.expectedUpdatedAt.getTime()) {
+      return { kind: "stale" as const };
+    }
+    const currentIntake = existing.plan.intake && typeof existing.plan.intake === "object" &&
+      !Array.isArray(existing.plan.intake)
+      ? existing.plan.intake as Record<string, unknown>
+      : {};
+    const contactUpdates: Record<string, string> = {};
+    const proposedContacts = {
+      applicantName: body.data.applicantName,
+      applicantEmail: body.data.applicantEmail,
+      applicantPhone: body.data.applicantPhone,
+    };
+    for (const [field, submitted] of Object.entries(proposedContacts)) {
+      if (submitted === undefined) continue;
+      const current = typeof currentIntake[field] === "string" ? currentIntake[field] as string : undefined;
+      // Exact legacy values may be kept as-is; any changed value is trimmed and validated strictly.
+      if (current === submitted) {
+        contactUpdates[field] = current;
+        continue;
+      }
+      const trimmed = submitted.trim();
+      const valid = field === "applicantName"
+        ? trimmed.length <= 200
+        : field === "applicantEmail"
+          ? validApplicantEmail(trimmed)
+          : validApplicantPhone(trimmed);
+      if (!valid) return { kind: "invalid-contact" as const };
+      contactUpdates[field] = trimmed;
+    }
+    const nextEmail = contactUpdates.applicantEmail ??
+      (typeof currentIntake.applicantEmail === "string" ? currentIntake.applicantEmail.trim() : "");
+    const nextPhone = contactUpdates.applicantPhone ??
+      (typeof currentIntake.applicantPhone === "string" ? currentIntake.applicantPhone.trim() : "");
+    const hasValidDestination = (!!nextEmail && validApplicantEmail(nextEmail)) ||
+      (!!nextPhone && validApplicantPhone(nextPhone));
+    if (body.data.notificationConsent && !hasValidDestination) return { kind: "invalid-contact" as const };
+    const plan = {
+      ...existing.plan,
+      intake: {
+        ...currentIntake,
+        ...contactUpdates,
+        notificationConsent: body.data.notificationConsent,
+      },
+    };
+    const [row] = await tx.update(applicationsTable).set({
+      plan,
+      updatedAt: new Date(),
+    }).where(eq(applicationsTable.id, existing.id)).returning();
+    return { kind: "updated" as const, row };
+  });
+  if (result.kind === "missing") { res.status(404).json({ error: "Application not found." }); return; }
+  if (result.kind === "source") { res.status(409).json({ error: "Source applications cannot be changed." }); return; }
+  if (result.kind === "stale") { res.status(409).json({ error: "This application changed since it was last loaded. Refresh before saving." }); return; }
+  if (result.kind === "invalid-contact") {
+    res.status(400).json({ error: "Changed contact details must be valid; consent requires a valid email address or phone number." });
+    return;
+  }
+  const response = respond(result.row);
+  res.json(validateApplicationRecords(UpdateApplicationContactResponse, response));
 });
 
 router.patch("/applications/:id/review", async (req, res): Promise<void> => {
@@ -743,7 +910,10 @@ router.patch("/applications/:id/review", async (req, res): Promise<void> => {
     if (body.data.expectedUpdatedAt && existing.updatedAt.getTime() !== body.data.expectedUpdatedAt.getTime()) {
       return { kind: "stale" as const };
     }
-    const proposed = body.data.plan;
+    const rawBody = req.body as Record<string, unknown>;
+    const proposed = rawBody.plan && typeof rawBody.plan === "object" && !Array.isArray(rawBody.plan)
+      ? rawBody.plan as Record<string, unknown>
+      : {};
     const status = typeof proposed.status === "string" ? proposed.status : existing.status;
     if (!statuses.has(status) || status === "Draft" ||
         (completed.has(existing.status) && status !== "In Review (Re-opened)")) {
@@ -757,10 +927,11 @@ router.patch("/applications/:id/review", async (req, res): Promise<void> => {
     const plan = { ...existing.plan, status,
       notes: proposedNotes,
       overrides: proposed.overrides && typeof proposed.overrides === "object" && !Array.isArray(proposed.overrides) ? proposed.overrides : existing.plan.overrides,
-      rejected: Array.isArray(proposed.rejected) && proposed.rejected.every(item => typeof item === "string") ? proposed.rejected : existing.plan.rejected,
+      rejected: Array.isArray(proposed.rejected) && proposed.rejected.every((item: unknown) => typeof item === "string") ? proposed.rejected : existing.plan.rejected,
       completedAt: completed.has(status) ? Date.now() : null, updatedAt: Date.now(),
     };
-    const fields = fieldsFromPlan(plan);
+    // A review changes the existing record; legacy contact values are not applicant writes.
+    const fields = fieldsFromPlan(plan, false);
     if (!fields) return { kind: "invalid-plan" as const };
     const planWithCurrentResponse = sql<Record<string, unknown>>`
       ${JSON.stringify(plan)}::jsonb ||
@@ -783,7 +954,8 @@ router.patch("/applications/:id/review", async (req, res): Promise<void> => {
     res.status(400).json({ error: result.kind === "invalid-status" ? "Invalid review status." : "Invalid stored plan." });
     return;
   }
-  res.json(ReviewApplicationResponse.parse(respond(result.row)));
+  const response = respond(result.row);
+  res.json(validateApplicationRecords(ReviewApplicationResponse, response));
 });
 
 router.post("/applications/:id/response", async (req, res): Promise<void> => {
@@ -819,7 +991,8 @@ router.post("/applications/:id/response", async (req, res): Promise<void> => {
     });
     return updated;
   });
-  res.json(PostApplicationResponseResponse.parse(respond(row, false)));
+  const response = respond(row, false);
+  res.json(validateApplicationRecords(PostApplicationResponseResponse, response));
 });
 
 router.get("/applications/:id/history", async (req, res): Promise<void> => {
