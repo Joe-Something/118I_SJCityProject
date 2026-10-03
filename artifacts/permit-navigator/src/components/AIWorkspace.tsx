@@ -41,6 +41,18 @@ const safeSource = (url: string | null) => {
     return ['https:', 'http:'].includes(parsed.protocol) ? parsed.href : null;
   } catch { return null; }
 };
+const apiErrorMessage = (error: unknown): string | null => {
+  if (!error || typeof error !== 'object' || !('data' in error)) return null;
+  const data = (error as { data?: unknown }).data;
+  if (!data || typeof data !== 'object' || !('error' in data)) return null;
+  const message = (data as { error?: unknown }).error;
+  return typeof message === 'string' && message.trim() ? message.trim().slice(0, 300) : null;
+};
+const requestFailureNotice = (error: unknown, fallback: string) =>
+  apiErrorMessage(error) ??
+  (error instanceof TypeError
+    ? "Couldn't reach the workspace. Your question remains in the composer; check your connection and retry."
+    : fallback);
 
 function SyntheticBadge() {
   return <span className="ws-synthetic">Synthetic example</span>;
@@ -124,8 +136,8 @@ export function AIWorkspace() {
       setMenuOpen(false);
       await invalidate(created.id);
       return created.id;
-    } catch {
-      setNotice('A new conversation could not be started. Check your connection and try again.');
+    } catch (error) {
+      setNotice(requestFailureNotice(error, 'A new conversation could not be started. Please try again.'));
       return null;
     }
   };
@@ -178,9 +190,9 @@ export function AIWorkspace() {
       const reply = await sendMessage.mutateAsync({ id, data: { content } });
       setReplies(previous => ({ ...previous, [reply.message.id]: reply }));
       await invalidate(id);
-    } catch {
+    } catch (error) {
       setDraft(content);
-      setNotice('Your question was not sent. Nothing was lost; please try again.');
+      setNotice(requestFailureNotice(error, 'Your question was not sent. It remains in the composer; please try again.'));
     } finally {
       setPendingText('');
     }

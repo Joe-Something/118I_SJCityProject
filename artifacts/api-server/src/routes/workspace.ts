@@ -282,10 +282,20 @@ router.post("/workspace/conversations/:id/messages", async (req, res): Promise<v
   } else if (vagueInput.test(input) || input.length < 12) {
     answer = "What kind of business or permit are you asking about, and is this a new location or a modification to an existing space?";
   } else {
+    const openAiApiKey = process.env.AI_INTEGRATIONS_OPENAI_API_KEY;
+    const openAiBaseUrl = process.env.AI_INTEGRATIONS_OPENAI_BASE_URL;
+    if (!openAiApiKey || !openAiBaseUrl) {
+      req.log.error({
+        apiKeyConfigured: Boolean(openAiApiKey),
+        baseUrlConfigured: Boolean(openAiBaseUrl),
+      }, "AI integration is not configured");
+      res.status(503).json({ error: "AI guidance is not configured on this server. Your question was not saved; contact the workspace administrator." });
+      return;
+    }
     try {
       const ai = new OpenAI({
-        apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
-        baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
+        apiKey: openAiApiKey,
+        baseURL: openAiBaseUrl,
       });
       const result = await ai.chat.completions.create({
         model: "gpt-5.4-mini",
@@ -297,8 +307,16 @@ router.post("/workspace/conversations/:id/messages", async (req, res): Promise<v
       });
       answer = scrub(result.choices[0]?.message?.content || "I cannot confirm this from the available records. Please consult the City directly.");
     } catch (err) {
-      req.log.warn({ err }, "AI response unavailable");
-      res.status(503).json({ error: "AI guidance is temporarily unavailable. Your question was not saved; try again later." });
+      const providerStatus = err && typeof err === "object" && "status" in err && typeof err.status === "number"
+        ? err.status
+        : null;
+      req.log.warn({ err, providerStatus }, "AI response unavailable");
+      const error = providerStatus === 401 || providerStatus === 403
+        ? "AI provider access was rejected. Your question was not saved; restore provider access, then retry."
+        : providerStatus === 429
+          ? "AI provider is temporarily rate-limited. Your question was not saved; wait briefly, then retry."
+          : "AI guidance is temporarily unavailable. Your question was not saved; try again later.";
+      res.status(503).json({ error });
       return;
     }
   }

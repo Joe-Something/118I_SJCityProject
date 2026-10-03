@@ -246,6 +246,90 @@ test('asking about a sample reference sends immediately and shows the pending ch
   await expect(page.getByTestId('pending-workspace-question')).toHaveCount(0);
 });
 
+test('AI request errors are explained, the draft is preserved, and it can be retried', async ({ page }) => {
+  const conversationId = '32345678-1234-4234-8234-123456789abc';
+  const conversation = {
+    id: conversationId,
+    title: 'Starting a small business',
+    mode: 'research',
+    createdAt: checkedAt,
+    updatedAt: checkedAt,
+  };
+  const question = 'Where do I start with permits for a new small business?';
+  const providerError = 'AI provider access was rejected. Your question was not saved; restore provider access, then retry.';
+  const assistantText = 'Start by confirming the business type and location with the City.';
+  let sendRequests = 0;
+  let savedMessages: Array<{ id: string; role: 'user' | 'assistant'; content: string; createdAt: string }> = [];
+
+  await page.route('**/api/**', async route => {
+    const { pathname } = new URL(route.request().url());
+    const method = route.request().method();
+    if (pathname === '/api/workspace/conversations' && method === 'GET') {
+      return route.fulfill({ json: [conversation] });
+    }
+    if (pathname === '/api/workspace/conversations' && method === 'POST') {
+      throw new Error('The existing conversation should be reused.');
+    }
+    if (pathname === '/api/workspace/prototype-sources' && method === 'GET') {
+      return route.fulfill({ json: [] });
+    }
+    if (pathname === '/api/workspace/records' && method === 'GET') {
+      return route.fulfill({ json: [] });
+    }
+    if (pathname === `/api/workspace/conversations/${conversationId}/messages` && method === 'GET') {
+      return route.fulfill({ json: savedMessages });
+    }
+    if (pathname === `/api/workspace/conversations/${conversationId}/messages` && method === 'POST') {
+      sendRequests++;
+      if (sendRequests === 1) {
+        return route.fulfill({ status: 503, json: { error: providerError } });
+      }
+      if (sendRequests === 2) {
+        return route.abort('failed');
+      }
+      const createdAt = checkedAt;
+      const userMessage = { id: 'retry-user-message', role: 'user' as const, content: question, createdAt };
+      const assistantMessage = { id: 'retry-assistant-message', role: 'assistant' as const, content: assistantText, createdAt };
+      savedMessages = [userMessage, assistantMessage];
+      return route.fulfill({
+        status: 201,
+        json: {
+          message: assistantMessage,
+          sources: [],
+          synthetic: false,
+          escalation: null,
+          securityStatus: 'PII-filtered · role-scoped · simulated tool gateway',
+        },
+      });
+    }
+    throw new Error(`Unexpected request: ${method} ${pathname}`);
+  });
+
+  await page.goto('/test/harness.html');
+  await expect(page.getByText('A new conversation.')).toBeVisible();
+  const input = page.getByTestId('input-workspace-question');
+  const send = page.getByTestId('button-send-workspace-message');
+
+  await input.fill(question);
+  await send.click();
+  await expect(page.getByTestId('status-workspace-error')).toContainText(providerError);
+  await expect(input).toHaveValue(question);
+  await expect(page.getByTestId('pending-workspace-question')).toHaveCount(0);
+  expect(sendRequests).toBe(1);
+
+  await send.click();
+  await expect(page.getByTestId('status-workspace-error')).toContainText(
+    "Couldn't reach the workspace. Your question remains in the composer; check your connection and retry.",
+  );
+  await expect(input).toHaveValue(question);
+  expect(sendRequests).toBe(2);
+
+  await send.click();
+  await expect(page.getByText(assistantText)).toBeVisible();
+  await expect(input).toHaveValue('');
+  expect(sendRequests).toBe(3);
+});
+
 test('users can cancel conversation deletion or delete the open conversation', async ({ page }) => {
   const conversationId = '12345678-1234-4234-8234-123456789abc';
   const conversation = {
