@@ -97,13 +97,13 @@ test('public record errors can be retried and outdated and synthetic records sta
   await referenceDesk.getByTestId('button-retry-records').click();
 
   const publicRecord = referenceDesk.getByTestId('card-record-SJ-OPEN-2026-001-CI');
-  await expect(publicRecord).toContainText('Import overdue — verify directly with City');
+  await expect(publicRecord).toContainText('Import overdue');
   await expect(publicRecord.getByTestId('link-record-source-SJ-OPEN-2026-001-CI')).toHaveAttribute(
     'href',
     'https://data.sanjoseca.gov/dataset/last-30-days-building-permits',
   );
   const syntheticRecord = referenceDesk.getByTestId('card-record-DEMO-D2-EXAMPLE-01');
-  await expect(syntheticRecord.getByText('Demo Data — Synthetic')).toBeVisible();
+  await expect(syntheticRecord.getByText('Synthetic example', { exact: true })).toBeVisible();
   await expect(syntheticRecord.getByText('Fictional example record')).toBeVisible();
   await expect(syntheticRecord.getByTestId('link-record-source-DEMO-D2-EXAMPLE-01')).toHaveCount(0);
   expect(recordReads).toBe(2);
@@ -134,7 +134,7 @@ test('prototype source loading, retry, stale, and unavailable states remain expl
   const referenceDesk = page.locator('.ws-reference');
   await expect(referenceDesk.locator('.ws-ref-skeleton')).toBeVisible();
   releaseFirstRead();
-  await expect(referenceDesk.getByText('Demo documents unavailable')).toBeVisible();
+  await expect(referenceDesk.getByText('Sample documents unavailable')).toBeVisible();
   await referenceDesk.getByTestId('button-retry-prototype-sources').click();
 
   await expect(referenceDesk.getByText('Outdated example — do not rely on it')).toBeVisible();
@@ -142,14 +142,108 @@ test('prototype source loading, retry, stale, and unavailable states remain expl
   await expect(referenceDesk.getByText('This fictional example is unavailable and must not be used.')).toBeVisible();
   const outdated = referenceDesk.getByTestId('card-prototype-source-demo-outdated');
   const unavailable = referenceDesk.getByTestId('card-prototype-source-demo-unavailable');
-  await expect(outdated.getByText('Demo Data — Synthetic')).toBeVisible();
-  await expect(unavailable.getByText('Demo Data — Synthetic')).toBeVisible();
+  await expect(outdated.getByText('Synthetic example')).toBeVisible();
+  await expect(unavailable.getByText('Synthetic example')).toBeVisible();
   await expect(unavailable.getByText('Fictional example content for demo-unavailable')).toHaveCount(0);
   await expect(referenceDesk.getByText('Open City source page').first()).toHaveAttribute(
     'href',
     'https://www.sanjoseca.gov/business/development-services-permit-center',
   );
   expect(sourceReads).toBe(2);
+});
+
+test('asking about a sample reference sends immediately and shows the pending chat', async ({ page }) => {
+  const conversationId = '22345678-1234-4234-8234-123456789abc';
+  const conversation = {
+    id: conversationId,
+    title: 'Sample reference question',
+    mode: 'live',
+    createdAt: checkedAt,
+    updatedAt: checkedAt,
+  };
+  const assistantText = 'Sample data — Synthetic. Verify current planning requirements with City sources.';
+  let conversations: typeof conversation[] = [];
+  let messages: Array<{ id: string; role: 'user' | 'assistant'; content: string; createdAt: string }> = [];
+  let createRequests = 0;
+  let sendRequests = 0;
+  let createdMode = '';
+  let sentContent = '';
+  let releaseSend!: () => void;
+  const sendGate = new Promise<void>(resolve => { releaseSend = resolve; });
+
+  await page.route('**/api/**', async route => {
+    const { pathname } = new URL(route.request().url());
+    const method = route.request().method();
+    if (pathname === '/api/workspace/conversations' && method === 'GET') {
+      return route.fulfill({ json: conversations });
+    }
+    if (pathname === '/api/workspace/conversations' && method === 'POST') {
+      createRequests++;
+      createdMode = route.request().postDataJSON().mode;
+      conversations = [conversation];
+      return route.fulfill({ status: 201, json: conversation });
+    }
+    if (pathname === '/api/workspace/prototype-sources' && method === 'GET') {
+      return route.fulfill({ json: [prototypeSource('demo-planning', 'demo')] });
+    }
+    if (pathname === '/api/workspace/records' && method === 'GET') {
+      return route.fulfill({ json: [] });
+    }
+    if (pathname === `/api/workspace/conversations/${conversationId}/messages` && method === 'GET') {
+      return route.fulfill({ json: messages });
+    }
+    if (pathname === `/api/workspace/conversations/${conversationId}/messages` && method === 'POST') {
+      sendRequests++;
+      sentContent = route.request().postDataJSON().content;
+      await sendGate;
+      const userMessage = {
+        id: 'sample-user-message',
+        role: 'user' as const,
+        content: sentContent,
+        createdAt: checkedAt,
+      };
+      const assistantMessage = {
+        id: 'sample-assistant-message',
+        role: 'assistant' as const,
+        content: assistantText,
+        createdAt: checkedAt,
+      };
+      messages = [userMessage, assistantMessage];
+      return route.fulfill({
+        status: 201,
+        json: {
+          message: assistantMessage,
+          sources: [],
+          synthetic: true,
+          escalation: null,
+          securityStatus: 'PII-filtered · role-scoped · simulated tool gateway',
+        },
+      });
+    }
+    throw new Error(`Unexpected request: ${method} ${pathname}`);
+  });
+
+  const expectedQuestion = 'What does the synthetic sample "Example source demo-planning" show about rules, and what should I verify with current City sources?';
+  try {
+    await page.goto('/test/harness.html');
+    await page.getByTestId('button-mode-live').click();
+    await page.getByTestId('button-ask-prototype-source-demo-planning').click();
+
+    await expect.poll(() => createRequests).toBe(1);
+    await expect.poll(() => sendRequests).toBe(1);
+    expect(createdMode).toBe('live');
+    expect(sentContent).toBe(expectedQuestion);
+    await expect(page.getByTestId('input-workspace-question')).toHaveValue('');
+    await expect(page.getByTestId('pending-workspace-question')).toContainText(expectedQuestion);
+    await expect(page.getByTestId('workspace-response-loading')).toContainText('Researching');
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+  } finally {
+    releaseSend();
+  }
+
+  await expect(page.getByText(assistantText)).toBeVisible();
+  await expect(page.getByText(expectedQuestion)).toBeVisible();
+  await expect(page.getByTestId('pending-workspace-question')).toHaveCount(0);
 });
 
 test('users can cancel conversation deletion or delete the open conversation', async ({ page }) => {
