@@ -1,0 +1,57 @@
+# SYSTEM / PRD INSTRUCTIONS FOR REPLIT AGENT
+
+## 1. OBJECTIVE & CORE ROLE
+You are an expert AI software engineer. Your goal is to construct a modular, dynamic Information Hub workspace inside this application. 
+
+You must implement a dynamic UI component that restructures, formats, and displays information with context-aware, clickable resource links and real-world business example cards based on active user conversations.
+
+---
+
+## 2. FUNCTIONAL SPECIFICATIONS & USER FLOW
+
+### A. Context Reformatter Section
+- Intercept and parse the text/data active in the main workspace section.
+- Clean and visually organize the text using clear hierarchy (Markdown headers, badge chips, syntax-highlighted code blocks, and scannable cards).
+
+### B. Smart Dynamic URL & Resource Generator
+Generate organized, categorized resource links relevant to the workspace topic:
+- **Documentation & APIs:** (e.g., official docs, SDKs, endpoint specs)
+- **Tooling & Integrations:** (e.g., database connectors, auth providers, third-party APIs)
+- **Regulatory / Standards:** (e.g., compliance guides, industry frameworks)
+
+### C. Multi-Industry Business Case Selector
+Provide an interactive selector allowing users to toggle example dynamic datasets and information requirements across different business types:
+
+1. **E-Commerce / Retail:**
+   - *Data Needed:* Inventory SKUs, real-time pricing feeds, order fulfillment webhooks, Stripe/Payment gateway integration.
+2. **Healthcare / Digital Health:**
+   - *Data Needed:* Patient EHR metadata schema, HIPAA-compliant storage rules, appointment scheduling APIs, HL7/FHIR message structures.
+3. **Finance & FinTech:**
+   - *Data Needed:* Transaction ledger tables, KYC/AML verification endpoints, plaid balance sync, rate-limiting & audit logs.
+4. **SaaS / B2B Enterprise:**
+   - *Data Needed:* Multi-tenant organization IDs, RBAC permission roles, usage-based billing metrics, SSO/SAML config schemas.
+
+---
+
+## 3. UI / UX DESIGN REQUIREMENTS
+- **Layout:** Clean, responsive 2-column or tabbed interface (Left: Formatted Information & Examples; Right: Category-Filtered URL Directory).
+- **Interactivity:**
+  - One-click "Copy Formatted Output" button.
+  - Interactive industry toggle pills (E-Commerce, Healthcare, Finance, SaaS).
+  - External links must open safely in a new tab (`target="_blank" rel="noopener noreferrer"`).
+- **Styling:** Modern dark/light theme compatible with standard modern design systems (e.g., Tailwind CSS, shadcn/ui).
+
+---
+
+## 4. TECH STACK CONSTRAINTS
+- **Frontend:** React / Next.js or Vite (Agent Choice for quick build), Tailwind CSS, Lucide-react (for icons).
+- **Backend/State:** Node.js / Express or Client-Side React State management for dynamic rendering.
+- **Out of Scope (v1):** Production database connections, paid API key requirements (use mock/fallback data for dynamic link structures if offline).
+
+---
+
+## 5. SUCCESS CRITERIA & VERIFICATION
+1. The AI workspace automatically renders formatted section content upon load.
+2. The user can switch between business domains and immediately see tailored data requirements.
+3. All generated URL links are categorized into distinct, readable sections.
+4. Zero console errors upon initial boot (`npm run dev`).
