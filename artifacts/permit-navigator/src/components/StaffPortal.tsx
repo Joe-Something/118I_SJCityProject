@@ -3,7 +3,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { ActivePlan, Department } from '../types';
 import { ReviewCatalog } from './ReviewCatalog';
 import { STAFF_REVIEWERS } from '../utils/generators';
-import { AlertCircle, ArrowUpRight, ClipboardCheck, Building2, CheckCircle2, Check, ChevronDown, ExternalLink, LoaderCircle, Mail, X, Plus, Pencil, Calendar } from 'lucide-react';
+import { AlertCircle, ArrowUpRight, ClipboardCheck, Building2, CheckCircle2, Check, ChevronDown, LoaderCircle, Mail, X, Plus, Pencil, Calendar } from 'lucide-react';
 import { copy } from '../copy';
 import { RequirementId, BusinessType, Modification } from '../requirements';
 import { deriveDepartments } from '../utils/helpers';

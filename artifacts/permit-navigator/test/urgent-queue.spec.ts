@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 import type { ApplicationRecord } from '@workspace/api-client-react';
 
 const ticketId = '12345678-1234-4234-8234-123456789abc';
@@ -85,6 +85,26 @@ function queueItem(acknowledged: boolean, acknowledgedBy: string | null = null) 
     deliveryStatus: 'Delivery not verified; no automatic dispatch or retries',
     testRecipient: null,
   };
+}
+
+async function openUrgentFlagsMenu(page: Page) {
+  const trigger = page.getByTestId('button-urgent-flags');
+  await trigger.focus();
+  await page.keyboard.press('ArrowDown');
+  const menu = page.getByTestId('urgent-flags-menu');
+  await expect(menu).toBeVisible();
+  return menu;
+}
+
+async function openUrgentFlagActions(page: Page, menu: Locator, state: 'needs review' | 'acknowledged' = 'needs review') {
+  const flag = menu.getByRole('menuitem', {
+    name: `High-urgency flag, ticket ${ticketId}, ${state}`,
+  });
+  await flag.focus();
+  await page.keyboard.press('ArrowRight');
+  const actions = page.getByRole('menu', { name: `Details and actions for ticket ${ticketId}` });
+  await expect(actions).toBeVisible();
+  return actions;
 }
 
 test('review catalog search matches full and partial application IDs alongside existing filters', async ({ page }) => {
@@ -178,25 +198,48 @@ for (const desk of ['Fire Prevention', 'Economic Development'] as const) {
 
     await page.goto(`/test/harness.html?desk=${encodeURIComponent(desk)}`);
     await expect(page.getByTestId('staff-desk-label')).toContainText(desk);
-    await expect(page.getByText('Loading flagged items…')).toBeVisible();
+    const flagMenu = await openUrgentFlagsMenu(page);
+    await expect(flagMenu.getByText('Loading flagged items…')).toBeVisible();
     releaseFirst();
     const queue = page.getByRole('region', { name: 'High-urgency review queue' });
-    await expect(queue.getByRole('alert')).toContainText('Review queue unavailable');
-    await queue.getByRole('button', { name: 'Retry' }).click();
-    await expect(queue.getByText(`Ticket ${ticketId}`, { exact: false })).toBeVisible();
-    await queue.getByRole('button', { name: 'Acknowledge in prototype queue' }).click();
-    await expect(queue.getByRole('alert')).toContainText('Acknowledgement could not be saved');
-    await expect(queue.getByRole('button', { name: 'Acknowledge in prototype queue' })).toBeVisible();
-    await queue.getByRole('button', { name: 'Acknowledge in prototype queue' }).click();
+    await expect(queue).toBeVisible();
+    await expect(flagMenu.getByRole('alert')).toContainText('Review queue unavailable');
+    await flagMenu.getByRole('menuitem', { name: 'Retry review queue' }).click();
+    await expect(flagMenu.getByRole('menuitem', { name: `High-urgency flag, ticket ${ticketId}, needs review` })).toBeVisible();
+    await expect(page.getByTestId('button-urgent-flags')).toHaveAttribute('aria-label', 'High-urgency workspace flags, 1 active');
+    const flagActions = await openUrgentFlagActions(page, flagMenu);
+    await flagActions.getByRole('menuitem', { name: 'Acknowledge flag' }).click();
+    await expect(flagActions.getByRole('alert')).toContainText('Acknowledgement could not be saved');
+    await expect(flagActions.getByRole('menuitem', { name: 'Acknowledge flag' })).toBeVisible();
+    await flagActions.getByRole('menuitem', { name: 'Acknowledge flag' }).click();
     await expect.poll(() => acknowledgementAttempts).toBe(2);
     await expect.poll(() => queueReads).toBeGreaterThanOrEqual(3); // invalidation refetched the GET
-    await expect(queue.getByText('Acknowledged in prototype queue')).toBeVisible();
-    await expect(queue.getByRole('button', { name: 'Acknowledge in prototype queue' })).toHaveCount(0);
+    await expect(flagMenu.getByText('No active high-urgency flags. Previously acknowledged items are listed below.')).toBeVisible();
+    await expect(flagMenu.getByRole('menuitem', { name: `High-urgency flag, ticket ${ticketId}, acknowledged` })).toBeVisible();
+    await expect(flagActions.getByText('Acknowledged in prototype queue')).toBeVisible();
+    await expect(flagActions.getByRole('menuitem', { name: 'Acknowledge flag' })).toHaveCount(0);
     await page.reload();
-    await expect(queue.getByText('Acknowledged in prototype queue')).toBeVisible();
-    await expect(queue.getByRole('button', { name: 'Acknowledge in prototype queue' })).toHaveCount(0);
+    const reloadedFlagMenu = await openUrgentFlagsMenu(page);
+    await expect(reloadedFlagMenu.getByText('No active high-urgency flags. Previously acknowledged items are listed below.')).toBeVisible();
+    const reloadedFlagActions = await openUrgentFlagActions(page, reloadedFlagMenu, 'acknowledged');
+    await expect(reloadedFlagActions.getByText('Acknowledged in prototype queue')).toBeVisible();
+    await expect(reloadedFlagActions.getByRole('menuitem', { name: 'Acknowledge flag' })).toHaveCount(0);
   });
 }
+
+test('urgent flag dropdown exposes the empty state and closes with Escape', async ({ page }) => {
+  await page.route('**/api/workspace/escalations', route => route.fulfill({ json: [] }));
+  await page.goto('/test/harness.html?desk=Fire%20Prevention');
+
+  const trigger = page.getByTestId('button-urgent-flags');
+  await expect(trigger).toHaveAttribute('aria-label', 'High-urgency workspace flags, 0 active');
+  const menu = await openUrgentFlagsMenu(page);
+  await expect(menu.getByText('No active high-urgency flags.', { exact: true })).toBeVisible();
+
+  await page.keyboard.press('Escape');
+  await expect(menu).toBeHidden();
+  await expect(trigger).toBeFocused();
+});
 
 test('urgent queue refreshes when another reviewer acknowledges a ticket', async ({ browser }) => {
   let queueReads = 0;
@@ -222,27 +265,32 @@ test('urgent queue refreshes when another reviewer acknowledges a ticket', async
   try {
     await firstReviewer.goto('/test/harness.html?desk=Fire%20Prevention');
     const firstQueue = firstReviewer.getByRole('region', { name: 'High-urgency review queue' });
-    await expect(firstQueue.getByText('Awaiting prototype staff acknowledgement')).toBeVisible();
-    await expect(firstQueue.getByRole('button', { name: 'Acknowledge in prototype queue' })).toBeVisible();
+    const firstFlagMenu = await openUrgentFlagsMenu(firstReviewer);
+    const firstFlagActions = await openUrgentFlagActions(firstReviewer, firstFlagMenu);
+    await expect(firstFlagActions.getByText('Awaiting prototype staff acknowledgement')).toBeVisible();
+    await expect(firstFlagActions.getByRole('menuitem', { name: 'Acknowledge flag' })).toBeVisible();
 
     const secondReviewer = await context.newPage();
     await secondReviewer.goto('/test/harness.html?desk=Fire%20Prevention');
     const secondQueue = secondReviewer.getByRole('region', { name: 'High-urgency review queue' });
-    await expect(secondQueue.getByRole('button', { name: 'Acknowledge in prototype queue' })).toBeVisible();
-    await secondQueue.getByRole('button', { name: 'Acknowledge in prototype queue' }).click();
-    await expect(secondQueue.getByText('Acknowledged in prototype queue')).toBeVisible();
-    await expect(secondQueue.getByText('Acknowledged by Jordan Lee (Fire)')).toBeVisible();
+    const secondFlagMenu = await openUrgentFlagsMenu(secondReviewer);
+    const secondFlagActions = await openUrgentFlagActions(secondReviewer, secondFlagMenu);
+    await secondFlagActions.getByRole('menuitem', { name: 'Acknowledge flag' }).click();
+    await expect(secondFlagActions.getByText('Acknowledged in prototype queue')).toBeVisible();
+    await expect(secondFlagActions.getByText('Acknowledged by Jordan Lee (Fire)')).toBeVisible();
 
     // The first reviewer's cache stays unchanged until its polling interval runs.
-    await expect(firstQueue.getByText('Awaiting prototype staff acknowledgement')).toBeVisible();
-    await expect(firstQueue.getByRole('button', { name: 'Acknowledge in prototype queue' })).toBeVisible();
+    await expect(firstQueue).toBeVisible();
+    await expect(firstFlagActions.getByText('Awaiting prototype staff acknowledgement')).toBeVisible();
+    await expect(firstFlagActions.getByRole('menuitem', { name: 'Acknowledge flag' })).toBeVisible();
     const readsBeforePolling = queueReads;
     await firstReviewer.clock.fastForward(30_000);
     await expect.poll(() => queueReads).toBeGreaterThan(readsBeforePolling);
 
-    await expect(firstQueue.getByText('Acknowledged in prototype queue')).toBeVisible();
-    await expect(firstQueue.getByText('Acknowledged by Jordan Lee (Fire)')).toBeVisible();
-    await expect(firstQueue.getByRole('button', { name: 'Acknowledge in prototype queue' })).toHaveCount(0);
+    await expect(firstFlagMenu.getByText('No active high-urgency flags. Previously acknowledged items are listed below.')).toBeVisible();
+    await expect(firstFlagActions.getByText('Acknowledged in prototype queue')).toBeVisible();
+    await expect(firstFlagActions.getByText('Acknowledged by Jordan Lee (Fire)')).toBeVisible();
+    await expect(firstFlagActions.getByRole('menuitem', { name: 'Acknowledge flag' })).toHaveCount(0);
   } finally {
     await context.close();
   }

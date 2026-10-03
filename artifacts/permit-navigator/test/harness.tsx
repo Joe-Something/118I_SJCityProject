@@ -4,7 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Router } from 'wouter';
 import { AIWorkspace } from '../src/components/AIWorkspace';
 import { ApplicantDashboard } from '../src/components/ApplicantDashboard';
-import { StaffPortal } from '../src/components/StaffPortal';
+import { StaffPortal, type StaffRole } from '../src/components/StaffPortal';
 import type { ActivePlan, PlanStatus } from '../src/types';
 import type { Intake } from '../src/requirements';
 import { reviewApplication } from '@workspace/api-client-react';
@@ -143,6 +143,11 @@ function Harness() {
   const [view, setView] = useState<'workspace' | 'portal'>('workspace');
   const [filters, setFilters] = useState(emptyFilters);
   const applicantHarness = new URLSearchParams(location.search).get('applicant') === 'records';
+  const deskDepartment: StaffRole = desk === 'Fire Prevention'
+    ? 'Fire'
+    : desk === 'Economic Development'
+      ? 'Economic Development'
+      : 'Building';
 
   return applicantHarness ? (
     <ApplicantRecordsHarness />
@@ -151,6 +156,9 @@ function Harness() {
   ) : desk ? (
     <StaffPortal
       desk={desk}
+      selectedDepartment={deskDepartment}
+      administratorEnabled={false}
+      assignedDepartment={deskDepartment}
       activeQueue={[]}
       catalog={[]}
       records={[]}
@@ -159,8 +167,12 @@ function Harness() {
       recordsLoading={false}
       recordsError=""
       recordsRefreshWarning=""
+      recordsReadOnly={false}
+      recordsLastConfirmedAt={null}
+      onRefreshRecords={async () => {}}
       onCompleteReview={() => {}}
-      onUpdateActivePlan={() => {}}
+      onUpdateActivePlan={async () => true}
+      onPostResponse={async () => true}
        onReopenReview={async () => false}
     />
   ) : (
