@@ -288,29 +288,25 @@ export function StaffApplicationDetail({
             Draft workflows and applicant responses are disabled until a live, authorized staff queue is available.
             {plan.notes?._staff_response && <> Previously saved response: {plan.notes._staff_response}</>}
           </p>
-        ) : <div className="staff-application-detail__grid">
-          <div className="staff-application-detail__panel">
-            <h4>Suggested review path</h4>
-            <ol className="staff-application-detail__guidance">
-              <li>{['Approved', 'Rejected', 'Modified via Staff Override'].includes(plan.status) ? 'Review the recorded recommendation before any further correspondence.' : 'Confirm the proposed use and application type before making a recommendation.'} Project: <strong>{provided(record?.requestType)}</strong> at <strong>{provided(location)}</strong>; described changes: {changesLabel(plan)}.</li>
-              <li>{openItems.length ? <>Use the {openItems.map(id => copy.en.requirements[id].name).join(', ')} {openItems.length === 1 ? 'topic' : 'topics'} to frame questions for the relevant agencies.</> : 'No topics remain on this plan.'}</li>
-              <li>Review attached documents above; request missing scope details or drawings through an authorized channel if needed.</li>
-            </ol>
-          </div>
-          <div className="staff-application-detail__panel">
-            <h4>Draft workspace</h4>
-             <p className="staff-application-detail__intro">Choose a workflow and edit the wording. Switching workflows replaces unsaved changes. Saving an internal draft records it on this case; it does not schedule, issue, route, email, or post anything.</p>
+        ) : <div className="staff-application-detail__workflow-stack">
+          <div className="staff-application-detail__panel" data-testid={`panel-detail-next-steps-${plan.id}`}>
+            <h4>Next steps</h4>
+            <p className="staff-application-detail__intro">Choose a workflow for this case. Switching workflows replaces unsaved draft changes.</p>
             <div className="staff-application-detail__draft">
               <label htmlFor={`detail-workflow-${plan.id}`}>Workflow type</label>
               <select id={`detail-workflow-${plan.id}`} value={workflow} onChange={event => changeWorkflow(event.target.value as Workflow)} data-testid={`select-detail-workflow-${plan.id}`}>
                 <option value="clarification">Request clarification</option>
                 <option value="internal">Internal review handoff</option>
-                 <option value="hearing">Draft hearing coordination questions (not scheduled)</option>
-                 <option value="permit-decision">Draft permit decision questions</option>
+                <option value="hearing">Draft hearing coordination questions (not scheduled)</option>
+                <option value="permit-decision">Draft permit decision questions</option>
                 <option value="escalation">Prepare department-head escalation</option>
                 <option value="next-steps">Suggested next steps</option>
               </select>
             </div>
+          </div>
+          <div className="staff-application-detail__panel" data-testid={`panel-detail-draft-response-${plan.id}`}>
+            <h4>Draft response</h4>
+            <p className="staff-application-detail__intro">Review and edit the wording before using it. Saving an internal draft records it on this case; it does not schedule, issue, route, email, or post anything.</p>
             <div className="staff-application-detail__draft">
               <label htmlFor={`detail-draft-${plan.id}`}>Editable draft text</label>
               <textarea id={`detail-draft-${plan.id}`} value={draftText} maxLength={3000} onChange={event => { setDraftState({ planId: plan.id, workflow, text: event.target.value }); setCopyState(null); setPostState(null); }} data-testid={`textarea-detail-draft-${plan.id}`} />

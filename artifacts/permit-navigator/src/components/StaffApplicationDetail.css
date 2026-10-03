@@ -85,6 +85,13 @@
   gap: 13px;
   align-items: start;
 }
+.staff-application-detail__workflow-stack {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+}
+.staff-application-detail__workflow-stack > .staff-application-detail__panel + .staff-application-detail__panel { margin-top: 0; }
 .staff-application-detail__panel {
   min-width: 0;
   padding: 19px;
@@ -245,9 +252,6 @@
 .staff-application-detail__controls > p { margin: 0 0 13px; color: hsl(var(--muted-foreground)); font-size: 12px; line-height: 1.5; }
 .staff-application-detail__controls-inner { min-width: 0; }
 .staff-application-detail__controls-inner .staff-panel { margin: 0; border: 0; padding: 0; background: transparent; }
-.staff-application-detail__guidance { margin: 0; padding-left: 19px; font-size: 12px; line-height: 1.65; }
-.staff-application-detail__guidance li { padding-left: 5px; margin-bottom: 9px; }
-.staff-application-detail__guidance li::marker { color: hsl(var(--accent)); font-weight: 700; }
 .staff-application-detail__draft { margin-top: 13px; }
 .staff-application-detail__draft label { display: block; margin: 0 0 6px; font-size: 11px; font-weight: 700; }
 .staff-application-detail__draft select,

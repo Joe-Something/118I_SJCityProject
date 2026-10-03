@@ -5,3 +5,4 @@
 - [Private document integrity](private-document-integrity.md) — accepting an upload does not revoke its signed PUT URL; accepted bytes need immutable storage.
 - [Application outage behavior](application-outage-behavior.md) — outage samples are read-only, not replacement applicant data; preserve confirmed empty queues.
 - [Staff review test fixtures](staff-review-test-fixtures.md) — browser harnesses must provide realistic staff view props or queue filtering can hide the records under test.
+- [Radix submenu names](radix-submenu-names.md) — submenu accessible names inherit from their trigger; use that name in browser locators.

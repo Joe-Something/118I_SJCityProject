@@ -102,7 +102,9 @@ async function openUrgentFlagActions(page: Page, menu: Locator, state: 'needs re
   });
   await flag.focus();
   await page.keyboard.press('ArrowRight');
-  const actions = page.getByRole('menu', { name: `Details and actions for ticket ${ticketId}` });
+  const actions = page.getByRole('menu', {
+    name: `High-urgency flag, ticket ${ticketId}, ${state}`,
+  });
   await expect(actions).toBeVisible();
   return actions;
 }
@@ -208,16 +210,19 @@ for (const desk of ['Fire Prevention', 'Economic Development'] as const) {
     await expect(flagMenu.getByRole('menuitem', { name: `High-urgency flag, ticket ${ticketId}, needs review` })).toBeVisible();
     await expect(page.getByTestId('button-urgent-flags')).toHaveAttribute('aria-label', 'High-urgency workspace flags, 1 active');
     const flagActions = await openUrgentFlagActions(page, flagMenu);
-    await flagActions.getByRole('menuitem', { name: 'Acknowledge flag' }).click();
+    await flagActions.getByRole('menuitem', { name: 'Acknowledge flag' }).focus();
+    await page.keyboard.press('Enter');
     await expect(flagActions.getByRole('alert')).toContainText('Acknowledgement could not be saved');
     await expect(flagActions.getByRole('menuitem', { name: 'Acknowledge flag' })).toBeVisible();
-    await flagActions.getByRole('menuitem', { name: 'Acknowledge flag' }).click();
+    await flagActions.getByRole('menuitem', { name: 'Acknowledge flag' }).focus();
+    await page.keyboard.press('Enter');
     await expect.poll(() => acknowledgementAttempts).toBe(2);
     await expect.poll(() => queueReads).toBeGreaterThanOrEqual(3); // invalidation refetched the GET
     await expect(flagMenu.getByText('No active high-urgency flags. Previously acknowledged items are listed below.')).toBeVisible();
     await expect(flagMenu.getByRole('menuitem', { name: `High-urgency flag, ticket ${ticketId}, acknowledged` })).toBeVisible();
-    await expect(flagActions.getByText('Acknowledged in prototype queue')).toBeVisible();
-    await expect(flagActions.getByRole('menuitem', { name: 'Acknowledge flag' })).toHaveCount(0);
+    const acknowledgedActions = await openUrgentFlagActions(page, flagMenu, 'acknowledged');
+    await expect(acknowledgedActions.getByText('Acknowledged in prototype queue')).toBeVisible();
+    await expect(acknowledgedActions.getByRole('menuitem', { name: 'Acknowledge flag' })).toHaveCount(0);
     await page.reload();
     const reloadedFlagMenu = await openUrgentFlagsMenu(page);
     await expect(reloadedFlagMenu.getByText('No active high-urgency flags. Previously acknowledged items are listed below.')).toBeVisible();
@@ -235,6 +240,18 @@ test('urgent flag dropdown exposes the empty state and closes with Escape', asyn
   await expect(trigger).toHaveAttribute('aria-label', 'High-urgency workspace flags, 0 active');
   const menu = await openUrgentFlagsMenu(page);
   await expect(menu.getByText('No active high-urgency flags.', { exact: true })).toBeVisible();
+  const lightSurface = await menu.evaluate(element => {
+    const style = getComputedStyle(element);
+    return { background: style.backgroundColor, opacity: style.opacity, blur: style.backdropFilter };
+  });
+  expect(lightSurface).toEqual({ background: 'rgb(255, 255, 255)', opacity: '1', blur: 'none' });
+
+  await page.locator('body').evaluate(element => element.classList.add('dark'));
+  const darkSurface = await menu.evaluate(element => {
+    const style = getComputedStyle(element);
+    return { background: style.backgroundColor, opacity: style.opacity, blur: style.backdropFilter };
+  });
+  expect(darkSurface).toEqual({ background: 'rgb(23, 38, 47)', opacity: '1', blur: 'none' });
 
   await page.keyboard.press('Escape');
   await expect(menu).toBeHidden();
@@ -276,8 +293,10 @@ test('urgent queue refreshes when another reviewer acknowledges a ticket', async
     const secondFlagMenu = await openUrgentFlagsMenu(secondReviewer);
     const secondFlagActions = await openUrgentFlagActions(secondReviewer, secondFlagMenu);
     await secondFlagActions.getByRole('menuitem', { name: 'Acknowledge flag' }).click();
-    await expect(secondFlagActions.getByText('Acknowledged in prototype queue')).toBeVisible();
-    await expect(secondFlagActions.getByText('Acknowledged by Jordan Lee (Fire)')).toBeVisible();
+    await expect(secondFlagMenu.getByRole('menuitem', { name: `High-urgency flag, ticket ${ticketId}, acknowledged` })).toBeVisible();
+    const secondAcknowledgedActions = await openUrgentFlagActions(secondReviewer, secondFlagMenu, 'acknowledged');
+    await expect(secondAcknowledgedActions.getByText('Acknowledged in prototype queue')).toBeVisible();
+    await expect(secondAcknowledgedActions.getByText('Acknowledged by Jordan Lee (Fire)')).toBeVisible();
 
     // The first reviewer's cache stays unchanged until its polling interval runs.
     await expect(firstQueue).toBeVisible();
@@ -288,9 +307,11 @@ test('urgent queue refreshes when another reviewer acknowledges a ticket', async
     await expect.poll(() => queueReads).toBeGreaterThan(readsBeforePolling);
 
     await expect(firstFlagMenu.getByText('No active high-urgency flags. Previously acknowledged items are listed below.')).toBeVisible();
-    await expect(firstFlagActions.getByText('Acknowledged in prototype queue')).toBeVisible();
-    await expect(firstFlagActions.getByText('Acknowledged by Jordan Lee (Fire)')).toBeVisible();
-    await expect(firstFlagActions.getByRole('menuitem', { name: 'Acknowledge flag' })).toHaveCount(0);
+    await expect(firstFlagMenu.getByRole('menuitem', { name: `High-urgency flag, ticket ${ticketId}, acknowledged` })).toBeVisible();
+    const firstAcknowledgedActions = await openUrgentFlagActions(firstReviewer, firstFlagMenu, 'acknowledged');
+    await expect(firstAcknowledgedActions.getByText('Acknowledged in prototype queue')).toBeVisible();
+    await expect(firstAcknowledgedActions.getByText('Acknowledged by Jordan Lee (Fire)')).toBeVisible();
+    await expect(firstAcknowledgedActions.getByRole('menuitem', { name: 'Acknowledge flag' })).toHaveCount(0);
   } finally {
     await context.close();
   }
@@ -415,6 +436,17 @@ test('reviewer decisions survive completion, reopening, another session refresh,
     expect(secondQueueReads).toBeGreaterThan(0);
 
     await firstQueue.getByRole('button', { name: 'Review Plan' }).click();
+    const detail = firstQueue.getByTestId(`staff-application-detail-${applicationId}`);
+    const nextStepsPanel = detail.getByTestId(`panel-detail-next-steps-${applicationId}`);
+    const draftResponsePanel = detail.getByTestId(`panel-detail-draft-response-${applicationId}`);
+    await expect(detail.getByRole('heading', { name: 'Next steps', exact: true })).toBeVisible();
+    await expect(detail.getByRole('heading', { name: 'Draft response', exact: true })).toBeVisible();
+    await expect(detail.getByText('Suggested review path', { exact: true })).toHaveCount(0);
+    const nextStepsBox = await nextStepsPanel.boundingBox();
+    const draftResponseBox = await draftResponsePanel.boundingBox();
+    expect(nextStepsBox).not.toBeNull();
+    expect(draftResponseBox).not.toBeNull();
+    expect(draftResponseBox!.y).toBeGreaterThan(nextStepsBox!.y);
     const statusLabel = firstQueue.locator('.staff-status-label');
     const reviewControl = firstQueue.locator('.staff-plan-card-review');
     const desktopStatusBox = await statusLabel.boundingBox();

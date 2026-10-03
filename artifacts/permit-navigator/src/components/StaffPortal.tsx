@@ -327,7 +327,6 @@ export function StaffPortal({
         </DropdownMenuSubTrigger>
         <DropdownMenuSubContent
           className="urgent-flag-details-menu"
-          aria-label={`Details and actions for ticket ${item.ticketId}`}
         >
           <DropdownMenuLabel className="urgent-flag-details-heading">
             High-urgency flag · Ticket {item.ticketId}
