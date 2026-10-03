@@ -3,7 +3,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { ActivePlan, Department } from '../types';
 import { ReviewCatalog } from './ReviewCatalog';
 import { STAFF_REVIEWERS } from '../utils/generators';
-import { AlertCircle, ClipboardCheck, Building2, CheckCircle2, Check, X, Plus, Pencil, Calendar } from 'lucide-react';
+import { AlertCircle, ArrowUpRight, ClipboardCheck, Building2, CheckCircle2, Check, ChevronDown, ExternalLink, LoaderCircle, Mail, X, Plus, Pencil, Calendar } from 'lucide-react';
 import { copy } from '../copy';
 import { RequirementId, BusinessType, Modification } from '../requirements';
 import { deriveDepartments } from '../utils/helpers';
@@ -13,6 +13,17 @@ import { StaffSearchFilters, type StaffApplicationFilters } from './StaffSearchF
 import { getListWorkspaceEscalationsQueryKey, useAcknowledgeWorkspaceEscalation, useListWorkspaceEscalations, type ApplicationRecord } from '@workspace/api-client-react';
 import { StaffApplicationDetail } from './StaffApplicationDetail';
 import { isDemoSeedApplicationId } from '../utils/applicationResilience';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuTrigger,
+} from './ui/dropdown-menu';
 
 function StaffPlanReview({ 
   plan, 
@@ -209,7 +220,7 @@ export function StaffPortal({
   const queryClient = useQueryClient();
   const [staffTab, setStaffTab] = useState<'queue' | 'catalog' | 'public'>('queue');
   const [expandedPlans, setExpandedPlans] = useState<string[]>([]);
-  const [ackError, setAckError] = useState('');
+  const [ackError, setAckError] = useState<{ ticketId: string; message: string } | null>(null);
   const acknowledge = useAcknowledgeWorkspaceEscalation();
   
   const staffRole: StaffRole = selectedDepartment;
@@ -218,6 +229,8 @@ export function StaffPortal({
     queryKey: getListWorkspaceEscalationsQueryKey(),
     refetchInterval: 30_000,
   } });
+  const activeEscalations = (escalations.data ?? []).filter(item => !item.acknowledgedAt);
+  const acknowledgedEscalations = (escalations.data ?? []).filter(item => Boolean(item.acknowledgedAt));
   const [reviewerFilter, setReviewerFilter] = useState<string>('All');
   useEffect(() => { setReviewerFilter('All'); setExpandedPlans([]); setStaffTab('queue'); }, [selectedDepartment, administratorEnabled]);
 
@@ -269,6 +282,92 @@ export function StaffPortal({
     setExpandedPlans(prev => prev.includes(id) ? prev.filter(p => p !== id) : [...prev, id]);
   };
 
+  const acknowledgeFlag = async (ticketId: string) => {
+    setAckError(null);
+    try {
+      await acknowledge.mutateAsync({ id: ticketId });
+      await queryClient.invalidateQueries({ queryKey: getListWorkspaceEscalationsQueryKey() });
+    } catch {
+      setAckError({
+        ticketId,
+        message: 'Acknowledgement could not be saved. Retry after checking your connection.',
+      });
+    }
+  };
+
+  const renderFlag = (item: NonNullable<typeof escalations.data>[number]) => {
+    const isAcknowledged = Boolean(item.acknowledgedAt);
+    const createdLabel = new Date(item.createdAt).toLocaleString();
+    const acknowledgedLabel = item.acknowledgedAt
+      ? new Date(item.acknowledgedAt).toLocaleString()
+      : '';
+    const acknowledgedByLabel = item.acknowledgedBy && item.acknowledgedDepartment
+      ? `Acknowledged by ${item.acknowledgedBy} (${item.acknowledgedDepartment})`
+      : item.acknowledgedAt
+        ? 'Acknowledging staff not recorded (older ticket)'
+        : '';
+    const testDraftHref = item.testRecipient
+      ? `mailto:${encodeURIComponent(item.testRecipient)}?subject=${encodeURIComponent(`TEST ONLY - Permit Navigator urgent ticket ${item.ticketId}`)}&body=${encodeURIComponent(`TEST ONLY - Not City dispatch. A safety concern was flagged in the Permit Navigator workspace. Ticket: ${item.ticketId}. No resident details are included. Email sending and receipt are not tracked here.`)}`
+      : undefined;
+
+    return (
+      <DropdownMenuSub key={item.ticketId}>
+        <DropdownMenuSubTrigger
+          className="urgent-flag-menu-trigger"
+          aria-label={`High-urgency flag, ticket ${item.ticketId}, ${isAcknowledged ? 'acknowledged' : 'needs review'}`}
+        >
+          <AlertCircle size={17} aria-hidden="true" />
+          <span className="urgent-flag-menu-copy">
+            <strong>Potential safety hazard</strong>
+            <small>High urgency · Ticket {item.ticketId} · {createdLabel}</small>
+          </span>
+          <span className={`urgent-flag-menu-status ${isAcknowledged ? 'is-acknowledged' : 'is-active'}`}>
+            {isAcknowledged ? 'Acknowledged' : 'Needs review'}
+          </span>
+        </DropdownMenuSubTrigger>
+        <DropdownMenuSubContent
+          className="urgent-flag-details-menu"
+          aria-label={`Details and actions for ticket ${item.ticketId}`}
+        >
+          <DropdownMenuLabel className="urgent-flag-details-heading">
+            High-urgency flag · Ticket {item.ticketId}
+          </DropdownMenuLabel>
+          <div className="urgent-flag-details-copy">
+            <p>{item.summary}</p>
+            <p><strong>Status:</strong> {item.status}</p>
+            {acknowledgedLabel && <p><strong>Acknowledged:</strong> {acknowledgedLabel}</p>}
+            {acknowledgedByLabel && <p>{acknowledgedByLabel}</p>}
+            <p>{item.departmentInbox}</p>
+            <p>{item.deliveryStatus}</p>
+          </div>
+          {ackError?.ticketId === item.ticketId && <p className="urgent-flag-action-error" role="alert">{ackError.message}</p>}
+          <DropdownMenuSeparator />
+          {!isAcknowledged && <DropdownMenuItem
+            className="urgent-flag-menu-action"
+            disabled={acknowledge.isPending || recordsReadOnly}
+            onSelect={event => {
+              event.preventDefault();
+              void acknowledgeFlag(item.ticketId);
+            }}
+          >
+            {acknowledge.isPending
+              ? <LoaderCircle size={15} className="urgent-flag-spinner" aria-hidden="true" />
+              : <ClipboardCheck size={15} aria-hidden="true" />}
+            {acknowledge.isPending ? 'Saving acknowledgement…' : 'Acknowledge flag'}
+          </DropdownMenuItem>}
+          {testDraftHref && <DropdownMenuItem asChild className="urgent-flag-menu-action">
+            <a href={testDraftHref}>
+              <Mail size={15} aria-hidden="true" />
+              Open test email draft
+              <span className="urgent-flag-action-note">Does not send</span>
+              <ArrowUpRight size={14} aria-hidden="true" />
+            </a>
+          </DropdownMenuItem>}
+        </DropdownMenuSubContent>
+      </DropdownMenuSub>
+    );
+  };
+
   return (
     <main className="plan-shell">
       <div className="staff-banner">
@@ -280,43 +379,73 @@ export function StaffPortal({
       </div>
       {administratorEnabled && <p className="verification-notice" role="status" data-testid="administrator-access-notice">City Staff accounts have administrator access across all departments. The account’s assigned department is {assignedDepartment}; the current queue view is {staffRole === 'Master City Queue' ? 'all departments' : staffRole}.</p>}
       {(administratorEnabled || staffRole === 'Fire' || staffRole === 'Economic Development') && (
-        <section className="verification-notice" aria-label="High-urgency review queue">
-          <AlertCircle size={18} />
-          <div>
-            <strong>High-urgency workspace flags</strong>
-            <p>Items are stored here only. The test address is not City-owned; opening an email draft does not send or confirm delivery. No City inbox, automatic retry, or emergency service is connected.</p>
-            {escalations.isLoading && <p>Loading flagged items…</p>}
-             {escalations.isError && <p role="alert">Review queue unavailable or your account lacks an administrator-assigned Fire or Economic Development staff role. <button className="button-secondary staff-action" onClick={() => void escalations.refetch()}>Retry</button></p>}
-            {ackError && <p role="alert">{ackError}</p>}
-            {escalations.data?.length === 0 && <p>No safety-flagged workspace items.</p>}
-            {escalations.data?.map(item => (
-              <div key={item.ticketId} style={{ marginTop: 12 }}>
-                <strong>High-urgency flag</strong> · Ticket {item.ticketId} · {new Date(item.createdAt).toLocaleString()}
-                <p>{item.status}{item.acknowledgedAt ? ` · ${new Date(item.acknowledgedAt).toLocaleString()}` : ''}
-                  {item.acknowledgedBy && item.acknowledgedDepartment
-                    ? ` · Acknowledged by ${item.acknowledgedBy} (${item.acknowledgedDepartment})`
-                    : item.acknowledgedAt ? ' · Acknowledging staff not recorded (older ticket)' : ''}
-                </p>
-                <p>{item.departmentInbox} · {item.deliveryStatus}</p>
-                {item.testRecipient && <a
-                  href={`mailto:${encodeURIComponent(item.testRecipient)}?subject=${encodeURIComponent(`TEST ONLY - Permit Navigator urgent ticket ${item.ticketId}`)}&body=${encodeURIComponent(`TEST ONLY - Not City dispatch. A safety concern was flagged in the Permit Navigator workspace. Ticket: ${item.ticketId}. No resident details are included. Email sending and receipt are not tracked here.`)}`}
-                >Open test email draft (does not confirm sending)</a>}
-                {!item.acknowledgedAt && <button
-                  className="button-secondary staff-action"
-                  style={{ marginLeft: 12 }}
-                  disabled={acknowledge.isPending || recordsReadOnly}
-                  onClick={async () => {
-                    setAckError('');
-                    try {
-                      await acknowledge.mutateAsync({ id: item.ticketId });
-                      await queryClient.invalidateQueries({ queryKey: getListWorkspaceEscalationsQueryKey() });
-                    } catch {
-                      setAckError('Acknowledgement could not be saved. Retry after checking your connection.');
-                    }
-                  }}
-                 >Acknowledge flag</button>}
+        <section className="verification-notice urgent-flags-section" aria-label="High-urgency review queue">
+          <AlertCircle size={20} className="urgent-flags-section-icon" aria-hidden="true" />
+          <div className="urgent-flags-section-content">
+            <div className="urgent-flags-section-heading">
+              <div>
+                <strong>High-urgency workspace flags</strong>
+                <p>Stored in this workspace only; no City inbox, automatic retry, dispatch, or email delivery is confirmed.</p>
               </div>
-            ))}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    type="button"
+                    className={`urgent-flags-trigger ${activeEscalations.length ? 'has-active-flags' : ''} ${escalations.isError ? 'has-flag-error' : ''}`}
+                    aria-label={`High-urgency workspace flags, ${escalations.isLoading ? 'loading' : escalations.isError ? 'count unavailable' : `${activeEscalations.length} active`}`}
+                    data-testid="button-urgent-flags"
+                  >
+                    <AlertCircle size={17} aria-hidden="true" />
+                    <span>Urgent flags</span>
+                    <span className="urgent-flags-count" aria-live="polite">
+                      {escalations.isLoading ? '…' : escalations.isError ? '!' : activeEscalations.length}
+                    </span>
+                    <ChevronDown size={15} aria-hidden="true" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent
+                  align="end"
+                  sideOffset={8}
+                  className="urgent-flags-menu"
+                  aria-label="High-urgency workspace flags"
+                  data-testid="urgent-flags-menu"
+                >
+                  <DropdownMenuLabel className="urgent-flags-menu-heading">
+                    <span>High-urgency workspace flags</span>
+                    <span>{escalations.isLoading ? 'Loading' : escalations.isError ? 'Unavailable' : `${activeEscalations.length} active`}</span>
+                  </DropdownMenuLabel>
+                  <p className="urgent-flags-menu-note">An acknowledgement records a workspace action only. It does not contact City staff or emergency services.</p>
+                  <DropdownMenuSeparator />
+                  {escalations.isLoading && <p className="urgent-flags-menu-state" role="status">Loading flagged items…</p>}
+                  {escalations.isError && <>
+                    <p className="urgent-flags-menu-state" role="alert">Review queue unavailable or your account lacks an administrator-assigned Fire or Economic Development staff role.</p>
+                    <DropdownMenuItem
+                      className="urgent-flag-menu-action"
+                      onSelect={event => {
+                        event.preventDefault();
+                        void escalations.refetch();
+                      }}
+                    >
+                      Retry review queue <ArrowUpRight size={14} aria-hidden="true" />
+                    </DropdownMenuItem>
+                  </>}
+                  {!escalations.isLoading && !escalations.isError && <>
+                    {activeEscalations.length === 0 && <p className="urgent-flags-menu-state" role="status">
+                      No active high-urgency flags.{acknowledgedEscalations.length ? ' Previously acknowledged items are listed below.' : ''}
+                    </p>}
+                    {activeEscalations.length > 0 && <>
+                      <DropdownMenuLabel className="urgent-flags-list-heading">Needs review ({activeEscalations.length})</DropdownMenuLabel>
+                      {activeEscalations.map(renderFlag)}
+                    </>}
+                    {acknowledgedEscalations.length > 0 && <>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuLabel className="urgent-flags-list-heading">Acknowledged ({acknowledgedEscalations.length})</DropdownMenuLabel>
+                      {acknowledgedEscalations.map(renderFlag)}
+                    </>}
+                  </>}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
           </div>
         </section>
       )}
