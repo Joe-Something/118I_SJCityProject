@@ -1,0 +1,46 @@
+### TASK OVERVIEW
+Implement two key UI/UX and feature enhancements:
+1. Conversation Deletion in AI Chatbot Menu: Enable users to delete individual chat conversations directly from the chatbot history/sidebar menu.
+2. Staff Portal Button Standardizations: Standardize button sizing, layout hierarchy, and styling across the Staff Portal so that action buttons (e.g., "Draft - Requires Review", "Review Plan") maintain uniform width, height, padding, and visual consistency.
+
+---
+
+### FEATURE 1: AI Chatbot Conversation Deletion
+
+#### Requirements:
+- Backend / API:
+  - Create a DELETE endpoint (e.g., `DELETE /api/conversations/:id` or equivalent framework route) to handle conversation deletion.
+  - Implement appropriate authentication and ownership checks to ensure users can only delete their own chat records.
+  - Cascade delete or flag associated messages/logs in the database so orphaned records do not persist.
+
+- Frontend / UI:
+  - Add an inline deletion trigger (e.g., a trash icon button or an overflow dropdown menu with a "Delete" option) next to each conversation item in the chat menu/sidebar.
+  - Display a brief confirmation dialog or modal ("Are you sure you want to delete this conversation? This action cannot be undone.") before executing the deletion.
+  - Upon successful deletion:
+    - Automatically remove the deleted item from the frontend state/sidebar list without requiring a full page refresh.
+    - If the user is currently viewing the deleted conversation, automatically redirect them to the main/default chat view or empty chat state.
+  - Include basic optimistic UI updates or loading/toast notifications for feedback ("Conversation deleted").
+
+---
+
+### FEATURE 2: Staff Portal Button Consistency & Standardization
+
+#### Requirements:
+- Visual & CSS Refactoring:
+  - Audit all primary, secondary, and badge-action buttons inside the Staff Portal components (specifically targeting status buttons like "Draft - Requires Review", "Review Plan", and surrounding action controls).
+  - Apply standard, utility-based layout classes (e.g., Tailwind CSS or shared CSS classes) to ensure all action buttons within the same container or column maintain equal width (`w-full` inside a fixed-width container, or `min-w-[160px] flex-1`), uniform height (`h-10` / `py-2`), consistent padding, and standard font sizing.
+  - Ensure button text handles longer strings gracefully (e.g., using `truncate` or `whitespace-nowrap` with proper flex centering) without collapsing or wrapping awkwardly on smaller viewports.
+  - Align icon sizes, margins, and vertical alignments across all button variations.
+
+- Component Reusability:
+  - Wrap buttons in a shared layout component or apply consistent CSS variant tokens (e.g., standardizing sizes: `sm`, `md`, `lg` across all Staff Portal buttons) so future buttons naturally adhere to uniform dimensions.
+
+---
+
+### IMPLEMENTATION STEPS FOR REPLIT AGENT
+1. Inspect the existing API routes and database schemas for AI chat conversations.
+2. Add the backend delete handler and connect it to the database driver/ORM.
+3. Locate the frontend sidebar/chat menu component and integrate the delete trigger, modal, and state update logic.
+4. Locate the Staff Portal page/component templates and inspect the button layout structures.
+5. Refactor the CSS/styling for the target buttons ("Draft - Requires Review", "Review Plan", etc.) to use standard width and height utilities across all button grids/flex wrappers.
+6. Run build checks and verify visually that all Staff Portal action buttons share uniform dimensions across different screen sizes.
