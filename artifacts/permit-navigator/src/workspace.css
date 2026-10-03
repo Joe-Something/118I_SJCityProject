@@ -149,6 +149,11 @@
 .ws-record-foot { border-top:1px solid #e8e2d6; padding-top:10px; margin-top:11px; color:#8d978d; font-size:9px; }
 .ws-record-foot a { display:flex; align-items:center; gap:3px; text-decoration:none; color:#326e6a; font-weight:700; white-space:nowrap; }
 .ws-record-foot a:hover { text-decoration:underline; }
+.ws-ref-ask { width:100%; display:flex; align-items:center; gap:7px; margin-top:12px; padding:9px 10px; border:1px solid #c7d0c4; background:#f2f3e9; color:#315d56; text-align:left; font:10px 'Space Mono',monospace; cursor:pointer; }
+.ws-ref-ask span { flex:1; }
+.ws-ref-ask:hover:not(:disabled) { background:#e7ede2; border-color:#7e9b8c; }
+.ws-ref-ask:focus-visible { outline:2px solid #608c83; outline-offset:2px; }
+.ws-ref-ask:disabled { opacity:.55; cursor:not-allowed; }
 .ws-record-compact { max-width:420px; margin-top:9px; background:#f6f1e7; }
 .ws-ref-foot { display:flex; gap:8px; margin-top:24px; padding-top:18px; border-top:1px solid var(--ws-line); color:#7b8279; font-size:10px; line-height:1.5; }
 .ws-ref-foot svg { flex:none; }

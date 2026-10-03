@@ -32,6 +32,8 @@ const timeLabel = (value: string) => {
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? '' : date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
 };
+const sampleQuestion = (title: string, topic: string) =>
+  `What does the synthetic sample "${title}" show about ${topic}, and what should I verify with current City sources?`;
 const safeSource = (url: string | null) => {
   if (!url) return null;
   try {
@@ -163,11 +165,15 @@ export function AIWorkspace() {
     const content = text.trim();
     if (content.length < 3 || content.length > 2000 || sendMessage.isPending || createConversation.isPending) return;
     setNotice('');
-    let id = selectedId;
-    if (!id) id = await startConversation(mode);
-    if (!id) return;
     setPendingText(content);
     setDraft('');
+    let id = selectedId;
+    if (!id) id = await startConversation(mode);
+    if (!id) {
+      setPendingText('');
+      setDraft(content);
+      return;
+    }
     try {
       const reply = await sendMessage.mutateAsync({ id, data: { content } });
       setReplies(previous => ({ ...previous, [reply.message.id]: reply }));
@@ -242,13 +248,13 @@ export function AIWorkspace() {
 
             {notice && <div className={`ws-alert ${notice === 'Conversation deleted.' ? 'ws-alert-success' : ''}`} role={notice === 'Conversation deleted.' ? 'status' : 'alert'} data-testid="status-workspace-error">{notice === 'Conversation deleted.' ? <CheckCircle2 size={17}/> : <AlertTriangle size={17}/>}<span>{notice}</span><button onClick={() => setNotice('')} aria-label="Dismiss message" data-testid="button-dismiss-error"><X size={15}/></button></div>}
             {messages.isError && selectedId && <div className="ws-error-state" role="alert"><AlertTriangle size={24}/><h2>We couldn't open this conversation.</h2><p>Your history is still here. Try loading it again.</p><button onClick={() => void messages.refetch()} data-testid="button-retry-messages">Try again <ArrowRight size={15}/></button></div>}
-            {messages.isLoading && selectedId && <div className="ws-message-skeleton"><div/><div/><div/></div>}
-            {!selectedId && <div className="ws-intro"><div className="ws-intro-mark"><CircleHelp size={24} strokeWidth={1.6}/></div><h2>What are you trying to do?</h2><p>Tell us about the business you're opening or the space you're changing. We'll help you identify questions to ask and records worth checking.</p><div className="ws-prompt-list">{prompts.map((prompt, index) => <button key={prompt.label} onClick={() => void submit(prompt.question)} disabled={sendMessage.isPending || createConversation.isPending} data-testid={`button-prompt-${index}`}><span>0{index + 1}</span><strong>{prompt.label}</strong><ArrowRight size={17}/></button>)}</div></div>}
-            {selectedId && !messages.isLoading && !messages.isError && !messages.data?.length && <div className="ws-intro ws-intro-small"><div className="ws-intro-mark"><MessageSquareText size={23}/></div><h2>A new conversation.</h2><p>Start with your business type, your location, and what you plan to change. Avoid sharing sensitive personal information.</p><div className="ws-prompt-list">{prompts.map((prompt, index) => <button key={prompt.label} onClick={() => void submit(prompt.question)} disabled={sendMessage.isPending} data-testid={`button-empty-prompt-${index}`}><span>0{index + 1}</span><strong>{prompt.label}</strong><ArrowRight size={17}/></button>)}</div></div>}
-            {selectedId && !!messages.data?.length && <div className="ws-thread">{messages.data.map(message => {
+            {messages.isLoading && selectedId && !pendingText && <div className="ws-message-skeleton"><div/><div/><div/></div>}
+            {!selectedId && !pendingText && <div className="ws-intro"><div className="ws-intro-mark"><CircleHelp size={24} strokeWidth={1.6}/></div><h2>What are you trying to do?</h2><p>Tell us about the business you're opening or the space you're changing. We'll help you identify questions to ask and records worth checking.</p><div className="ws-prompt-list">{prompts.map((prompt, index) => <button key={prompt.label} onClick={() => void submit(prompt.question)} disabled={sendMessage.isPending || createConversation.isPending} data-testid={`button-prompt-${index}`}><span>0{index + 1}</span><strong>{prompt.label}</strong><ArrowRight size={17}/></button>)}</div></div>}
+            {selectedId && !pendingText && !messages.isLoading && !messages.isError && !messages.data?.length && <div className="ws-intro ws-intro-small"><div className="ws-intro-mark"><MessageSquareText size={23}/></div><h2>A new conversation.</h2><p>Start with your business type, your location, and what you plan to change. Avoid sharing sensitive personal information.</p><div className="ws-prompt-list">{prompts.map((prompt, index) => <button key={prompt.label} onClick={() => void submit(prompt.question)} disabled={sendMessage.isPending} data-testid={`button-empty-prompt-${index}`}><span>0{index + 1}</span><strong>{prompt.label}</strong><ArrowRight size={17}/></button>)}</div></div>}
+            {(!!pendingText || (!!selectedId && !!messages.data?.length)) && <div className="ws-thread" aria-busy={!!pendingText}>{messages.data?.map(message => {
                const reply = replies[message.id];
                 return <div className={`ws-message ws-message-${message.role}`} key={message.id} data-testid={`message-${message.id}`}><div className="ws-avatar">{message.role === 'assistant' ? 'PN' : 'YOU'}</div><div className="ws-message-body"><div className="ws-message-meta"><strong>{message.role === 'assistant' ? 'Permit Navigator' : 'You'}</strong><span>{timeLabel(message.createdAt)}</span></div><div className="ws-message-content">{message.role === 'assistant' ? <AnswerText content={message.content}/> : message.content}</div>{reply && <div className="ws-reply-detail"><div className="ws-reply-security"><ShieldCheck size={14}/> Gateway status: {reply.securityStatus}</div>{reply.synthetic && <SyntheticBadge />}{reply.escalation && <div className="ws-escalation" data-testid={`status-escalation-${message.id}`}><AlertTriangle size={18}/><div><strong>Flagged in workspace review queue — no email confirmed</strong><p>{reply.escalation}</p></div></div>}{reply.sources.length > 0 && <div className="ws-citations"><span>SOURCES REFERENCED · {reply.sources.length}</span>{reply.sources.map(source => <RecordCard key={source.id} record={source} compact />)}</div>}</div>}</div></div>;
-            })}{pendingText && <><div className="ws-message ws-message-user"><div className="ws-avatar">YOU</div><div className="ws-message-body"><div className="ws-message-meta"><strong>You</strong><span>Sending</span></div><div className="ws-message-content">{pendingText}</div></div></div><div className="ws-message ws-message-assistant"><div className="ws-avatar">PN</div><div className="ws-message-body"><div className="ws-message-meta"><strong>Permit Navigator</strong><span>Researching</span></div><div className="ws-answer-skeleton"><i/><i/><i/></div></div></div></>}<div ref={bottomRef}/></div>}
+            })}{pendingText && <><div className="ws-message ws-message-user" data-testid="pending-workspace-question"><div className="ws-avatar">YOU</div><div className="ws-message-body"><div className="ws-message-meta"><strong>You</strong><span>Sending</span></div><div className="ws-message-content">{pendingText}</div></div></div><div className="ws-message ws-message-assistant" data-testid="workspace-response-loading" role="status" aria-live="polite"><div className="ws-avatar">PN</div><div className="ws-message-body"><div className="ws-message-meta"><strong>Permit Navigator</strong><span>Researching</span></div><div className="ws-answer-skeleton"><i/><i/><i/></div></div></div></>}<div ref={bottomRef}/></div>}
               <div className="ws-composer-wrap"><form className="ws-composer" onSubmit={event => { event.preventDefault(); void submit(); }}><label htmlFor="ws-question">ASK THE WORKSPACE</label><textarea id="ws-question" value={draft} onChange={event => setDraft(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void submit(); } }} placeholder="Describe your business or ask about a permit…" maxLength={2000} rows={2} data-testid="input-workspace-question"/><div className="ws-composer-bottom"><span>Don't include sensitive personal information. Enter to send · Shift+Enter for a new line</span><button type="submit" disabled={draft.trim().length < 3 || sendMessage.isPending || createConversation.isPending} data-testid="button-send-workspace-message">{sendMessage.isPending ? 'Working…' : 'Ask question'}<Send size={15}/></button></div></form><p className="ws-composer-disclaimer">This workspace does not connect to a live City staff system.</p></div>
           </main>
 
@@ -260,10 +266,11 @@ export function AIWorkspace() {
                <div className="ws-ref-list">
                  {prototypeDocs.isLoading && <div className="ws-ref-skeleton"><i/><i/><i/></div>}
                   {prototypeDocs.isError && <div className="ws-ref-error"><AlertTriangle size={20}/><strong>Sample documents unavailable</strong><button onClick={() => void prototypeDocs.refetch()} data-testid="button-retry-prototype-sources">Retry</button></div>}
-                  {prototypeDocs.data?.map(doc => <article className="ws-record" key={doc.id} data-state={doc.state} data-testid={`card-prototype-source-${doc.id}`}>
+                   {prototypeDocs.data?.map(doc => <article className="ws-record" key={doc.id} data-state={doc.state} data-testid={`card-prototype-source-${doc.id}`}>
                    <div className="ws-record-top"><span>{doc.topic.toUpperCase()} · SYNTHETIC</span><span>{doc.version}</span></div>
                     <h4>{doc.title}</h4><SyntheticBadge />{doc.state === 'unavailable' ? <p role="status">This fictional example is unavailable and must not be used.</p> : <p>{doc.content}</p>}
                     <div className="ws-record-foot"><span>{doc.state === 'demo' ? `Sample revised ${dateLabel(doc.revisedAt)} · Synthetic example` : doc.state === 'outdated' ? `Outdated example — do not rely on it · Revised ${dateLabel(doc.revisedAt)}` : 'Example unavailable — not for use'}</span></div>
+                    {doc.state === 'demo' && <button type="button" className="ws-ref-ask" onClick={() => void submit(sampleQuestion(doc.title, doc.topic))} disabled={sendMessage.isPending || createConversation.isPending} data-testid={`button-ask-prototype-source-${doc.id}`} aria-label={`Ask about ${doc.title}`}><MessageSquareText size={14}/><span>Ask about this sample</span><ArrowRight size={14}/></button>}
                    <div className="ws-record-foot"><a href={doc.officialReferenceUrl} target="_blank" rel="noopener noreferrer">Open City source page <ExternalLink size={12}/></a></div>
                  </article>)}
                </div>
