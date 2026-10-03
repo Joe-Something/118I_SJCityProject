@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Link } from 'wouter';
-import { AlertTriangle, ArrowRight, BookOpen, ChevronRight, CircleHelp, ExternalLink, FileClock, FileText, Landmark, LockKeyhole, Menu, MessageSquareText, Plus, Search, Send, ShieldCheck, X } from 'lucide-react';
+import { AlertTriangle, ArrowRight, BookOpen, CheckCircle2, ChevronRight, CircleHelp, ExternalLink, FileClock, FileText, Landmark, LoaderCircle, LockKeyhole, Menu, MessageSquareText, Plus, Search, Send, ShieldCheck, Trash2, X } from 'lucide-react';
 import {
   getListWorkspaceConversationsQueryKey,
   getListWorkspaceMessagesQueryKey,
   getListWorkspaceRecordsQueryKey,
   useCreateWorkspaceConversation,
+  useDeleteWorkspaceConversation,
   useListWorkspaceConversations,
   useListWorkspaceMessages,
   useListWorkspaceRecords,
@@ -73,6 +74,7 @@ export function AIWorkspace() {
   const [recordSearch, setRecordSearch] = useState('');
   const [menuOpen, setMenuOpen] = useState(false);
   const [notice, setNotice] = useState('');
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [pendingText, setPendingText] = useState('');
   const [replies, setReplies] = useState<Record<string, WorkspaceReply>>({});
   const [referenceOpen, setReferenceOpen] = useState(false);
@@ -85,6 +87,7 @@ export function AIWorkspace() {
   const conversations = useListWorkspaceConversations();
   const messages = useListWorkspaceMessages(selectedId || '', { query: { enabled: !!selectedId, queryKey: getListWorkspaceMessagesQueryKey(selectedId || '') } });
   const createConversation = useCreateWorkspaceConversation();
+  const deleteConversation = useDeleteWorkspaceConversation();
   const sendMessage = useSendWorkspaceMessage();
 
   useEffect(() => {
@@ -122,6 +125,37 @@ export function AIWorkspace() {
     } catch {
       setNotice('A new conversation could not be started. Check your connection and try again.');
       return null;
+    }
+  };
+
+  const deleteConversationItem = async (id: string) => {
+    if (selectedId === id && (sendMessage.isPending || createConversation.isPending)) {
+      setNotice('Wait for the current question to finish before deleting this conversation.');
+      return;
+    }
+    if (!window.confirm('Are you sure you want to delete this conversation? This action cannot be undone.')) return;
+
+    setNotice('');
+    setDeletingId(id);
+    try {
+      await deleteConversation.mutateAsync({ id });
+      queryClient.setQueryData(getListWorkspaceConversationsQueryKey(), current => (
+        Array.isArray(current)
+          ? current.filter((conversation: { id: string }) => conversation.id !== id)
+          : current
+      ));
+      queryClient.removeQueries({ queryKey: getListWorkspaceMessagesQueryKey(id), exact: true });
+      if (selectedId === id) {
+        setSelectedId(null);
+        setMode('research');
+        setDraft('');
+        setReplies({});
+      }
+      setNotice('Conversation deleted.');
+    } catch {
+      setNotice('This conversation could not be deleted. Please try again.');
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -171,7 +205,24 @@ export function AIWorkspace() {
             {conversations.isLoading && <div className="ws-history-skeleton"><i/><i/><i/></div>}
             {conversations.isError && <div className="ws-side-error">History unavailable. <button onClick={() => void conversations.refetch()} data-testid="button-retry-history">Retry</button></div>}
             {!conversations.isLoading && !conversations.isError && !conversations.data?.length && <p className="ws-side-empty">Your questions will be saved here.</p>}
-            {conversations.data?.map(item => <button key={item.id} className={`ws-history-item ${selectedId === item.id ? 'selected' : ''}`} onClick={() => { setSelectedId(item.id); setMode(item.mode); setMenuOpen(false); setNotice(''); }} data-testid={`button-conversation-${item.id}`}><MessageSquareText size={15}/><span><strong>{item.title || 'Untitled conversation'}</strong><small>{dateLabel(item.updatedAt)} · {item.mode}</small></span></button>)}
+            {conversations.data?.map(item => <div key={item.id} className="ws-history-row">
+              <button className={`ws-history-item ${selectedId === item.id ? 'selected' : ''}`} onClick={() => { setSelectedId(item.id); setMode(item.mode); setMenuOpen(false); setNotice(''); }} data-testid={`button-conversation-${item.id}`}>
+                <MessageSquareText size={15}/><span><strong>{item.title || 'Untitled conversation'}</strong><small>{dateLabel(item.updatedAt)} · {item.mode}</small></span>
+              </button>
+              <button
+                className="ws-delete-conversation"
+                type="button"
+                aria-label={`Delete ${item.title || 'untitled conversation'}`}
+                title="Delete conversation"
+                disabled={deletingId !== null || (selectedId === item.id && (sendMessage.isPending || createConversation.isPending))}
+                onClick={() => void deleteConversationItem(item.id)}
+                data-testid={`button-delete-conversation-${item.id}`}
+              >
+                {deletingId === item.id
+                  ? <LoaderCircle size={15} className="ws-delete-spinner" aria-hidden="true" />
+                  : <Trash2 size={15} aria-hidden="true" />}
+              </button>
+            </div>)}
           </div>
         </div>
          <div className="ws-side-footer"><Link href="/portal" onClick={() => setMenuOpen(false)} data-testid="link-permit-portal"><FileText size={17}/><span>Permit portal</span><ArrowRight size={15}/></Link></div>
@@ -189,7 +240,7 @@ export function AIWorkspace() {
 
               <div className="ws-trust-row"><div><LockKeyhole size={15}/><span>Simulated secure tool gateway</span></div><div><BookOpen size={15}/><span>{mode === 'live' ? 'Fictional, versioned sample documents' : 'Sample research records'}</span></div></div>
 
-            {notice && <div className="ws-alert" role="alert" data-testid="status-workspace-error"><AlertTriangle size={17}/><span>{notice}</span><button onClick={() => setNotice('')} aria-label="Dismiss message" data-testid="button-dismiss-error"><X size={15}/></button></div>}
+            {notice && <div className={`ws-alert ${notice === 'Conversation deleted.' ? 'ws-alert-success' : ''}`} role={notice === 'Conversation deleted.' ? 'status' : 'alert'} data-testid="status-workspace-error">{notice === 'Conversation deleted.' ? <CheckCircle2 size={17}/> : <AlertTriangle size={17}/>}<span>{notice}</span><button onClick={() => setNotice('')} aria-label="Dismiss message" data-testid="button-dismiss-error"><X size={15}/></button></div>}
             {messages.isError && selectedId && <div className="ws-error-state" role="alert"><AlertTriangle size={24}/><h2>We couldn't open this conversation.</h2><p>Your history is still here. Try loading it again.</p><button onClick={() => void messages.refetch()} data-testid="button-retry-messages">Try again <ArrowRight size={15}/></button></div>}
             {messages.isLoading && selectedId && <div className="ws-message-skeleton"><div/><div/><div/></div>}
             {!selectedId && <div className="ws-intro"><div className="ws-intro-mark"><CircleHelp size={24} strokeWidth={1.6}/></div><h2>What are you trying to do?</h2><p>Tell us about the business you're opening or the space you're changing. We'll help you identify questions to ask and records worth checking.</p><div className="ws-prompt-list">{prompts.map((prompt, index) => <button key={prompt.label} onClick={() => void submit(prompt.question)} disabled={sendMessage.isPending || createConversation.isPending} data-testid={`button-prompt-${index}`}><span>0{index + 1}</span><strong>{prompt.label}</strong><ArrowRight size={17}/></button>)}</div></div>}

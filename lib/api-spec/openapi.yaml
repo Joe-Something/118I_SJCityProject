@@ -124,6 +124,17 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/WorkspaceConversation" }
+  /workspace/conversations/{id}:
+    delete:
+      operationId: deleteWorkspaceConversation
+      tags: [workspace]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "204":
+          description: Conversation and its messages were permanently deleted
+        "404":
+          description: Conversation not found
   /workspace/conversations/{id}/messages:
     parameters:
       - { in: path, name: id, required: true, schema: { type: string, format: uuid } }

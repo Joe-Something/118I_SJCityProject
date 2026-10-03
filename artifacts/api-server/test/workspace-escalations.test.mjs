@@ -813,3 +813,53 @@ test("hazardous resident message creates a ticket but never claims delivery or s
     "internal acknowledgement does not silently alter the resident-facing warning");
   assert.equal((await request("GET", `/workspace/conversations/${conversationId}/messages`, "fire")).status, 404);
 });
+
+test("conversation deletion is authenticated, owner-scoped, and removes linked messages and acknowledgements", async () => {
+  const ownedConversationId = randomUUID();
+  const foreignConversationId = randomUUID();
+  const acknowledgedMessageId = randomUUID();
+  const acknowledgedAt = new Date();
+
+  await db.insert(workspaceConversationsTable).values([
+    { id: ownedConversationId, ownerId: "delete-owner", mode: "research", title: "Delete this conversation" },
+    { id: foreignConversationId, ownerId: "different-owner", mode: "research", title: "Keep this conversation" },
+  ]);
+  await db.insert(workspaceMessagesTable).values({
+    id: acknowledgedMessageId,
+    conversationId: ownedConversationId,
+    role: "assistant",
+    content: "An acknowledged workspace flag",
+    status: "high-urgency-acknowledged",
+  });
+  await db.insert(workspaceAcknowledgementsTable).values({
+    ticketId: acknowledgedMessageId,
+    staffUserId: "test-staff",
+    staffDepartment: "Fire",
+    acknowledgedAt,
+  });
+
+  try {
+    assert.equal((await request("DELETE", `/workspace/conversations/${ownedConversationId}`)).status, 401);
+    assert.equal((await request("DELETE", `/workspace/conversations/${foreignConversationId}`, "delete-owner")).status, 404);
+    assert.equal((await db.select().from(workspaceConversationsTable)
+      .where(eq(workspaceConversationsTable.id, foreignConversationId))).length, 1);
+
+    const deleted = await request("DELETE", `/workspace/conversations/${ownedConversationId}`, "delete-owner");
+    assert.equal(deleted.status, 204);
+    assert.equal((await request("GET", `/workspace/conversations/${ownedConversationId}/messages`, "delete-owner")).status, 404);
+    assert.equal((await db.select().from(workspaceConversationsTable)
+      .where(eq(workspaceConversationsTable.id, ownedConversationId))).length, 0);
+    assert.equal((await db.select().from(workspaceMessagesTable)
+      .where(eq(workspaceMessagesTable.id, acknowledgedMessageId))).length, 0);
+    assert.equal((await db.select().from(workspaceAcknowledgementsTable)
+      .where(eq(workspaceAcknowledgementsTable.ticketId, acknowledgedMessageId))).length, 0);
+    assert.equal((await request("DELETE", `/workspace/conversations/${ownedConversationId}`, "delete-owner")).status, 404);
+  } finally {
+    await db.delete(workspaceAcknowledgementsTable)
+      .where(eq(workspaceAcknowledgementsTable.ticketId, acknowledgedMessageId));
+    await db.delete(workspaceMessagesTable)
+      .where(eq(workspaceMessagesTable.conversationId, ownedConversationId));
+    await db.delete(workspaceConversationsTable)
+      .where(inArray(workspaceConversationsTable.id, [ownedConversationId, foreignConversationId]));
+  }
+});

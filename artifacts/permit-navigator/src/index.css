@@ -265,7 +265,48 @@ button:disabled { cursor: not-allowed; opacity: .58; }
 .staff-panel-header { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; margin-bottom: 17px; }
 .staff-panel h2 { font-family: var(--app-font-serif); font-size: 24px; margin: 0 0 4px; }
 .staff-panel p { margin: 0; color: hsl(var(--muted-foreground)); font-size: 12px; }
-.staff-tools { display: flex; flex-wrap: wrap; gap: 8px; }
+ .staff-tools { display: flex; flex-wrap: wrap; gap: 8px; width: min(100%, 320px); }
+ .staff-action {
+   box-sizing: border-box;
+   min-height: 44px;
+   padding: 9px 14px;
+   margin-top: 0;
+   font-size: 13px;
+   line-height: 1.25;
+   text-align: center;
+   white-space: normal;
+ }
+ .staff-action svg { flex: 0 0 auto; }
+ .staff-action-group { display: flex; align-items: stretch; flex-wrap: wrap; gap: 8px; }
+ .staff-action-group > .staff-action { flex: 1 1 150px; min-width: min(100%, 150px); }
+ .staff-tools > .staff-action { flex: 1 1 100%; min-width: 0; }
+ .staff-tab-group { flex: 1 1 100%; align-items: stretch; }
+ .staff-tab {
+   display: inline-flex;
+   flex: 1 1 180px;
+   align-items: center;
+   justify-content: center;
+   min-width: 0;
+   min-height: 44px;
+   padding: 9px 14px;
+   line-height: 1.25;
+   text-align: center;
+   white-space: normal;
+ }
+ .staff-plan-card-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex: 0 0 auto; min-width: 0; }
+ .staff-plan-card-actions .staff-status-label,
+ .staff-plan-card-actions .staff-plan-card-review {
+   box-sizing: border-box;
+   width: 160px;
+   height: 48px;
+   min-height: 48px;
+   padding: 8px 12px;
+   line-height: 1.25;
+   text-align: center;
+   white-space: normal;
+   justify-content: center;
+ }
+ .staff-plan-card-actions .staff-plan-card-review { flex: 0 0 160px; }
 .staff-edit { background: hsl(var(--card)); border: 1px solid hsl(var(--border)); padding: 13px; border-radius: 9px; margin-top: 10px; }
 .staff-edit .input-row { grid-template-columns: 1fr 1fr; }
 .staff-edit label { display: block; font-size: 11px; font-weight: 700; margin-bottom: 5px; }
@@ -375,12 +416,18 @@ button:disabled { cursor: not-allowed; opacity: .58; }
   .active-plan-header > div:last-child {
     width: 100%;
     max-width: none;
-    flex-direction: row;
-    flex-wrap: wrap;
-    align-items: center !important;
-    justify-content: space-between;
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: stretch !important;
     gap: 8px !important;
   }
+  .staff-plan-card-actions .staff-status-label,
+  .staff-plan-card-actions .staff-plan-card-review {
+    width: 100%;
+    min-width: 0;
+  }
+  .staff-plan-card-actions .staff-plan-card-review { flex: 1 1 auto; }
+  .staff-tools { width: 100%; max-width: none; }
   .active-plan-header .status-badge {
     white-space: normal;
     text-align: center;

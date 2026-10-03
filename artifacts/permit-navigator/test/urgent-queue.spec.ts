@@ -367,6 +367,25 @@ test('reviewer decisions survive completion, reopening, another session refresh,
     expect(secondQueueReads).toBeGreaterThan(0);
 
     await firstQueue.getByRole('button', { name: 'Review Plan' }).click();
+    const statusLabel = firstQueue.locator('.staff-status-label');
+    const reviewControl = firstQueue.locator('.staff-plan-card-review');
+    const desktopStatusBox = await statusLabel.boundingBox();
+    const desktopReviewBox = await reviewControl.boundingBox();
+    expect(desktopStatusBox).not.toBeNull();
+    expect(desktopReviewBox).not.toBeNull();
+    expect(desktopStatusBox!.width).toBeCloseTo(160, 0);
+    expect(desktopReviewBox!.width).toBeCloseTo(desktopStatusBox!.width, 0);
+    expect(desktopReviewBox!.height).toBeCloseTo(desktopStatusBox!.height, 0);
+
+    await firstReviewer.setViewportSize({ width: 402, height: 874 });
+    const mobileStatusBox = await statusLabel.boundingBox();
+    const mobileReviewBox = await reviewControl.boundingBox();
+    expect(mobileStatusBox).not.toBeNull();
+    expect(mobileReviewBox).not.toBeNull();
+    expect(mobileStatusBox!.width).toBeCloseTo(mobileReviewBox!.width, 0);
+    expect(mobileStatusBox!.height).toBeCloseTo(mobileReviewBox!.height, 0);
+    await firstReviewer.setViewportSize({ width: 1280, height: 720 });
+
     await firstQueue.getByTestId(`button-note-${applicationId}-building-permits`).click();
     await firstQueue.getByTestId(`input-note-${applicationId}-building-permits`).fill('Confirm the accessible entrance clearance.');
     await firstQueue.getByTestId(`button-save-note-${applicationId}-building-permits`).click();

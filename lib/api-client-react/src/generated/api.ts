@@ -670,6 +670,74 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       return useMutation(getCreateWorkspaceConversationMutationOptions(options));
     }
 
+export const getDeleteWorkspaceConversationUrl = (id: string,) => {
+
+
+
+
+  return `/api/workspace/conversations/${id}`
+}
+
+export const deleteWorkspaceConversation = async (id: string, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+
+  return customFetch<void>(getDeleteWorkspaceConversationUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getDeleteWorkspaceConversationMutationKey = () => ['deleteWorkspaceConversation'] as const;
+
+export const getDeleteWorkspaceConversationMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteWorkspaceConversation>>, TError,DeleteWorkspaceConversationMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteWorkspaceConversation>>, TError,DeleteWorkspaceConversationMutationVariables, TContext> => {
+
+const mutationKey = getDeleteWorkspaceConversationMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteWorkspaceConversation>>, DeleteWorkspaceConversationMutationVariables> = (props) => {
+          const {id} = props ?? {};
+
+          return  deleteWorkspaceConversation(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteWorkspaceConversationMutationResult = NonNullable<Awaited<ReturnType<typeof deleteWorkspaceConversation>>>
+
+    export type DeleteWorkspaceConversationMutationError = ErrorType<void>
+    export type DeleteWorkspaceConversationMutationVariables = {id: string}
+
+    export const useDeleteWorkspaceConversation = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteWorkspaceConversation>>, TError,DeleteWorkspaceConversationMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteWorkspaceConversation>>,
+        TError,
+        DeleteWorkspaceConversationMutationVariables,
+        TContext
+      > => {
+      return useMutation(getDeleteWorkspaceConversationMutationOptions(options));
+    }
+
 export const getListWorkspaceMessagesUrl = (id: string,) => {
 
 

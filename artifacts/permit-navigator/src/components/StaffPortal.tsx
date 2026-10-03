@@ -79,9 +79,9 @@ function StaffPlanReview({
                <h2>Staff recommendation review</h2>
               <p>Confirm, adjust, or explain each suggested starting point before the plan is marked as reviewed.</p>
             </div>
-            <div className="staff-tools">
+             <div className="staff-tools staff-action-group">
                <button 
-                  className="button-primary" 
+                   className="button-primary staff-action"
                   onClick={handleComplete} 
                   disabled={hasUnsavedEdit || saving}
                   data-testid={`button-complete-review-${plan.id}`}
@@ -101,17 +101,17 @@ function StaffPlanReview({
               <div className="staff-edit" key={reqId} style={{ opacity: isRejected ? 0.6 : 1 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center' }}>
                   <strong style={{ fontSize: 13, textDecoration: isRejected ? 'line-through' : 'none' }}>{reqCopyEn.name}</strong>
-                  <div style={{ display: 'flex', gap: 6 }}>
+                   <div className="staff-action-group" style={{ display: 'flex', gap: 6 }}>
                      {isRejected ? (
-                        <button className="button-secondary" disabled={saving} onClick={() => void toggleReject(reqId)} data-testid={`button-reapprove-${plan.id}-${reqId}`}><Check size={13} /> Restore topic</button>
+                         <button className="button-secondary staff-action" disabled={saving} onClick={() => void toggleReject(reqId)} data-testid={`button-reapprove-${plan.id}-${reqId}`}><Check size={13} /> Restore topic</button>
                     ) : (
                       <>
-                          <button className="button-secondary" disabled={saving} onClick={() => void updateNotes(reqId, plan.notes[reqId] ?? 'Reviewed and retained for staff follow-up.')} data-testid={`button-approve-${plan.id}-${reqId}`}><Check size={13} /> Keep topic</button>
-                          <button className="button-danger" disabled={saving} onClick={() => void toggleReject(reqId)} data-testid={`button-reject-${plan.id}-${reqId}`}><X size={13} /> Remove topic</button>
+                          <button className="button-secondary staff-action" disabled={saving} onClick={() => void updateNotes(reqId, plan.notes[reqId] ?? 'Reviewed and retained for staff follow-up.')} data-testid={`button-approve-${plan.id}-${reqId}`}><Check size={13} /> Keep topic</button>
+                          <button className="button-danger staff-action" disabled={saving} onClick={() => void toggleReject(reqId)} data-testid={`button-reject-${plan.id}-${reqId}`}><X size={13} /> Remove topic</button>
                       </>
                     )}
-                    <button className="button-tertiary" onClick={() => { setNoteFor(noteFor === reqId ? null : reqId); setNoteText(plan.notes[reqId] ?? ''); }} data-testid={`button-note-${plan.id}-${reqId}`}><Plus size={13} /> Note</button>
-                    <button className="button-tertiary" onClick={() => { setOverrideFor(overrideFor === reqId ? null : reqId); setOverrideText(plan.overrides[reqId] ?? defaultDesc); }} data-testid={`button-override-${plan.id}-${reqId}`}><Pencil size={13} /> Edit</button>
+                    <button className="button-tertiary staff-action" onClick={() => { setNoteFor(noteFor === reqId ? null : reqId); setNoteText(plan.notes[reqId] ?? ''); }} data-testid={`button-note-${plan.id}-${reqId}`}><Plus size={13} /> Note</button>
+                    <button className="button-tertiary staff-action" onClick={() => { setOverrideFor(overrideFor === reqId ? null : reqId); setOverrideText(plan.overrides[reqId] ?? defaultDesc); }} data-testid={`button-override-${plan.id}-${reqId}`}><Pencil size={13} /> Edit</button>
                   </div>
                 </div>
                 
@@ -125,9 +125,9 @@ function StaffPlanReview({
                       <option value="Reviewed as part of this application. Record any remaining questions for follow-up.">Document review</option>
                     </select>
                     <label htmlFor={`note-${plan.id}-${reqId}`}>Applicant-facing note</label>
-                    <div className="staff-edit-actions" style={{ justifyContent: 'stretch' }}>
+                    <div className="staff-edit-actions staff-action-group" style={{ justifyContent: 'stretch' }}>
                       <textarea id={`note-${plan.id}-${reqId}`} style={{ flex: 1, minHeight: 74 }} value={noteText} placeholder="Edit the note before saving it to this plan" onChange={(event) => setNoteText(event.target.value)} data-testid={`input-note-${plan.id}-${reqId}`} />
-                       <button className="button-primary" style={{ width: 'auto', marginTop: 0 }} disabled={!noteText.trim() || saving} onClick={async () => { if (await updateNotes(reqId, noteText.trim())) setNoteFor(null); }} data-testid={`button-save-note-${plan.id}-${reqId}`}>{saving ? 'Saving…' : 'Save note to plan'}</button>
+                        <button className="button-primary staff-action" style={{ width: 'auto', marginTop: 0 }} disabled={!noteText.trim() || saving} onClick={async () => { if (await updateNotes(reqId, noteText.trim())) setNoteFor(null); }} data-testid={`button-save-note-${plan.id}-${reqId}`}>{saving ? 'Saving…' : 'Save note to plan'}</button>
                     </div>
                   </div>
                 )}
@@ -141,9 +141,9 @@ function StaffPlanReview({
                   <div style={{ marginTop: '12px' }}>
                     <label style={{ fontSize: '12px', fontWeight: 'bold' }}>Override Recommendation Text</label>
                     <textarea value={overrideText} onChange={e => setOverrideText(e.target.value)} style={{ width: '100%', minHeight: '60px', padding: '8px', marginTop: '4px' }} data-testid={`textarea-override-${plan.id}-${reqId}`} />
-                    <div className="staff-edit-actions">
-                       <button className="button-primary" disabled={!overrideText.trim() || saving} style={{ width: 'auto', marginTop: 0 }} onClick={async () => { if (await updateOverrides(reqId, overrideText)) setOverrideFor(null); }} data-testid={`button-save-override-${plan.id}-${reqId}`}>{saving ? 'Saving…' : 'Save Override'}</button>
-                       {plan.overrides[reqId] && <button className="button-secondary" disabled={saving} style={{ width: 'auto', marginTop: 0 }} onClick={async () => { if (await clearOverride(reqId)) { setOverrideFor(null); setOverrideText(defaultDesc); } }} data-testid={`button-clear-override-${plan.id}-${reqId}`}>{saving ? 'Clearing…' : 'Clear Override'}</button>}
+                    <div className="staff-edit-actions staff-action-group">
+                        <button className="button-primary staff-action" disabled={!overrideText.trim() || saving} style={{ width: 'auto', marginTop: 0 }} onClick={async () => { if (await updateOverrides(reqId, overrideText)) setOverrideFor(null); }} data-testid={`button-save-override-${plan.id}-${reqId}`}>{saving ? 'Saving…' : 'Save Override'}</button>
+                        {plan.overrides[reqId] && <button className="button-secondary staff-action" disabled={saving} style={{ width: 'auto', marginTop: 0 }} onClick={async () => { if (await clearOverride(reqId)) { setOverrideFor(null); setOverrideText(defaultDesc); } }} data-testid={`button-clear-override-${plan.id}-${reqId}`}>{saving ? 'Clearing…' : 'Clear Override'}</button>}
                     </div>
                   </div>
                 )}
@@ -286,7 +286,7 @@ export function StaffPortal({
             <strong>High-urgency workspace flags</strong>
             <p>Items are stored here only. The test address is not City-owned; opening an email draft does not send or confirm delivery. No City inbox, automatic retry, or emergency service is connected.</p>
             {escalations.isLoading && <p>Loading flagged items…</p>}
-            {escalations.isError && <p role="alert">Review queue unavailable or your account lacks an administrator-assigned Fire or Economic Development staff role. <button onClick={() => void escalations.refetch()}>Retry</button></p>}
+             {escalations.isError && <p role="alert">Review queue unavailable or your account lacks an administrator-assigned Fire or Economic Development staff role. <button className="button-secondary staff-action" onClick={() => void escalations.refetch()}>Retry</button></p>}
             {ackError && <p role="alert">{ackError}</p>}
             {escalations.data?.length === 0 && <p>No safety-flagged workspace items.</p>}
             {escalations.data?.map(item => (
@@ -302,7 +302,7 @@ export function StaffPortal({
                   href={`mailto:${encodeURIComponent(item.testRecipient)}?subject=${encodeURIComponent(`TEST ONLY - Permit Navigator urgent ticket ${item.ticketId}`)}&body=${encodeURIComponent(`TEST ONLY - Not City dispatch. A safety concern was flagged in the Permit Navigator workspace. Ticket: ${item.ticketId}. No resident details are included. Email sending and receipt are not tracked here.`)}`}
                 >Open test email draft (does not confirm sending)</a>}
                 {!item.acknowledgedAt && <button
-                  className="button-secondary"
+                  className="button-secondary staff-action"
                   style={{ marginLeft: 12 }}
                   disabled={acknowledge.isPending || recordsReadOnly}
                   onClick={async () => {
@@ -334,27 +334,27 @@ export function StaffPortal({
           ? `Last confirmed live at ${new Date(recordsLastConfirmedAt).toLocaleString()}.`
           : 'No live database response has been confirmed for these sample records.'}
       </p>}
-      {(recordsError || recordsRefreshWarning) && <button className="button-secondary" type="button" onClick={() => void onRefreshRecords().catch(() => undefined)} data-testid="button-refresh-staff-cases">Refresh cases</button>}
-      {recordsReadOnly && !recordsError && !recordsRefreshWarning && <button className="button-secondary" type="button" onClick={() => void onRefreshRecords().catch(() => undefined)} data-testid="button-refresh-staff-cases">Refresh cases</button>}
+      {(recordsError || recordsRefreshWarning) && <button className="button-secondary staff-action" type="button" onClick={() => void onRefreshRecords().catch(() => undefined)} data-testid="button-refresh-staff-cases">Refresh cases</button>}
+      {recordsReadOnly && !recordsError && !recordsRefreshWarning && <button className="button-secondary staff-action" type="button" onClick={() => void onRefreshRecords().catch(() => undefined)} data-testid="button-refresh-staff-cases">Refresh cases</button>}
 
       <div className="staff-tabs" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12, paddingBottom: 12, marginBottom: 24, borderBottom: '1px solid hsl(var(--border))' }}>
-        <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+        <div className="staff-tab-group" style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
           <button 
-            className={`tab-button ${staffTab === 'queue' ? 'active' : ''}`} 
+            className={`tab-button staff-tab ${staffTab === 'queue' ? 'active' : ''}`}
             onClick={() => setStaffTab('queue')}
             data-testid="tab-staff-queue"
           >
             Active Review Queue ({filteredQueue.length})
           </button>
           <button 
-            className={`tab-button ${staffTab === 'catalog' ? 'active' : ''}`} 
+            className={`tab-button staff-tab ${staffTab === 'catalog' ? 'active' : ''}`}
             onClick={() => setStaffTab('catalog')}
             data-testid="tab-staff-catalog"
           >
             Review Catalog & History
           </button>
           <button
-            className={`tab-button ${staffTab === 'public' ? 'active' : ''}`}
+            className={`tab-button staff-tab ${staffTab === 'public' ? 'active' : ''}`}
             onClick={() => setStaffTab('public')}
             data-testid="tab-staff-public"
           >
@@ -474,11 +474,11 @@ export function StaffPortal({
                       })}
                     </div>
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                    <div className={`status-badge ${plan.status === 'In Review (Re-opened)' ? 'reviewed' : 'sent'}`}>
+                  <div className="staff-plan-card-actions">
+                    <div className={`status-badge staff-status-label ${plan.status === 'In Review (Re-opened)' ? 'reviewed' : 'sent'}`}>
                       {plan.status}
                     </div>
-                    <span className="button-tertiary" style={{ padding: '6px 12px' }}>
+                    <span className="button-tertiary staff-action staff-plan-card-review">
                       {expandedPlans.includes(plan.id) ? 'Collapse' : 'Review Plan'}
                     </span>
                   </div>

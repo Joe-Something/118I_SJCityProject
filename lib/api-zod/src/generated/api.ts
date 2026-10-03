@@ -125,6 +125,13 @@ export const CreateWorkspaceConversationResponse = zod.object({
 })
 
 
+export const DeleteWorkspaceConversationParams = zod.object({
+  "id": zod.coerce.string().uuid()
+})
+
+export const DeleteWorkspaceConversationResponse = zod.void()
+
+
 export const ListWorkspaceMessagesParams = zod.object({
   "id": zod.coerce.string().uuid()
 })

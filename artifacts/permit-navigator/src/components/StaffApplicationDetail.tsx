@@ -317,10 +317,10 @@ export function StaffApplicationDetail({
             </div>
             <div className="staff-application-detail__draft-footer">
               <span data-testid={`status-detail-draft-${plan.id}`}>Editable draft · not emailed or sent outside the app</span>
-              <button type="button" className="staff-application-detail__copy" onClick={() => void copyDraft()} disabled={!draftText.trim()} data-testid={`button-copy-detail-draft-${plan.id}`}><Clipboard size={14} aria-hidden="true" /> Copy draft</button>
+              <button type="button" className="staff-application-detail__copy staff-action" onClick={() => void copyDraft()} disabled={!draftText.trim()} data-testid={`button-copy-detail-draft-${plan.id}`}><Clipboard size={14} aria-hidden="true" /> Copy draft</button>
             </div>
              {onSaveWorkflow && <div className="staff-application-detail__post">
-               <button type="button" className="staff-application-detail__copy" disabled={!draftText.trim() || workflowState.busy} onClick={async () => {
+                <button type="button" className="staff-application-detail__copy staff-action" disabled={!draftText.trim() || workflowState.busy} onClick={async () => {
                  setWorkflowState({ busy: true, message: '' });
                  try {
                    const saved = await onSaveWorkflow(workflow, draftText.trim());
@@ -333,7 +333,7 @@ export function StaffApplicationDetail({
             {(workflow === 'clarification' || workflow === 'next-steps') && (
               <div className="staff-application-detail__post">
                 <p>Post this edited response inside the applicant’s saved plan. This does not send an email or alert the applicant outside the app.</p>
-                <button type="button" className="staff-application-detail__copy" disabled={!draftText.trim() || posting} onClick={() => void postResponse()} data-testid={`button-post-detail-response-${plan.id}`}>
+                <button type="button" className="staff-application-detail__copy staff-action" disabled={!draftText.trim() || posting} onClick={() => void postResponse()} data-testid={`button-post-detail-response-${plan.id}`}>
                   {posting ? 'Saving response…' : 'Post to applicant plan'}
                 </button>
               </div>

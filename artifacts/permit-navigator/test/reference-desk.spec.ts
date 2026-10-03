@@ -151,3 +151,63 @@ test('prototype source loading, retry, stale, and unavailable states remain expl
   );
   expect(sourceReads).toBe(2);
 });
+
+test('users can cancel conversation deletion or delete the open conversation', async ({ page }) => {
+  const conversationId = '12345678-1234-4234-8234-123456789abc';
+  const conversation = {
+    id: conversationId,
+    title: 'Planning a storefront',
+    mode: 'research',
+    createdAt: checkedAt,
+    updatedAt: checkedAt,
+  };
+  let deleted = false;
+  let deleteRequests = 0;
+
+  await page.route('**/api/**', async route => {
+    const { pathname } = new URL(route.request().url());
+    const method = route.request().method();
+    if (pathname === '/api/workspace/conversations' && method === 'GET') {
+      return route.fulfill({ json: deleted ? [] : [conversation] });
+    }
+    if (pathname === `/api/workspace/conversations/${conversationId}/messages` && method === 'GET') {
+      return route.fulfill({ json: [] });
+    }
+    if (pathname === `/api/workspace/conversations/${conversationId}` && method === 'DELETE') {
+      deleteRequests++;
+      deleted = true;
+      return route.fulfill({ status: 204 });
+    }
+    if (pathname === '/api/workspace/records' && method === 'GET') {
+      return route.fulfill({ json: [] });
+    }
+    if (pathname === '/api/workspace/prototype-sources' && method === 'GET') {
+      return route.fulfill({ json: [] });
+    }
+    throw new Error(`Unexpected request: ${method} ${pathname}`);
+  });
+
+  await page.goto('/test/harness.html');
+  await expect(page.getByText('A new conversation.')).toBeVisible();
+  const deleteButton = page.getByTestId(`button-delete-conversation-${conversationId}`);
+  const confirmationText = 'Are you sure you want to delete this conversation? This action cannot be undone.';
+
+  page.once('dialog', async dialog => {
+    expect(dialog.message()).toBe(confirmationText);
+    await dialog.dismiss();
+  });
+  await deleteButton.click();
+  await expect(deleteButton).toBeVisible();
+  expect(deleteRequests).toBe(0);
+
+  page.once('dialog', async dialog => {
+    expect(dialog.message()).toBe(confirmationText);
+    await dialog.accept();
+  });
+  await deleteButton.click();
+
+  await expect(page.getByTestId(`button-delete-conversation-${conversationId}`)).toHaveCount(0);
+  await expect(page.getByText('What are you trying to do?')).toBeVisible();
+  await expect(page.getByTestId('status-workspace-error')).toContainText('Conversation deleted.');
+  expect(deleteRequests).toBe(1);
+});

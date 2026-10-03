@@ -8,6 +8,7 @@ import {
   ListWorkspaceRecordsQueryParams, ListWorkspaceRecordsResponse,
   ListWorkspaceConversationsResponse, CreateWorkspaceConversationBody,
   CreateWorkspaceConversationResponse, ListWorkspaceMessagesParams,
+  DeleteWorkspaceConversationParams,
   ListWorkspaceMessagesResponse, SendWorkspaceMessageParams,
   SendWorkspaceMessageBody, SendWorkspaceMessageResponse,
   ListWorkspaceEscalationsResponse, AcknowledgeWorkspaceEscalationParams,
@@ -190,6 +191,45 @@ router.post("/workspace/conversations", async (req, res): Promise<void> => {
   res.status(201).json(CreateWorkspaceConversationResponse.parse(row));
 });
 
+router.delete("/workspace/conversations/:id", async (req, res): Promise<void> => {
+  const userId = signedInUser(req, res);
+  if (!userId) return;
+  const params = DeleteWorkspaceConversationParams.safeParse(req.params);
+  if (!params.success) { res.status(400).json({ error: "Invalid conversation." }); return; }
+
+  const deleted = await db.transaction(async tx => {
+    const [conversation] = await tx.select({ id: workspaceConversationsTable.id })
+      .from(workspaceConversationsTable)
+      .where(and(
+        eq(workspaceConversationsTable.id, params.data.id),
+        eq(workspaceConversationsTable.ownerId, userId),
+      ))
+      .for("update");
+    if (!conversation) return false;
+
+    const messages = await tx.select({ id: workspaceMessagesTable.id })
+      .from(workspaceMessagesTable)
+      .where(eq(workspaceMessagesTable.conversationId, conversation.id));
+    const messageIds = messages.map(message => message.id);
+    if (messageIds.length) {
+      await tx.delete(workspaceAcknowledgementsTable)
+        .where(inArray(workspaceAcknowledgementsTable.ticketId, messageIds));
+      await tx.delete(workspaceMessagesTable)
+        .where(eq(workspaceMessagesTable.conversationId, conversation.id));
+    }
+    const [removed] = await tx.delete(workspaceConversationsTable)
+      .where(and(
+        eq(workspaceConversationsTable.id, conversation.id),
+        eq(workspaceConversationsTable.ownerId, userId),
+      ))
+      .returning({ id: workspaceConversationsTable.id });
+    return Boolean(removed);
+  });
+
+  if (!deleted) { res.status(404).json({ error: "Conversation not found." }); return; }
+  res.sendStatus(204);
+});
+
 router.get("/workspace/conversations/:id/messages", async (req, res): Promise<void> => {
   const userId = signedInUser(req, res);
   if (!userId) return;
@@ -269,7 +309,16 @@ router.post("/workspace/conversations/:id/messages", async (req, res): Promise<v
     answer += "\n\nSample data — Synthetic. These example records are not City permit determinations.";
   }
   if (escalation) answer = `${escalation}\n\n${answer}`;
-  const [userMessage, assistantMessage] = await db.transaction(async tx => {
+  const saved = await db.transaction(async tx => {
+    const [currentConversation] = await tx.select({ id: workspaceConversationsTable.id })
+      .from(workspaceConversationsTable)
+      .where(and(
+        eq(workspaceConversationsTable.id, conversation.id),
+        eq(workspaceConversationsTable.ownerId, userId),
+      ))
+      .for("update");
+    if (!currentConversation) return null;
+
     const [userRow] = await tx.insert(workspaceMessagesTable).values({
       id: crypto.randomUUID(), conversationId: conversation.id, role: "user", content: input,
     }).returning();
@@ -280,11 +329,11 @@ router.post("/workspace/conversations/:id/messages", async (req, res): Promise<v
     await tx.update(workspaceConversationsTable).set({
       updatedAt: timestamp, title: input.slice(0, 64),
     }).where(eq(workspaceConversationsTable.id, conversation.id));
-    return [userRow, assistantRow];
+    return { userMessage: userRow, assistantMessage: assistantRow };
   });
-  void userMessage;
+  if (!saved) { res.status(404).json({ error: "Conversation not found." }); return; }
   res.status(201).json(SendWorkspaceMessageResponse.parse({
-    message: assistantMessage, sources, synthetic, escalation,
+    message: saved.assistantMessage, sources, synthetic, escalation,
     securityStatus: "PII-filtered · role-scoped · simulated tool gateway",
   }));
 });
